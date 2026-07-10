@@ -76,6 +76,20 @@ export class AuthService {
     await this.database.db.update(sessions).set({ revokedAt: new Date() }).where(eq(sessions.id, sessionId));
   }
 
+  async listSessions(userId: string, currentSessionId: string) {
+    const result = await this.database.pool.query(
+      `SELECT id,user_agent AS "userAgent",is_persistent AS "isPersistent",created_at AS "createdAt",expires_at AS "expiresAt",id=$2 AS "isCurrent" FROM sessions WHERE user_id=$1 AND revoked_at IS NULL AND expires_at>now() ORDER BY created_at DESC`,
+      [userId, currentSessionId]
+    );
+    return { data: result.rows };
+  }
+
+  async revokeSession(userId: string, sessionId: string) {
+    const result = await this.database.pool.query("UPDATE sessions SET revoked_at=now() WHERE user_id=$1 AND id=$2 AND revoked_at IS NULL RETURNING id", [userId, sessionId]);
+    if (!result.rowCount) throw new BadRequestException("Sessao nao encontrada ou ja encerrada.");
+    return { ok: true };
+  }
+
   async createPasswordReset(email: string) {
     const [user] = await this.database.db.select().from(users).where(eq(users.email, email)).limit(1);
     if (!user) return { accepted: true };

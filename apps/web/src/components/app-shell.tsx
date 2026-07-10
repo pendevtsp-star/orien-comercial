@@ -3,6 +3,7 @@
 import { BrandLogo, Button } from "@sgc/ui";
 import {
   BarChart3,
+  BellRing,
   Boxes,
   Building2,
   CircleDollarSign,
@@ -37,9 +38,11 @@ const navigation = [
   { href: "/customers", label: "Clientes", icon: UsersRound },
   { href: "/catalog-tools", label: "Ferramentas", icon: Wrench },
   { href: "/financial", label: "Financeiro", icon: CircleDollarSign },
+  { href: "/alerts", label: "Alertas", icon: BellRing },
   { href: "/team", label: "Equipe", icon: ShieldCheck },
   { href: "/subscription", label: "Assinatura", icon: CreditCard },
-  { href: "/settings", label: "Configuracoes", icon: Settings }
+  { href: "/settings", label: "Configuracoes", icon: Settings },
+  { href: "/sessions", label: "Dispositivos", icon: ShieldCheck }
 ];
 const appName = process.env.NEXT_PUBLIC_APP_NAME ?? "Orien";
 

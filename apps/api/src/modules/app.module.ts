@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { ThrottlerModule } from "@nestjs/throttler";
 import { AuthModule } from "../modules/auth/auth.module";
+import { AlertsModule } from "../modules/alerts/alerts.module";
 import { BranchesModule } from "../modules/branches/branches.module";
 import { CashRegistersModule } from "../modules/cash-registers/cash-registers.module";
 import { ConfigModule } from "../modules/config/config.module";
@@ -28,6 +29,7 @@ import { TenantsModule } from "../modules/tenants/tenants.module";
       }
     ]),
     AuthModule,
+    AlertsModule,
     TenantsModule,
     BranchesModule,
     CashRegistersModule,

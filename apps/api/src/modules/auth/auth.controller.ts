@@ -1,4 +1,4 @@
-import { Body, Controller, Inject, Post, Req, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Inject, Param, Post, Req, Res, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { Throttle } from "@nestjs/throttler";
 import { forgotPasswordSchema, inviteAcceptSchema, loginSchema, resetPasswordSchema } from "@sgc/types";
@@ -43,6 +43,18 @@ export class AuthController {
     await this.authService.logout(user.sessionId);
     clearAuthCookies(response);
     return { ok: true };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get("sessions")
+  sessions(@CurrentUser() user: AuthUser) {
+    return this.authService.listSessions(user.userId, user.sessionId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete("sessions/:id")
+  revokeSession(@CurrentUser() user: AuthUser, @Param("id") id: string) {
+    return this.authService.revokeSession(user.userId, id);
   }
 
   @Throttle({ default: { ttl: 60_000, limit: 20 } })

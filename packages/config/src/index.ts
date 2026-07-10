@@ -19,7 +19,9 @@ const envSchema = z.object({
   ASAAS_ENV: z.enum(["sandbox", "production"]).default("sandbox"),
   ASAAS_API_URL: z.string().url().default("https://sandbox.asaas.com/api/v3"),
   ASAAS_API_KEY: z.string().optional(),
-  ASAAS_WEBHOOK_TOKEN: z.string().optional()
+  ASAAS_WEBHOOK_TOKEN: z.string().optional(),
+  RESEND_API_KEY: z.string().optional(),
+  ALERT_FROM_EMAIL: z.string().email().default("alertas@useorien.com.br")
 });
 
 export type AppConfig = z.infer<typeof envSchema>;

@@ -54,6 +54,18 @@ export const auditLogListQuerySchema = paginationQuerySchema.extend({
   sortDirection: z.enum(["asc", "desc"]).default("desc")
 });
 
+export const dashboardQuerySchema = z.object({
+  startDate: z.string().date().optional(),
+  endDate: z.string().date().optional()
+}).refine((value) => !value.startDate || !value.endDate || value.endDate >= value.startDate, { message: "endDate must be after startDate" });
+
+export const branchGoalSchema = z.object({
+  branchId: uuidSchema,
+  periodStart: z.string().date(),
+  periodEnd: z.string().date(),
+  salesTarget: z.coerce.number().positive()
+}).refine((value) => value.periodEnd >= value.periodStart, { message: "periodEnd must be after periodStart" });
+
 export const loginSchema = z.object({
   email: z.string().email().transform((value) => value.toLowerCase()),
   password: z.string().min(8).max(256),
@@ -214,6 +226,13 @@ export const importPreviewSchema = z.object({
 });
 
 export const importCommitSchema = z.object({ jobId: uuidSchema });
+
+export const alertRuleSchema = z.object({
+  type: z.enum(["low_stock", "overdue_receivables", "cancelled_sales"]),
+  channel: z.literal("email").default("email"),
+  recipient: z.string().email(),
+  isActive: z.boolean().default(true)
+});
 
 export const stockTransferItemSchema = z.object({
   productId: uuidSchema,

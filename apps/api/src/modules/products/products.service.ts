@@ -107,7 +107,9 @@ export class ProductsService {
       ]
     );
 
-    return result.rows[0];
+    const created = result.rows[0];
+    if (created) await this.database.tenantQuery(context.tenantId, `INSERT INTO audit_logs (tenant_id,actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,$2,'product.created','product',$3,$4)`, [context.tenantId,context.userId??null,created.id,JSON.stringify({name:input.name,sku:input.sku??null,barcode:input.barcode??null,costPrice:input.costPrice,salePrice:input.salePrice,minStock:input.minStock})]);
+    return created;
   }
 
   async update(context: TenantContext, id: string, input: ProductUpdateInput) {
@@ -153,7 +155,9 @@ export class ProductsService {
       ]
     );
 
-    return ensureFound(result.rows[0], "Produto");
+    const updated = ensureFound(result.rows[0], "Produto");
+    await this.database.tenantQuery(context.tenantId, `INSERT INTO audit_logs (tenant_id,actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,$2,'product.updated','product',$3,$4)`, [context.tenantId,context.userId??null,id,JSON.stringify({before:{name:existing.name,sku:existing.sku,barcode:existing.barcode,costPrice:existing.cost_price,salePrice:existing.sale_price,minStock:existing.min_stock,isActive:existing.is_active},after:{name:updated.name,sku:updated.sku,barcode:updated.barcode,costPrice:updated.cost_price,salePrice:updated.sale_price,minStock:updated.min_stock,isActive:updated.is_active}})]);
+    return updated;
   }
 
   async remove(context: TenantContext, id: string) {
@@ -164,6 +168,7 @@ export class ProductsService {
       [context.tenantId, id]
     );
     ensureFound(result.rows[0], "Produto");
+    await this.database.tenantQuery(context.tenantId, `INSERT INTO audit_logs (tenant_id,actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,$2,'product.deleted','product',$3,'{}')`, [context.tenantId,context.userId??null,id]);
     return { ok: true };
   }
 

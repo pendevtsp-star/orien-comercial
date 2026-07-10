@@ -1,8 +1,8 @@
 "use client";
 
-import { Badge, Button, Card, CardContent, EmptyState, PageHeader } from "@sgc/ui";
+import { Badge, Button, Card, CardContent, EmptyState, Input, PageHeader, Select } from "@sgc/ui";
 import { AlertCircle, ArrowUpRight, Banknote, Boxes, Building2, CircleDollarSign, ShoppingCart, UsersRound, type LucideIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../../../lib/api";
 
 interface Summary {
@@ -15,6 +15,14 @@ interface Summary {
   salesToday: number;
   salesMonth: number;
   averageTicket: number;
+  periodSales: number;
+  periodSalesCount: number;
+  periodAverageTicket: number;
+  previousPeriodSales: number;
+  salesVariationPercent: number | null;
+  cashForecast: number;
+  salesGoal: number;
+  goalProgressPercent: number | null;
 }
 
 const cards = [
@@ -28,12 +36,16 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const today = new Date().toISOString().slice(0, 10);
+  const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10));
+  const [endDate, setEndDate] = useState(today);
+  const [branches, setBranches] = useState<Array<{id:string;name:string}>>([]);
 
   async function load() {
     setLoading(true);
     setError(null);
     try {
-      setSummary(await apiFetch<Summary>("/dashboard/summary"));
+      setSummary(await apiFetch<Summary>(`/dashboard/summary?startDate=${startDate}&endDate=${endDate}`));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao carregar dashboard.");
     } finally {
@@ -43,7 +55,10 @@ export default function DashboardPage() {
 
   useEffect(() => {
     void load();
+    void apiFetch<{data:Array<{id:string;name:string}>}>("/branches?pageSize=100&isActive=true").then((result)=>setBranches(result.data));
   }, []);
+
+  async function saveGoal(event:FormEvent<HTMLFormElement>){event.preventDefault();const form=new FormData(event.currentTarget);try{await apiFetch("/dashboard/goals",{method:"POST",body:JSON.stringify({branchId:form.get("branchId"),periodStart:startDate,periodEnd:endDate,salesTarget:Number(form.get("salesTarget")||0)})});await load();}catch(err){setError(err instanceof Error?err.message:"Falha ao salvar meta.");}}
 
   return (
     <div className="grid gap-6">
@@ -51,9 +66,7 @@ export default function DashboardPage() {
         title="Dashboard"
         description="Indicadores iniciais do tenant e alertas de operacao."
         actions={
-          <Button variant="secondary" onClick={() => void load()}>
-            Atualizar resumo
-          </Button>
+          <div className="grid gap-2 sm:grid-cols-[150px_150px_auto]"><Input aria-label="Data inicial" type="date" value={startDate} onChange={(event)=>setStartDate(event.target.value)}/><Input aria-label="Data final" type="date" value={endDate} onChange={(event)=>setEndDate(event.target.value)}/><Button variant="secondary" onClick={() => void load()}>Aplicar período</Button></div>
         }
       />
       {error ? <p className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</p> : null}
@@ -172,6 +185,13 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </section>
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Card><CardContent><Metric label="Vendas no período" value={summary?.periodSales ?? 0} money loading={loading}/></CardContent></Card>
+        <Card><CardContent><Metric label="Comparação anterior" value={summary?.salesVariationPercent ?? 0} loading={loading}/><p className="mt-2 text-xs text-slate-500">{summary?.salesVariationPercent==null?"Sem base no período anterior":"Variação percentual"}</p></CardContent></Card>
+        <Card><CardContent><Metric label="Previsão de caixa" value={summary?.cashForecast ?? 0} money loading={loading}/></CardContent></Card>
+        <Card><CardContent><Metric label="Meta atingida" value={summary?.goalProgressPercent ?? 0} loading={loading}/><p className="mt-2 text-xs text-slate-500">Meta {Number(summary?.salesGoal??0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"})}</p></CardContent></Card>
+      </section>
+      <Card><CardContent><form className="grid gap-3 md:grid-cols-[minmax(180px,1fr)_minmax(180px,1fr)_auto] md:items-end" onSubmit={(event)=>void saveGoal(event)}><Select name="branchId" label="Loja da meta" options={branches.map((branch)=>({label:branch.name,value:branch.id}))} required/><Input name="salesTarget" label="Meta de vendas do período" type="number" step="0.01" required/><Button type="submit">Salvar meta</Button></form></CardContent></Card>
     </div>
   );
 }
