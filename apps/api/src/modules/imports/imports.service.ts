@@ -10,7 +10,11 @@ export class ImportsService {
 
   async preview(context: TenantContext, input: ImportPreviewInput) {
     let workbook: ExcelJS.Workbook;
-    try { workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(Buffer.from(input.fileBase64, "base64")); }
+    try {
+      workbook = new ExcelJS.Workbook();
+      const bytes = Uint8Array.from(Buffer.from(input.fileBase64, "base64"));
+      await workbook.xlsx.load(bytes.buffer);
+    }
     catch { throw new BadRequestException("Arquivo Excel invalido ou corrompido."); }
     const sheet = workbook.worksheets[0]; if (!sheet || sheet.rowCount < 2) throw new BadRequestException("A planilha precisa conter cabecalho e ao menos uma linha.");
     const headers = sheet.getRow(1).values as unknown[]; const rows: Record<string, unknown>[] = []; const errors: Array<{ row: number; messages: string[] }> = [];
