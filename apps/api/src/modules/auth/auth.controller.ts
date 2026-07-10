@@ -81,15 +81,14 @@ export class AuthController {
   }
 }
 
-function setAuthCookies(response: Response, tokens: { accessToken: string; refreshToken: string }) {
+function setAuthCookies(response: Response, tokens: { accessToken: string; refreshToken: string; rememberMe: boolean }) {
   response.cookie("access_token", tokens.accessToken, {
     ...cookieBase,
     maxAge: 1000 * 60 * 15
   });
-  response.cookie("refresh_token", tokens.refreshToken, {
-    ...cookieBase,
-    maxAge: 1000 * 60 * 60 * 24 * 30
-  });
+  response.cookie("refresh_token", tokens.refreshToken, tokens.rememberMe
+    ? { ...cookieBase, maxAge: 1000 * 60 * 60 * 24 * 30 }
+    : cookieBase);
 }
 
 function clearAuthCookies(response: Response) {

@@ -56,7 +56,8 @@ export const auditLogListQuerySchema = paginationQuerySchema.extend({
 
 export const loginSchema = z.object({
   email: z.string().email().transform((value) => value.toLowerCase()),
-  password: z.string().min(8).max(256)
+  password: z.string().min(8).max(256),
+  rememberMe: z.boolean().default(false)
 });
 
 export const forgotPasswordSchema = z.object({

@@ -13,6 +13,7 @@ import { PasswordService } from "./password.service";
 export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
+  rememberMe: boolean;
 }
 
 @Injectable()
@@ -43,7 +44,7 @@ export class AuthService {
     }
 
     await this.database.db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id));
-    return this.createSession(user.id, metadata);
+    return this.createSession(user.id, metadata, input.rememberMe);
   }
 
   async refresh(refreshToken: string | undefined, metadata: { userAgent?: string; ipAddress?: string }) {
@@ -67,7 +68,7 @@ export class AuthService {
     }
 
     await this.database.db.update(sessions).set({ revokedAt: new Date() }).where(eq(sessions.id, session.id));
-    return this.createSession(session.userId, metadata);
+    return this.createSession(session.userId, metadata, session.isPersistent);
   }
 
   async logout(sessionId: string | undefined): Promise<void> {
@@ -205,13 +206,14 @@ export class AuthService {
         metadata: { email: invite.email }
       });
 
-      return this.createSession(userId, {});
+      return this.createSession(userId, {}, false);
     });
   }
 
   private async createSession(
     userId: string,
-    metadata: { userAgent?: string; ipAddress?: string }
+    metadata: { userAgent?: string; ipAddress?: string },
+    rememberMe: boolean
   ): Promise<AuthTokens> {
     const sessionId = randomUUID();
     const refreshSecret = randomBytes(48).toString("base64url");
@@ -224,7 +226,8 @@ export class AuthService {
       refreshTokenHash,
       userAgent: metadata.userAgent,
       ipAddress: metadata.ipAddress,
-      expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30)
+      isPersistent: rememberMe,
+      expiresAt: new Date(Date.now() + 1000 * 60 * 60 * (rememberMe ? 24 * 30 : 12))
     });
 
     const accessToken = jwt.sign({ sub: userId, sid: sessionId }, this.config.JWT_ACCESS_SECRET, {
@@ -232,7 +235,7 @@ export class AuthService {
       expiresIn: "15m"
     });
 
-    return { accessToken, refreshToken };
+    return { accessToken, refreshToken, rememberMe };
   }
 }
 

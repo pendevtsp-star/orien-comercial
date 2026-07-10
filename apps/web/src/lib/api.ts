@@ -1,5 +1,6 @@
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3334/api/v1";
 const TENANT_KEY = "sgc.currentTenantId";
+let refreshPromise: Promise<boolean> | null = null;
 
 export class ApiError extends Error {
   constructor(
@@ -24,6 +25,10 @@ export function setTenantId(tenantId: string) {
 }
 
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  return request<T>(path, init, true);
+}
+
+async function request<T>(path: string, init: RequestInit, allowRefresh: boolean): Promise<T> {
   const tenantId = getTenantId();
   const headers = new Headers(init.headers);
   const requestId = createRequestId();
@@ -36,6 +41,11 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
     credentials: "include",
     headers
   });
+
+  if (response.status === 401 && allowRefresh && !path.startsWith("/auth/")) {
+    const refreshed = await refreshSession();
+    if (refreshed) return request<T>(path, init, false);
+  }
 
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as { message?: string; requestId?: string; statusCode?: number } | null;
@@ -53,7 +63,21 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   return response.json() as Promise<T>;
 }
 
-export async function openApiDocument(path: string): Promise<void> {
+async function refreshSession() {
+  if (!refreshPromise) {
+    refreshPromise = fetch(`${API_URL}/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json", "x-request-id": createRequestId() },
+      body: "{}"
+    }).then((response) => response.ok).catch(() => false).finally(() => {
+      refreshPromise = null;
+    });
+  }
+  return refreshPromise;
+}
+
+export async function openApiDocument(path: string, allowRefresh = true): Promise<void> {
   const tenantId = getTenantId();
   const headers = new Headers();
   const requestId = createRequestId();
@@ -64,6 +88,10 @@ export async function openApiDocument(path: string): Promise<void> {
     credentials: "include",
     headers
   });
+
+  if (response.status === 401 && allowRefresh && await refreshSession()) {
+    return openApiDocument(path, false);
+  }
 
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as { message?: string; requestId?: string; statusCode?: number } | null;

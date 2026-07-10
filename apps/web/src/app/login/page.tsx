@@ -34,7 +34,8 @@ export default function LoginPage() {
         method: "POST",
         body: JSON.stringify({
           email: form.get("email"),
-          password: form.get("password")
+          password: form.get("password"),
+          rememberMe: form.get("rememberMe") === "on"
         })
       });
       const me = await apiFetch<MeResponse>("/me");
@@ -81,6 +82,10 @@ export default function LoginPage() {
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
+          </label>
+          <label className="flex cursor-pointer items-start gap-3 text-sm text-slate-600">
+            <input name="rememberMe" type="checkbox" className="mt-0.5 h-4 w-4 rounded border-[var(--brand-border)] accent-[var(--brand-secondary)]" />
+            <span><span className="font-medium text-[var(--brand-primary)]">Manter conectado</span><span className="mt-0.5 block text-xs text-slate-500">Use apenas em um dispositivo pessoal. A sessão poderá ser renovada por até 30 dias.</span></span>
           </label>
           {error ? <p className="rounded-md bg-rose-50 p-3 text-sm text-rose-700">{error}</p> : null}
           <Button type="submit" className="w-full" disabled={loading}>
