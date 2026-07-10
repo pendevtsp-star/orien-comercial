@@ -153,8 +153,8 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
         </section>
       ) : null}
 
-      <section className="grid gap-4 xl:grid-cols-[360px_1fr]">
-        <Card>
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <Card className="xl:order-2 xl:sticky xl:top-20 xl:self-start">
           <CardContent>
             <form key={editingRow?.id ?? "create"} className="grid gap-3" onSubmit={(event) => void submit(event)}>
               <div>
@@ -182,7 +182,7 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
               ))}
               <div className="flex flex-wrap gap-2">
                 <Button type="submit" disabled={submitting} icon={editingRow ? <Pencil size={16} /> : <Plus size={16} />}>
-                  {submitting ? "Salvando..." : editingRow ? "Salvar alteracoes" : "Salvar cadastro"}
+                  {submitting ? "Salvando..." : editingRow ? "Salvar alterações" : "Salvar cadastro"}
                 </Button>
                 {editingRow ? (
                   <Button
@@ -199,8 +199,8 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
             </form>
           </CardContent>
         </Card>
-        <div className="grid gap-3">
-          <Card className="overflow-hidden border-[#11284f] bg-[var(--brand-primary)] text-white shadow-[0_28px_64px_rgba(11,29,61,0.18)]">
+        <div className="grid gap-3 xl:order-1">
+          <Card variant="brand" className="overflow-hidden shadow-[0_28px_64px_rgba(11,29,61,0.18)]">
             <CardContent className="grid gap-4 p-6">
               <div>
                 <Badge className="border-white/10 bg-white/10 text-white">{heroBadge ?? "Visao operacional"}</Badge>
@@ -276,7 +276,7 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
               ...columns,
               {
                 key: "resource-status",
-                header: "Operacao",
+                header: "Operação",
                 render: (row) => (
                   <div className="flex flex-wrap gap-2">
                     <Button type="button" variant="secondary" icon={<Pencil size={14} />} onClick={() => setEditingRow(row)}>
@@ -287,7 +287,7 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
                     </Button>
                     <ConfirmDialog
                       title="Remover registro"
-                      description="Esta acao remove o registro da listagem operacional. Use apenas quando fizer sentido para o tenant."
+                      description="Esta ação remove o registro da listagem operacional. Use apenas quando fizer sentido para o tenant."
                       trigger={
                         <Button type="button" variant="danger" icon={<Trash2 size={14} />}>
                           Excluir
@@ -336,7 +336,7 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
                 Anterior
               </Button>
               <Badge>
-                Pagina {page} de {totalPages}
+                Página {page} de {totalPages}
               </Badge>
               <Button
                 type="button"
@@ -345,7 +345,7 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
                 onClick={() => setPage((current) => current + 1)}
                 icon={<ChevronRight size={16} />}
               >
-                Proxima
+                Próxima
               </Button>
             </div>
           </div>

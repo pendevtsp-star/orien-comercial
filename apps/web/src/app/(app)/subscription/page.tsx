@@ -100,7 +100,7 @@ export default function SubscriptionPage() {
       </section>
 
       <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
-        <Card className="overflow-hidden border-[#11284f] bg-[var(--brand-primary)] text-white shadow-[0_28px_64px_rgba(11,29,61,0.18)]">
+        <Card variant="brand" className="overflow-hidden shadow-[0_28px_64px_rgba(11,29,61,0.18)]">
           <CardContent className="grid gap-4 p-6 lg:grid-cols-[1.1fr_0.9fr]">
             <div className="flex items-center justify-between">
               <div>

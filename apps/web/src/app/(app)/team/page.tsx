@@ -234,7 +234,7 @@ export default function TeamPage() {
             label: "Membros",
             content: (
               <div className="grid gap-4">
-                <Card className="overflow-hidden border-[#11284f] bg-[var(--brand-primary)] text-white shadow-[0_28px_64px_rgba(11,29,61,0.18)]">
+                <Card variant="brand" className="overflow-hidden shadow-[0_28px_64px_rgba(11,29,61,0.18)]">
                   <CardContent className="grid gap-4 p-6 lg:grid-cols-[1.1fr_0.9fr]">
                     <div>
                       <Badge className="border-white/10 bg-white/10 text-white">Governanca de acesso</Badge>

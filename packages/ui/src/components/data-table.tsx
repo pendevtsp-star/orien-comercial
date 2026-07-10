@@ -25,8 +25,8 @@ export function DataTable<T extends { id: string }>({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-[var(--brand-border)] bg-white shadow-[0_14px_32px_rgba(11,29,61,0.04)]">
-      <table className="w-full border-collapse text-left text-sm">
+    <div className="overflow-x-auto rounded-xl border border-[var(--brand-border)] bg-white shadow-[0_14px_32px_rgba(11,29,61,0.04)]">
+      <table className="min-w-max w-full border-collapse text-left text-sm">
         <thead className="bg-[var(--brand-surface)] text-xs uppercase tracking-[0.12em] text-[var(--brand-secondary)]">
           <tr>
             {columns.map((column) => (

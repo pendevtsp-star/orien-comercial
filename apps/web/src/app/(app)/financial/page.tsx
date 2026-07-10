@@ -487,8 +487,8 @@ function FinancialColumn({
   onNextPage: () => void;
 }) {
   return (
-    <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
-      <Card>
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <Card className="lg:order-2 lg:sticky lg:top-20 lg:self-start">
         <CardContent className="grid gap-4">
           <form className="grid gap-3" onSubmit={onSubmit}>
             <div>
@@ -508,8 +508,8 @@ function FinancialColumn({
           </form>
         </CardContent>
       </Card>
-      <div className="grid gap-3">
-        <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid gap-3 lg:order-1">
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--brand-border)] bg-white p-3">
           <Select
             aria-label="Status dos lancamentos"
             options={[
@@ -521,15 +521,16 @@ function FinancialColumn({
             value={statusFilter}
             onChange={(event) => setStatusFilter(event.target.value)}
           />
-          <Button variant="secondary" disabled={!selectedIds.length} onClick={onBulkMarkPaid}>
-            Baixar selecionados
-          </Button>
-          <Button variant="secondary" disabled={!selectedIds.length} onClick={() => onBulkReconcile("reconciled")}>
-            Conciliar selecionados
-          </Button>
-          <Button variant="secondary" disabled={!selectedIds.length} onClick={() => onBulkReconcile("diverged")}>
-            Divergentes selecionados
-          </Button>
+          {selectedIds.length ? (
+            <>
+              <Badge>{selectedIds.length} selecionado(s)</Badge>
+              <Button variant="secondary" onClick={onBulkMarkPaid}>Baixar</Button>
+              <Button variant="secondary" onClick={() => onBulkReconcile("reconciled")}>Conciliar</Button>
+              <Button variant="secondary" onClick={() => onBulkReconcile("diverged")}>Marcar divergência</Button>
+            </>
+          ) : (
+            <p className="text-sm text-slate-500">Selecione lançamentos na tabela para realizar ações em lote.</p>
+          )}
         </div>
         <DataTable
           rows={rows}
@@ -650,10 +651,7 @@ function FinancialHero({
   secondaryLabel: string;
 }) {
   return (
-    <Card
-      className="overflow-hidden border-[#11284f] text-white shadow-[0_28px_64px_rgba(11,29,61,0.18)]"
-      style={{ backgroundColor: "var(--brand-primary)" }}
-    >
+    <Card variant="brand" className="overflow-hidden shadow-[0_28px_64px_rgba(11,29,61,0.18)]">
       <CardContent className="grid gap-4 p-6 lg:grid-cols-[1.15fr_0.85fr]">
         <div>
           <Badge className="border-white/10 bg-white/10 text-white">Fluxo de caixa</Badge>
