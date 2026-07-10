@@ -5,10 +5,12 @@ import { NestFactory } from "@nestjs/core";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { randomUUID } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
+import { loadConfig } from "@sgc/config";
 import { AppModule } from "./modules/app.module";
 import { HttpExceptionFilter } from "./shared/http-exception.filter";
 
 async function bootstrap() {
+  const config = loadConfig();
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
 
   app.setGlobalPrefix("api/v1");
@@ -22,8 +24,14 @@ async function bootstrap() {
     next();
   });
   app.enableCors({
-    origin: [/^http:\/\/localhost:3000$/, /^http:\/\/localhost:3001$/],
+    origin:
+      config.NODE_ENV === "production"
+        ? [config.WEB_APP_URL]
+        : [config.WEB_APP_URL, "http://localhost:3000", "http://localhost:3001"],
     credentials: true
+  });
+  app.getHttpAdapter().get("/health", (_request: Request, response: Response) => {
+    response.status(200).json({ status: "ok" });
   });
   app.useGlobalFilters(new HttpExceptionFilter());
 

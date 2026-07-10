@@ -1,12 +1,14 @@
 FROM node:24-alpine AS deps
 WORKDIR /app
 RUN corepack enable
-COPY package.json pnpm-workspace.yaml tsconfig.base.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages ./packages
 COPY apps/web ./apps/web
 RUN pnpm install --frozen-lockfile
 
 FROM deps AS builder
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 RUN pnpm --filter @sgc/ui --filter @sgc/web build
 
 FROM node:24-alpine AS runner

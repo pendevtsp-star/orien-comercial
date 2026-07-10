@@ -1,0 +1,115 @@
+name: orien
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_DB: sgc
+      POSTGRES_USER: sgc_owner
+      POSTGRES_PASSWORD: ${POSTGRES_OWNER_PASSWORD}
+      SGC_APP_PASSWORD: ${SGC_APP_PASSWORD}
+    volumes:
+      - ../data/postgres:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sgc_owner -d sgc"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    mem_limit: 512m
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - ../data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    mem_limit: 128m
+
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://sgc_app:${SGC_APP_PASSWORD}@postgres:5432/sgc
+      DATABASE_MIGRATION_URL: postgresql://sgc_owner:${POSTGRES_OWNER_PASSWORD}@postgres:5432/sgc
+      REDIS_URL: redis://redis:6379
+    command: ["pnpm", "db:migrate"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      API_PORT: 3334
+      DATABASE_URL: postgresql://sgc_app:${SGC_APP_PASSWORD}@postgres:5432/sgc
+      DATABASE_MIGRATION_URL: postgresql://sgc_owner:${POSTGRES_OWNER_PASSWORD}@postgres:5432/sgc
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:-3334}:3334"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3334/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 6
+    mem_limit: 512m
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "127.0.0.1:${WEB_HOST_PORT:-3100}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    mem_limit: 512m
+
+  marketing:
+    build:
+      context: .
+      dockerfile: apps/marketing/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "127.0.0.1:${MARKETING_HOST_PORT:-3101}:3001"
+    mem_limit: 256m
+
+  seed:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://sgc_app:${SGC_APP_PASSWORD}@postgres:5432/sgc
+      DATABASE_MIGRATION_URL: postgresql://sgc_owner:${POSTGRES_OWNER_PASSWORD}@postgres:5432/sgc
+      REDIS_URL: redis://redis:6379
+    command: ["pnpm", "db:seed"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    profiles: ["bootstrap"]
+    restart: "no"
