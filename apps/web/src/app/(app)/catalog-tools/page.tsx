@@ -2,6 +2,7 @@
 
 import { Badge, Button, Card, CardContent, DataTable, PageHeader, Select, Tabs } from "@sgc/ui";
 import { Eye, FileSpreadsheet, Printer, Upload } from "lucide-react";
+import Link from "next/link";
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import { apiFetch, openApiDocument } from "../../../lib/api";
 
@@ -151,6 +152,23 @@ export default function CatalogToolsPage() {
                       {allSelected ? "Limpar seleção" : "Selecionar todos"}
                     </Button>
                   </div>
+                  {!products.length ? (
+                    <div className="grid justify-items-start gap-3 rounded-md border border-dashed border-[var(--brand-border)] p-5">
+                      <div>
+                        <h2 className="font-semibold">Cadastre o primeiro produto</h2>
+                        <p className="mt-1 text-sm text-slate-500">
+                          A etiqueta usa o nome, preço e código de barras ou SKU do cadastro do
+                          produto.
+                        </p>
+                      </div>
+                      <Link
+                        href="/products"
+                        className="inline-flex min-h-10 items-center justify-center rounded-md bg-[var(--brand-primary)] px-4 py-2 text-sm font-medium text-white"
+                      >
+                        Cadastrar produto
+                      </Link>
+                    </div>
+                  ) : null}
                   <DataTable
                     rows={products}
                     empty="Nenhum produto disponível."
