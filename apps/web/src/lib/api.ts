@@ -39,11 +39,15 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
 
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as { message?: string; requestId?: string; statusCode?: number } | null;
-    throw new ApiError(
+    const error = new ApiError(
       payload?.message ?? "Falha ao comunicar com a API.",
       payload?.statusCode ?? response.status,
       payload?.requestId ?? response.headers.get("x-request-id") ?? requestId
     );
+    if (response.status === 401 && typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("sgc:session-expired"));
+    }
+    throw error;
   }
 
   return response.json() as Promise<T>;

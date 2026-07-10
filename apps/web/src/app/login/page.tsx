@@ -3,7 +3,7 @@
 import { BrandLogo, Button, Input } from "@sgc/ui";
 import { Eye, EyeOff } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { apiFetch, setTenantId } from "../../lib/api";
 
 interface MeResponse {
@@ -16,6 +16,11 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
+
+  useEffect(() => {
+    setSessionExpired(new URLSearchParams(window.location.search).get("reason") === "session-expired");
+  }, []);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -53,6 +58,7 @@ export default function LoginPage() {
           <p className="mt-2 text-sm text-slate-500">Use uma conta vinculada ao tenant para acessar dados reais.</p>
         </div>
         <form className="grid gap-4" onSubmit={(event) => void onSubmit(event)}>
+          {sessionExpired ? <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">Sua sessão expirou. Entre novamente para continuar.</p> : null}
           <Input label="E-mail" name="email" type="email" autoComplete="email" required />
           <label className="grid gap-1.5 text-sm text-slate-700" htmlFor="password">
             <span className="font-medium">Senha</span>

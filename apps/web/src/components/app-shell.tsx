@@ -62,6 +62,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       .catch(() => undefined);
   }, []);
 
+  useEffect(() => {
+    function redirectToLogin() {
+      router.replace("/login?reason=session-expired");
+    }
+
+    window.addEventListener("sgc:session-expired", redirectToLogin);
+    return () => window.removeEventListener("sgc:session-expired", redirectToLogin);
+  }, [router]);
+
   const currentMembership = useMemo(() => {
     const tenantId = getTenantId();
     return me?.memberships.find((membership) => membership.tenantId === tenantId) ?? me?.memberships[0] ?? null;
