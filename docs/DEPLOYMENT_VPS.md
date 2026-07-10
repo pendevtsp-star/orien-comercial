@@ -46,3 +46,15 @@ docker compose -f docker-compose.prod.yml exec postgres pg_dump -U sgc_owner sgc
 
 Nao use `docker compose down -v` neste ambiente: isso pode remover dados do
 banco persistido.
+
+## Preview temporario por IP
+
+Enquanto os dominios nao apontam para a VPS, use `.env.preview.example` como
+base para o `.env` do servidor. Ele publica somente para teste visual:
+
+- painel: `http://187.127.37.208:3100`
+- landing: `http://187.127.37.208:3101`
+- API: `http://187.127.37.208:3334/api/v1`
+
+Esse modo define `COOKIE_SECURE=false` para permitir login por HTTP. Ele nao
+deve continuar em uso depois que TLS for ativado.

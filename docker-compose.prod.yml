@@ -62,7 +62,7 @@ services:
       DATABASE_MIGRATION_URL: postgresql://sgc_owner:${POSTGRES_OWNER_PASSWORD}@postgres:5432/sgc
       REDIS_URL: redis://redis:6379
     ports:
-      - "127.0.0.1:${API_HOST_PORT:-3334}:3334"
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:${API_HOST_PORT:-3334}:3334"
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -82,7 +82,7 @@ services:
     restart: unless-stopped
     env_file: .env
     ports:
-      - "127.0.0.1:${WEB_HOST_PORT:-3100}:3000"
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:${WEB_HOST_PORT:-3100}:3000"
     depends_on:
       api:
         condition: service_healthy
@@ -95,7 +95,7 @@ services:
     restart: unless-stopped
     env_file: .env
     ports:
-      - "127.0.0.1:${MARKETING_HOST_PORT:-3101}:3001"
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:${MARKETING_HOST_PORT:-3101}:3001"
     mem_limit: 256m
 
   seed:

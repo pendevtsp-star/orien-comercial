@@ -11,7 +11,7 @@ import { AuthService } from "./auth.service";
 
 const cookieBase = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
+  secure: process.env.NODE_ENV === "production" && process.env.COOKIE_SECURE !== "false",
   sameSite: "lax" as const,
   path: "/"
 };
