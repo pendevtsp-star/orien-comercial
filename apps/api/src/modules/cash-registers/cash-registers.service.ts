@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import type { CashRegisterCloseInput, CashRegisterOpenInput } from "@sgc/types";
+import type { CashRegisterCloseInput, CashRegisterMovementInput, CashRegisterOpenInput } from "@sgc/types";
 import type { PoolClient } from "pg";
 import { ensureBranchAccess, ensureFound } from "../../shared/resource-access";
 import type { TenantContext } from "../../shared/request-context";
@@ -32,13 +32,34 @@ export class CashRegistersService {
     return this.database.tenantTransaction(context.tenantId, async (client) => {
       const found = await client.query<{ branch_id: string; opening_amount: string; opened_at: Date }>("SELECT branch_id, opening_amount, opened_at FROM cash_register_sessions WHERE tenant_id = $1 AND id = $2 AND status = 'open' FOR UPDATE", [context.tenantId, id]);
       const session = ensureFound(found.rows[0], "Caixa aberto"); ensureBranchAccess(context, session.branch_id);
-      const payments = await client.query<{ total: string }>(`SELECT COALESCE(sum(sp.amount),0)::text total FROM sale_payments sp JOIN sales s ON s.id = sp.sale_id WHERE sp.tenant_id = $1 AND s.branch_id = $2 AND sp.status = 'paid' AND sp.paid_at >= $3 AND s.status = 'sold'`, [context.tenantId, session.branch_id, session.opened_at]);
-      const expectedAmount = Number(session.opening_amount) + Number(payments.rows[0]?.total ?? 0);
+      const payments = await client.query<{ total: string }>(`SELECT COALESCE(sum(sp.amount),0)::text total FROM sale_payments sp JOIN sales s ON s.id = sp.sale_id WHERE sp.tenant_id = $1 AND s.cash_register_session_id = $2 AND sp.status = 'paid' AND s.status = 'sold'`, [context.tenantId, id]);
+      const movements = await client.query<{ supply: string; withdrawal: string }>(`SELECT COALESCE(sum(amount) FILTER (WHERE type = 'supply'),0)::text supply, COALESCE(sum(amount) FILTER (WHERE type = 'withdrawal'),0)::text withdrawal FROM cash_register_movements WHERE tenant_id = $1 AND cash_register_session_id = $2`, [context.tenantId, id]);
+      const expectedAmount = Number(session.opening_amount) + Number(payments.rows[0]?.total ?? 0) + Number(movements.rows[0]?.supply ?? 0) - Number(movements.rows[0]?.withdrawal ?? 0);
       const differenceAmount = input.closingAmount - expectedAmount;
       const result = await client.query(`UPDATE cash_register_sessions SET status = 'closed', closed_by_user_id = $3, expected_amount = $4, closing_amount = $5, difference_amount = $6, notes = COALESCE($7, notes), closed_at = now() WHERE tenant_id = $1 AND id = $2 RETURNING *`, [context.tenantId, id, context.userId ?? null, expectedAmount, input.closingAmount, differenceAmount, input.notes ?? null]);
       await audit(client, context, "cash_register.closed", id, { branchId: session.branch_id, expectedAmount, closingAmount: input.closingAmount, differenceAmount });
       return result.rows[0];
     });
+  }
+
+  async movement(context: TenantContext, id: string, input: CashRegisterMovementInput) {
+    return this.database.tenantTransaction(context.tenantId, async (client) => {
+      const found = await client.query<{ branch_id: string }>("SELECT branch_id FROM cash_register_sessions WHERE tenant_id = $1 AND id = $2 AND status = 'open'", [context.tenantId, id]);
+      const session = ensureFound(found.rows[0], "Caixa aberto"); ensureBranchAccess(context, session.branch_id);
+      const result = await client.query(`INSERT INTO cash_register_movements (tenant_id, cash_register_session_id, branch_id, type, amount, reason, actor_user_id) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`, [context.tenantId, id, session.branch_id, input.type, input.amount, input.reason, context.userId ?? null]);
+      await audit(client, context, `cash_register.${input.type}`, id, { amount: input.amount, reason: input.reason });
+      return result.rows[0];
+    });
+  }
+
+  async summary(context: TenantContext, id: string) {
+    const session = await this.database.tenantQuery<{ branch_id: string }>(context.tenantId, "SELECT branch_id FROM cash_register_sessions WHERE tenant_id = $1 AND id = $2", [context.tenantId, id]);
+    ensureBranchAccess(context, ensureFound(session.rows[0], "Caixa").branch_id);
+    const [payments, movements] = await Promise.all([
+      this.database.tenantQuery(context.tenantId, `SELECT sp.method, COALESCE(sum(sp.amount),0)::text amount FROM sale_payments sp JOIN sales s ON s.id = sp.sale_id WHERE sp.tenant_id = $1 AND s.cash_register_session_id = $2 AND sp.status = 'paid' AND s.status = 'sold' GROUP BY sp.method ORDER BY sp.method`, [context.tenantId, id]),
+      this.database.tenantQuery(context.tenantId, `SELECT id, type, amount::text, reason, created_at AS "createdAt" FROM cash_register_movements WHERE tenant_id = $1 AND cash_register_session_id = $2 ORDER BY created_at DESC`, [context.tenantId, id])
+    ]);
+    return { payments: payments.rows, movements: movements.rows };
   }
 }
 

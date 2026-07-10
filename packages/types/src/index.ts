@@ -144,6 +144,7 @@ export const salePaymentSchema = z.object({
 
 export const saleCreateSchema = z.object({
   branchId: uuidSchema,
+  cashRegisterSessionId: uuidSchema.optional(),
   customerId: uuidSchema.optional(),
   items: z.array(saleItemSchema).min(1).max(100),
   payments: z.array(salePaymentSchema).max(10).default([]),
@@ -179,6 +180,33 @@ export const cashRegisterCloseSchema = z.object({
 });
 
 export const cashRegisterCurrentQuerySchema = z.object({ branchId: uuidSchema });
+
+export const cashRegisterMovementSchema = z.object({
+  type: z.enum(["supply", "withdrawal"]),
+  amount: z.coerce.number().positive(),
+  reason: z.string().trim().min(3).max(180)
+});
+
+export const purchaseOrderCreateSchema = z.object({
+  branchId: uuidSchema,
+  supplierId: uuidSchema,
+  expectedAt: z.string().date().optional(),
+  notes: z.string().trim().max(500).optional(),
+  items: z.array(z.object({
+    productId: uuidSchema,
+    quantity: z.coerce.number().positive(),
+    unitCost: z.coerce.number().min(0)
+  })).min(1).max(100)
+});
+
+export const purchaseOrderReceiveSchema = z.object({
+  documentNumber: z.string().trim().max(80).optional(),
+  notes: z.string().trim().max(500).optional(),
+  items: z.array(z.object({
+    productId: uuidSchema,
+    quantity: z.coerce.number().positive()
+  })).min(1).max(100)
+});
 
 export const stockTransferItemSchema = z.object({
   productId: uuidSchema,
@@ -314,6 +342,9 @@ export type FinancialEntryCreateInput = z.infer<typeof financialEntryCreateSchem
 export type SaleCancelInput = z.infer<typeof saleCancelSchema>;
 export type CashRegisterOpenInput = z.infer<typeof cashRegisterOpenSchema>;
 export type CashRegisterCloseInput = z.infer<typeof cashRegisterCloseSchema>;
+export type CashRegisterMovementInput = z.infer<typeof cashRegisterMovementSchema>;
+export type PurchaseOrderCreateInput = z.infer<typeof purchaseOrderCreateSchema>;
+export type PurchaseOrderReceiveInput = z.infer<typeof purchaseOrderReceiveSchema>;
 export type StockTransferCreateInput = z.infer<typeof stockTransferCreateSchema>;
 export type InventoryCountCreateInput = z.infer<typeof inventoryCountCreateSchema>;
 export type PurchaseEntryCreateInput = z.infer<typeof purchaseEntryCreateSchema>;

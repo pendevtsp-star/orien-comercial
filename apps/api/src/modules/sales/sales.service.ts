@@ -97,6 +97,13 @@ export class SalesService {
     return this.database.tenantTransaction(context.tenantId, async (client) => {
       await assertBranch(client, context.tenantId, input.branchId);
       if (input.customerId) await assertCustomer(client, context.tenantId, input.customerId);
+      if (input.cashRegisterSessionId) {
+        const cashSession = await client.query(
+          "SELECT id FROM cash_register_sessions WHERE tenant_id = $1 AND id = $2 AND branch_id = $3 AND status = 'open'",
+          [context.tenantId, input.cashRegisterSessionId, input.branchId]
+        );
+        if (!cashSession.rowCount) throw new BadRequestException("Caixa informado nao esta aberto para esta loja.");
+      }
 
       const productIds = input.items.map((item) => item.productId);
       const products = await client.query<{ id: string; name: string; sale_price: string }>(
@@ -134,11 +141,11 @@ export class SalesService {
 
       const sale = await client.query<{ id: string }>(
         `
-        INSERT INTO sales (tenant_id, branch_id, customer_id, seller_user_id, status, total_amount, notes)
-        VALUES ($1, $2, $3, $4, 'sold', $5, $6)
+        INSERT INTO sales (tenant_id, branch_id, customer_id, seller_user_id, cash_register_session_id, status, total_amount, notes)
+        VALUES ($1, $2, $3, $4, $5, 'sold', $6, $7)
         RETURNING id
         `,
-        [context.tenantId, input.branchId, input.customerId ?? null, context.userId ?? null, totalAmount, input.notes ?? null]
+        [context.tenantId, input.branchId, input.customerId ?? null, context.userId ?? null, input.cashRegisterSessionId ?? null, totalAmount, input.notes ?? null]
       );
       const saleId = sale.rows[0]!.id;
 
