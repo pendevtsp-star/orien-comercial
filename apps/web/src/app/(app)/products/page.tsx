@@ -8,6 +8,7 @@ interface ProductRow {
   id: string;
   name: string;
   sku?: string;
+  barcode?: string;
   salePrice: string;
   unit: string;
   isActive: boolean;
@@ -17,9 +18,9 @@ export default function ProductsPage() {
   return (
     <ResourcePage<ProductRow>
       title="Produtos"
-      description="Cadastro comercial com preco, SKU e controle minimo de estoque."
+      description="Cadastro comercial com preço, SKU, código de barras e controle mínimo de estoque."
       endpoint="/products"
-      searchPlaceholder="Buscar por produto, SKU ou preco"
+      searchPlaceholder="Buscar por produto, SKU ou código de barras"
       heroBadge="Catalogo comercial"
       heroTitle="Produtos prontos para venda, estoque e margem."
       heroDescription="Estruture o catalogo do tenant com identificacao comercial, preco de venda e base para abastecimento e operacao multiloja."
@@ -50,6 +51,7 @@ export default function ProductsPage() {
       fields={[
         { name: "name", label: "Nome", required: true },
         { name: "sku", label: "SKU" },
+        { name: "barcode", label: "Código de barras (leitor USB/Bluetooth)" },
         { name: "salePrice", label: "Preco de venda", type: "number", required: true },
         { name: "costPrice", label: "Custo", type: "number" },
         { name: "minStock", label: "Estoque minimo", type: "number" }
@@ -57,6 +59,7 @@ export default function ProductsPage() {
       transform={(form) => ({
         name: form.get("name"),
         sku: form.get("sku") || undefined,
+        barcode: form.get("barcode") || undefined,
         salePrice: Number(form.get("salePrice") || 0),
         costPrice: Number(form.get("costPrice") || 0),
         minStock: Number(form.get("minStock") || 0),
@@ -66,6 +69,7 @@ export default function ProductsPage() {
       columns={[
         { key: "name", header: "Nome", render: (row) => row.name },
         { key: "sku", header: "SKU", render: (row) => row.sku ?? "-" },
+        { key: "barcode", header: "Código de barras", render: (row) => row.barcode ?? "-" },
         {
           key: "price",
           header: "Preco",

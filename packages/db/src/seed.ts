@@ -67,6 +67,18 @@ const roleSlugs = {
 
 type RoleSlug = (typeof roleSlugs)[keyof typeof roleSlugs];
 
+const roleNames: Record<RoleSlug, string> = {
+  owner: "Proprietario",
+  admin: "Administrador",
+  manager: "Gerente",
+  seller: "Vendedor",
+  cashier: "Caixa",
+  stock: "Estoquista",
+  finance: "Financeiro",
+  support: "Suporte",
+  viewer: "Consulta"
+};
+
 const defaultRolePermissions: Record<RoleSlug, string[]> = {
   owner: [...permissionSlugs],
   admin: [
@@ -216,12 +228,12 @@ async function main() {
 
     const roleIds = new Map<string, string>();
     for (const roleSlug of Object.values(roleSlugs)) {
-      const roleName = roleSlug.replaceAll("_", " ").replace(/^\w/, (letter) => letter.toUpperCase());
+      const roleName = roleNames[roleSlug];
       const role = await pool.query<{ id: string }>(
         `
         INSERT INTO roles (tenant_id, slug, name, is_system)
         VALUES ($1, $2, $3, true)
-        ON CONFLICT (tenant_id, slug) DO UPDATE SET updated_at = now()
+        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = EXCLUDED.name, updated_at = now()
         RETURNING id
         `,
         [tenantId, roleSlug, roleName]

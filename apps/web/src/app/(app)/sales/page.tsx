@@ -20,6 +20,7 @@ interface ProductRow {
   id: string;
   name: string;
   sku?: string;
+  barcode?: string;
   salePrice?: string;
 }
 
@@ -71,6 +72,7 @@ export default function SalesPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [scannerCode, setScannerCode] = useState("");
   const [pagination, setPagination] = useState({ total: 0, page: 1, pageSize: 10 });
 
   const branchOptions = useMemo(() => branches.map((branch) => ({ label: branch.name, value: branch.id })), [branches]);
@@ -135,6 +137,25 @@ export default function SalesPage() {
       }
     ]);
     event.currentTarget.reset();
+  }
+
+  function addScannedProduct() {
+    const code = scannerCode.trim();
+    if (!code) return;
+    const product = products.find((item) => item.barcode === code || item.sku === code);
+    if (!product) {
+      setError(`Nenhum produto encontrado para o código ${code}.`);
+      return;
+    }
+    setDraftItems((current) => {
+      const existingIndex = current.findIndex((item) => item.productId === product.id);
+      if (existingIndex < 0) {
+        return [...current, { productId: product.id, productName: product.name, quantity: 1, unitPrice: Number(product.salePrice ?? 0), discountAmount: 0 }];
+      }
+      return current.map((item, index) => (index === existingIndex ? { ...item, quantity: item.quantity + 1 } : item));
+    });
+    setScannerCode("");
+    setError(null);
   }
 
   async function submitSale(event: FormEvent<HTMLFormElement>) {
@@ -235,6 +256,19 @@ export default function SalesPage() {
                 <h2 className="mt-2 text-lg font-semibold text-[var(--brand-primary)]">Montar itens</h2>
                 <p className="text-sm text-slate-500">Adicione os produtos, ajuste preco e desconto e acompanhe o total parcial em tempo real.</p>
               </div>
+              <Input
+                label="Leitor de código de barras"
+                placeholder="Aponte o leitor e pressione Enter"
+                value={scannerCode}
+                onChange={(event) => setScannerCode(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    addScannedProduct();
+                  }
+                }}
+              />
+              <p className="-mt-2 text-xs text-slate-500">Leitores USB ou Bluetooth em modo teclado adicionam o item automaticamente.</p>
               <form className="grid gap-3" onSubmit={addItem}>
                 <Select name="productId" label="Produto" options={productOptions} required />
                 <div className="grid gap-3 md:grid-cols-3">
