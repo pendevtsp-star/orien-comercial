@@ -11,6 +11,7 @@ import { ProductsModule } from "../modules/products/products.module";
 import { SalesModule } from "../modules/sales/sales.module";
 import { StockModule } from "../modules/stock/stock.module";
 import { SubscriptionsModule } from "../modules/subscriptions/subscriptions.module";
+import { SuppliersModule } from "../modules/suppliers/suppliers.module";
 import { TenantsModule } from "../modules/tenants/tenants.module";
 
 @Module({
@@ -29,6 +30,7 @@ import { TenantsModule } from "../modules/tenants/tenants.module";
     ProductsModule,
     CustomersModule,
     StockModule,
+    SuppliersModule,
     SalesModule,
     FinancialModule,
     SubscriptionsModule,

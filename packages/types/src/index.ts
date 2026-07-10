@@ -201,6 +201,18 @@ export const purchaseEntryCreateSchema = z.object({
   ).min(1).max(100)
 });
 
+export const supplierCreateSchema = z.object({
+  branchId: uuidSchema.optional(),
+  name: z.string().trim().min(2).max(180),
+  document: z.string().trim().max(20).optional(),
+  email: z.string().email().optional(),
+  phone: z.string().trim().max(30).optional(),
+  whatsapp: z.string().trim().max(30).optional(),
+  notes: z.string().trim().max(2000).optional(),
+  isActive: z.boolean().default(true)
+});
+export const supplierUpdateSchema = supplierCreateSchema.partial();
+
 export const financialCategorySchema = z.object({
   name: z.string().trim().min(2).max(120),
   type: z.enum(["income", "expense"])
@@ -287,6 +299,8 @@ export type SaleCancelInput = z.infer<typeof saleCancelSchema>;
 export type StockTransferCreateInput = z.infer<typeof stockTransferCreateSchema>;
 export type InventoryCountCreateInput = z.infer<typeof inventoryCountCreateSchema>;
 export type PurchaseEntryCreateInput = z.infer<typeof purchaseEntryCreateSchema>;
+export type SupplierCreateInput = z.infer<typeof supplierCreateSchema>;
+export type SupplierUpdateInput = z.infer<typeof supplierUpdateSchema>;
 export type FinancialCategoryInput = z.infer<typeof financialCategorySchema>;
 export type FinancialMarkPaidInput = z.infer<typeof financialMarkPaidSchema>;
 export type FinancialReconcileInput = z.infer<typeof financialReconcileSchema>;
