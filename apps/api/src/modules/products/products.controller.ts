@@ -1,0 +1,53 @@
+import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { ApiTags } from "@nestjs/swagger";
+import { permissions } from "@sgc/auth";
+import { productCreateSchema, productUpdateSchema, resourceListQuerySchema } from "@sgc/types";
+import { JwtAuthGuard } from "../../shared/auth.guard";
+import { CurrentTenant } from "../../shared/current-user.decorator";
+import { PermissionsGuard } from "../../shared/permissions.guard";
+import { RequirePermissions } from "../../shared/require-permissions.decorator";
+import type { TenantContext } from "../../shared/request-context";
+import { TenantContextGuard } from "../../shared/tenant-context.guard";
+import { ZodValidationPipe } from "../../shared/zod-validation.pipe";
+import { ProductsService } from "./products.service";
+
+@ApiTags("products")
+@UseGuards(JwtAuthGuard, TenantContextGuard, PermissionsGuard)
+@Controller("products")
+export class ProductsController {
+  constructor(@Inject(ProductsService) private readonly productsService: ProductsService) {}
+
+  @RequirePermissions(permissions.products.read)
+  @Get()
+  list(@CurrentTenant() tenant: TenantContext, @Query(new ZodValidationPipe(resourceListQuerySchema)) query: never) {
+    return this.productsService.list(tenant, query);
+  }
+
+  @RequirePermissions(permissions.products.read)
+  @Get(":id")
+  get(@CurrentTenant() tenant: TenantContext, @Param("id") id: string) {
+    return this.productsService.get(tenant, id);
+  }
+
+  @RequirePermissions(permissions.products.create)
+  @Post()
+  create(@CurrentTenant() tenant: TenantContext, @Body(new ZodValidationPipe(productCreateSchema)) body: never) {
+    return this.productsService.create(tenant, body);
+  }
+
+  @RequirePermissions(permissions.products.update)
+  @Patch(":id")
+  update(
+    @CurrentTenant() tenant: TenantContext,
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(productUpdateSchema)) body: never
+  ) {
+    return this.productsService.update(tenant, id, body);
+  }
+
+  @RequirePermissions(permissions.products.delete)
+  @Delete(":id")
+  remove(@CurrentTenant() tenant: TenantContext, @Param("id") id: string) {
+    return this.productsService.remove(tenant, id);
+  }
+}

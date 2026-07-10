@@ -1,0 +1,74 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: sgc-postgres
+    environment:
+      POSTGRES_DB: sgc
+      POSTGRES_USER: sgc_owner
+      POSTGRES_PASSWORD: sgc_owner_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sgc_owner -d sgc"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:8-alpine
+    container_name: sgc-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file: .env
+    environment:
+      API_PORT: 3334
+      DATABASE_URL: postgres://sgc_app:sgc_app_password@postgres:5432/sgc
+      DATABASE_MIGRATION_URL: postgres://sgc_owner:sgc_owner_password@postgres:5432/sgc
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "3334:3334"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    env_file: .env
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3334/api/v1
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+  marketing:
+    build:
+      context: .
+      dockerfile: apps/marketing/Dockerfile
+    env_file: .env
+    ports:
+      - "3001:3001"
+
+volumes:
+  postgres-data:
+  redis-data:

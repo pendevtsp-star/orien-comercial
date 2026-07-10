@@ -1,0 +1,27 @@
+import type { InputHTMLAttributes } from "react";
+import { cn } from "../lib/cn";
+
+export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
+  label?: string;
+  error?: string;
+}
+
+export function Input({ className, label, error, id, ...props }: InputProps) {
+  const inputId = id ?? props.name;
+
+  return (
+    <label className="grid gap-1.5 text-sm text-slate-700" htmlFor={inputId}>
+      {label ? <span className="font-medium">{label}</span> : null}
+      <input
+        id={inputId}
+        className={cn(
+          "h-10 rounded-md border border-[var(--brand-border)] bg-white px-3 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[var(--brand-accent)] focus:ring-2 focus:ring-[color:rgba(245,195,74,0.2)]",
+          error && "border-rose-300 focus:border-rose-400 focus:ring-rose-100",
+          className
+        )}
+        {...props}
+      />
+      {error ? <span className="text-xs text-rose-600">{error}</span> : null}
+    </label>
+  );
+}

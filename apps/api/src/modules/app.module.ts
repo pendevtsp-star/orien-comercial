@@ -1,0 +1,38 @@
+import { Module } from "@nestjs/common";
+import { ThrottlerModule } from "@nestjs/throttler";
+import { AuthModule } from "../modules/auth/auth.module";
+import { BranchesModule } from "../modules/branches/branches.module";
+import { ConfigModule } from "../modules/config/config.module";
+import { CustomersModule } from "../modules/customers/customers.module";
+import { DashboardModule } from "../modules/dashboard/dashboard.module";
+import { DatabaseModule } from "../modules/database/database.module";
+import { FinancialModule } from "../modules/financial/financial.module";
+import { ProductsModule } from "../modules/products/products.module";
+import { SalesModule } from "../modules/sales/sales.module";
+import { StockModule } from "../modules/stock/stock.module";
+import { SubscriptionsModule } from "../modules/subscriptions/subscriptions.module";
+import { TenantsModule } from "../modules/tenants/tenants.module";
+
+@Module({
+  imports: [
+    ConfigModule,
+    DatabaseModule,
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60_000,
+        limit: 120
+      }
+    ]),
+    AuthModule,
+    TenantsModule,
+    BranchesModule,
+    ProductsModule,
+    CustomersModule,
+    StockModule,
+    SalesModule,
+    FinancialModule,
+    SubscriptionsModule,
+    DashboardModule
+  ]
+})
+export class AppModule {}

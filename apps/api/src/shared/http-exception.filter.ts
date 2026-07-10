@@ -1,0 +1,46 @@
+import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from "@nestjs/common";
+import type { Request, Response } from "express";
+
+@Catch()
+export class HttpExceptionFilter implements ExceptionFilter {
+  catch(exception: unknown, host: ArgumentsHost) {
+    const ctx = host.switchToHttp();
+    const request = ctx.getRequest<Request & { requestId?: string }>();
+    const response = ctx.getResponse<Response>();
+    const status = exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
+    const message =
+      exception instanceof HttpException
+        ? normalizeMessage(exception.getResponse())
+        : "Ocorreu um erro inesperado.";
+    const requestId = typeof request.requestId === "string" ? request.requestId : readRequestId(request);
+    const errorCode = exception instanceof HttpException ? exception.name : "InternalServerError";
+
+    if (!(exception instanceof HttpException)) {
+      const errorMessage = exception instanceof Error ? exception.message : "Unknown error";
+      console.error(`[${requestId}] Unhandled API error on ${request.method} ${request.url}:`, errorMessage);
+    }
+
+    response.setHeader("x-request-id", requestId);
+    response.status(status).json({
+      statusCode: status,
+      error: errorCode,
+      message,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
+
+function normalizeMessage(payload: string | object): string | string[] {
+  if (typeof payload === "string") return payload;
+  if ("message" in payload) {
+    const message = payload.message;
+    if (typeof message === "string" || Array.isArray(message)) return message;
+  }
+  return "Requisicao invalida.";
+}
+
+function readRequestId(request: Request): string {
+  const header = request.headers["x-request-id"];
+  return Array.isArray(header) ? header[0] ?? "unknown-request" : header ?? "unknown-request";
+}

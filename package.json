@@ -1,0 +1,34 @@
+{
+  "name": "saas-gestao-comercial",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Monorepo do SaaS multitenant para gestao comercial, estoque, financeiro e relacionamento.",
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "pnpm": ">=11.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @sgc/api --filter @sgc/web --filter @sgc/marketing dev",
+    "dev:api": "pnpm --filter @sgc/api dev",
+    "dev:web": "pnpm --filter @sgc/web dev",
+    "dev:marketing": "pnpm --filter @sgc/marketing dev",
+    "build": "pnpm -r --sort --workspace-concurrency=1 build",
+    "lint": "pnpm -r --sort lint",
+    "test": "pnpm -r --sort test",
+    "test:e2e": "pnpm --filter @sgc/api test:e2e",
+    "typecheck": "pnpm -r --filter \"./packages/*\" --sort build && pnpm -r --sort typecheck",
+    "db:migrate": "pnpm --filter @sgc/db migrate",
+    "db:seed": "pnpm --filter @sgc/db seed",
+    "format": "prettier --check .",
+    "security:scan": "echo \"Use Codex Security plugin for repository scans; do not paste secrets into tools.\""
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "eslint": "^9.39.2",
+    "prettier": "^3.7.4",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.49.0",
+    "vitest": "^4.0.15"
+  }
+}

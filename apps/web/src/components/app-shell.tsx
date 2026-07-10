@@ -1,0 +1,141 @@
+"use client";
+
+import { BrandLogo, Button } from "@sgc/ui";
+import {
+  BarChart3,
+  Boxes,
+  Building2,
+  CircleDollarSign,
+  CreditCard,
+  LogOut,
+  PackageCheck,
+  Settings,
+  ShieldCheck,
+  ShoppingCart,
+  UsersRound
+} from "lucide-react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { apiFetch, getTenantId, setTenantId } from "../lib/api";
+
+const navigation = [
+  { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
+  { href: "/branches", label: "Lojas", icon: Building2 },
+  { href: "/products", label: "Produtos", icon: Boxes },
+  { href: "/stock", label: "Estoque", icon: PackageCheck },
+  { href: "/sales", label: "Vendas", icon: ShoppingCart },
+  { href: "/customers", label: "Clientes", icon: UsersRound },
+  { href: "/financial", label: "Financeiro", icon: CircleDollarSign },
+  { href: "/team", label: "Equipe", icon: ShieldCheck },
+  { href: "/subscription", label: "Assinatura", icon: CreditCard },
+  { href: "/settings", label: "Configuracoes", icon: Settings }
+];
+const appName = process.env.NEXT_PUBLIC_APP_NAME ?? "Orien";
+
+interface MeResponse {
+  user: { name: string; email: string };
+  memberships: Array<{
+    tenantId: string;
+    tenantName: string;
+    branchId: string | null;
+    roleSlug: string;
+  }>;
+}
+
+export function AppShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const [me, setMe] = useState<MeResponse | null>(null);
+
+  useEffect(() => {
+    apiFetch<MeResponse>("/me")
+      .then((payload) => {
+        setMe(payload);
+        if (!getTenantId() && payload.memberships[0]?.tenantId) {
+          setTenantId(payload.memberships[0].tenantId);
+        }
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const currentMembership = useMemo(() => {
+    const tenantId = getTenantId();
+    return me?.memberships.find((membership) => membership.tenantId === tenantId) ?? me?.memberships[0] ?? null;
+  }, [me]);
+
+  async function logout() {
+    await apiFetch("/auth/logout", { method: "POST", body: "{}" }).catch(() => undefined);
+    router.push("/login");
+  }
+
+  return (
+    <div className="min-h-screen bg-[var(--brand-surface)]">
+      <aside className="fixed inset-y-0 left-0 hidden w-72 border-r border-[#11284f] bg-[var(--brand-primary)] text-white lg:block">
+        <div className="flex h-20 items-center border-b border-white/10 px-5">
+          <div className="grid gap-1">
+            <BrandLogo size="sm" theme="dark" />
+            <p className="text-xs text-white/68">Gestao inteligente para negocios em crescimento</p>
+          </div>
+        </div>
+        <nav className="grid gap-1 p-3">
+          {navigation.map((item) => {
+            const Icon = item.icon;
+            const active = pathname === item.href;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`flex h-11 items-center gap-3 rounded-md px-3 text-sm font-medium transition ${
+                  active
+                    ? "bg-[linear-gradient(135deg,#133A7C,#2563EB)] text-white shadow-[0_10px_24px_rgba(37,99,235,0.28)]"
+                    : "text-white/74 hover:bg-white/8 hover:text-white"
+                }`}
+              >
+                <Icon size={17} />
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
+        <div className="absolute inset-x-3 bottom-3 rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-white/72">
+          <p className="font-medium text-white">{appName}</p>
+          <p className="mt-1">Painel premium para operacao comercial, financeira e multiunidade.</p>
+        </div>
+      </aside>
+      <div className="lg:pl-72">
+        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-[var(--brand-border)] bg-white/95 px-4 backdrop-blur lg:px-8">
+          <div className="grid gap-1">
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Tenant ativo</p>
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-sm font-semibold text-[var(--brand-primary)]">{currentMembership?.tenantName ?? "Carregando..."}</p>
+              <p className="text-xs text-slate-500">
+                Perfil {currentMembership?.roleSlug ?? "-"}{currentMembership?.branchId ? ` · Escopo por filial` : " · Escopo global"}
+              </p>
+            </div>
+            {me?.memberships && me.memberships.length > 1 ? (
+              <select
+                className="h-9 max-w-xs rounded-md border border-[var(--brand-border)] bg-white px-3 text-sm text-[var(--brand-primary)]"
+                value={currentMembership?.tenantId ?? ""}
+                onChange={(event) => {
+                  setTenantId(event.target.value);
+                  window.location.reload();
+                }}
+              >
+                {me.memberships.map((membership) => (
+                  <option key={membership.tenantId} value={membership.tenantId}>
+                    {membership.tenantName}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+          </div>
+          <Button variant="secondary" onClick={() => void logout()} icon={<LogOut size={16} />}>
+            Sair
+          </Button>
+        </header>
+        <main className="mx-auto w-full max-w-7xl px-4 py-6 lg:px-8">{children}</main>
+      </div>
+    </div>
+  );
+}
