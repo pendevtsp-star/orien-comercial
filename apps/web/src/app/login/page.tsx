@@ -1,7 +1,7 @@
 "use client";
 
 import { BrandLogo, Button, Input } from "@sgc/ui";
-import { ArrowRight } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { apiFetch, setTenantId } from "../../lib/api";
@@ -15,6 +15,7 @@ export default function LoginPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -53,9 +54,30 @@ export default function LoginPage() {
         </div>
         <form className="grid gap-4" onSubmit={(event) => void onSubmit(event)}>
           <Input label="E-mail" name="email" type="email" autoComplete="email" required />
-          <Input label="Senha" name="password" type="password" autoComplete="current-password" required />
+          <label className="grid gap-1.5 text-sm text-slate-700" htmlFor="password">
+            <span className="font-medium">Senha</span>
+            <div className="relative">
+              <input
+                id="password"
+                name="password"
+                type={showPassword ? "text" : "password"}
+                autoComplete="current-password"
+                required
+                className="h-10 w-full rounded-md border border-[var(--brand-border)] bg-white px-3 pr-11 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[var(--brand-accent)] focus:ring-2 focus:ring-[color:rgba(245,195,74,0.2)]"
+              />
+              <button
+                type="button"
+                className="absolute inset-y-0 right-0 inline-flex w-10 items-center justify-center text-slate-500 transition hover:text-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-accent)]"
+                onClick={() => setShowPassword((current) => !current)}
+                aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+                title={showPassword ? "Ocultar senha" : "Mostrar senha"}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+          </label>
           {error ? <p className="rounded-md bg-rose-50 p-3 text-sm text-rose-700">{error}</p> : null}
-          <Button type="submit" disabled={loading} icon={<ArrowRight size={16} />}>
+          <Button type="submit" className="w-full" disabled={loading}>
             {loading ? "Entrando..." : "Entrar"}
           </Button>
         </form>

@@ -25,8 +25,10 @@ export function Button({ className, variant = "primary", icon, children, ...prop
       )}
       {...props}
     >
-      {icon}
-      {children}
+      <span className="inline-flex items-center justify-center gap-2 whitespace-nowrap">
+        {icon ? <span aria-hidden="true" className="shrink-0">{icon}</span> : null}
+        <span>{children}</span>
+      </span>
     </button>
   );
 }

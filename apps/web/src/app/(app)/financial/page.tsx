@@ -650,7 +650,10 @@ function FinancialHero({
   secondaryLabel: string;
 }) {
   return (
-    <Card className="overflow-hidden border-[#11284f] bg-[var(--brand-primary)] text-white shadow-[0_28px_64px_rgba(11,29,61,0.18)]">
+    <Card
+      className="overflow-hidden border-[#11284f] text-white shadow-[0_28px_64px_rgba(11,29,61,0.18)]"
+      style={{ backgroundColor: "var(--brand-primary)" }}
+    >
       <CardContent className="grid gap-4 p-6 lg:grid-cols-[1.15fr_0.85fr]">
         <div>
           <Badge className="border-white/10 bg-white/10 text-white">Fluxo de caixa</Badge>
@@ -659,7 +662,7 @@ function FinancialHero({
           </h2>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-white/72">{description}</p>
         </div>
-        <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/6 p-4">
+        <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/[0.06] p-4">
           <FinanceFigure label={primaryLabel} value={primaryValue} />
           <FinanceFigure label={secondaryLabel} value={secondaryValue} accent />
         </div>
@@ -670,7 +673,7 @@ function FinancialHero({
 
 function FinanceFigure({ label, value, accent = false }: { label: string; value: number; accent?: boolean }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/8 p-4">
+    <div className="rounded-xl border border-white/10 bg-white/[0.08] p-4">
       <p className="text-xs font-medium uppercase tracking-[0.12em] text-white/68">{label}</p>
       <p className={`mt-2 text-2xl font-semibold ${accent ? "text-[var(--brand-accent)]" : "text-white"}`}>
         {value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}

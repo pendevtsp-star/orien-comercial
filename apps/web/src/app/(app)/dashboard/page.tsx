@@ -67,7 +67,10 @@ export default function DashboardPage() {
       ) : null}
 
       <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-        <Card className="overflow-hidden border-[#11284f] bg-[var(--brand-primary)] text-white shadow-[0_30px_70px_rgba(11,29,61,0.18)]">
+        <Card
+          className="overflow-hidden border-[#11284f] text-white shadow-[0_30px_70px_rgba(11,29,61,0.18)]"
+          style={{ backgroundColor: "var(--brand-primary)" }}
+        >
           <CardContent className="relative grid gap-6 p-6 lg:grid-cols-[1.2fr_0.8fr]">
             <div className="absolute inset-y-0 right-0 hidden w-1/2 bg-[radial-gradient(circle_at_top_right,rgba(245,195,74,0.16),transparent_42%)] lg:block" />
             <div className="relative">
@@ -79,7 +82,7 @@ export default function DashboardPage() {
                 Este painel prioriza o que exige acao rapida: vendas do periodo, exposicao financeira e pontos de reposicao por loja.
               </p>
             </div>
-            <div className="relative grid gap-3 rounded-2xl border border-white/10 bg-white/6 p-4 backdrop-blur">
+            <div className="relative grid gap-3 rounded-2xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur">
                 <ExecutiveMetric label="Vendas hoje" value={summary?.salesToday ?? 0} icon={ShoppingCart} loading={loading} />
                 <ExecutiveMetric label="Ticket medio" value={summary?.averageTicket ?? 0} money icon={CircleDollarSign} loading={loading} />
                 <ExecutiveMetric
@@ -201,7 +204,7 @@ function ExecutiveMetric({
   loading?: boolean;
 }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/8 p-4">
+    <div className="rounded-xl border border-white/10 bg-white/[0.08] p-4">
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs font-medium uppercase tracking-[0.14em] text-white/68">{label}</p>
         <Icon size={16} className="text-[var(--brand-accent)]" />
