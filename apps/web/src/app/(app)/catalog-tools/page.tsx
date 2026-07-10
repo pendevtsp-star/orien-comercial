@@ -1,7 +1,7 @@
 "use client";
 
 import { Badge, Button, Card, CardContent, DataTable, PageHeader, Select, Tabs } from "@sgc/ui";
-import { FileSpreadsheet, Printer, Upload } from "lucide-react";
+import { Eye, FileSpreadsheet, Printer, Upload } from "lucide-react";
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import { apiFetch, openApiDocument } from "../../../lib/api";
 
@@ -28,6 +28,7 @@ interface Preview {
 export default function CatalogToolsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
+  const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [size, setSize] = useState("50x30");
   const [entityType, setEntityType] = useState("products");
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -42,6 +43,18 @@ export default function CatalogToolsPage() {
     () => products.length > 0 && selected.length === products.length,
     [products, selected],
   );
+  const labelItems = selected.map((id) => `${id}:${quantities[id] ?? 1}`).join(",");
+  const labelCount = selected.reduce((total, id) => total + (quantities[id] ?? 1), 0);
+  async function openLabels(autoprint: boolean) {
+    setError(null);
+    try {
+      await openApiDocument(
+        `/products/labels/print?items=${labelItems}&size=${size}&autoprint=${autoprint}`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao preparar etiquetas.");
+    }
+  }
   async function chooseFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -97,6 +110,12 @@ export default function CatalogToolsPage() {
             content: (
               <Card>
                 <CardContent className="grid gap-4">
+                  <div className="rounded-md border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-950">
+                    <strong className="block">Como emitir etiquetas</strong>
+                    Cadastre o código de barras no produto, selecione os itens abaixo, informe a
+                    quantidade e confira a prévia. Na impressão, escolha a impressora térmica e use
+                    escala 100%, margens ausentes e o mesmo tamanho configurado aqui.
+                  </div>
                   <div className="flex flex-wrap items-end gap-3">
                     <Select
                       label="Tamanho"
@@ -109,15 +128,19 @@ export default function CatalogToolsPage() {
                       ]}
                     />
                     <Button
+                      variant="secondary"
+                      icon={<Eye size={16} />}
+                      disabled={!selected.length}
+                      onClick={() => void openLabels(false)}
+                    >
+                      Ver prévia
+                    </Button>
+                    <Button
                       icon={<Printer size={16} />}
                       disabled={!selected.length}
-                      onClick={() =>
-                        void openApiDocument(
-                          `/products/labels/print?ids=${selected.join(",")}&size=${size}`,
-                        )
-                      }
+                      onClick={() => void openLabels(true)}
                     >
-                      Imprimir {selected.length} etiqueta(s)
+                      Imprimir {labelCount} etiqueta(s)
                     </Button>
                     <Button
                       variant="secondary"
@@ -163,6 +186,30 @@ export default function CatalogToolsPage() {
                             style: "currency",
                             currency: "BRL",
                           }),
+                      },
+                      {
+                        key: "quantity",
+                        header: "Quantidade",
+                        render: (row) => (
+                          <input
+                            className="h-10 w-24 rounded-md border border-[var(--brand-border)] px-3"
+                            type="number"
+                            min="1"
+                            max="100"
+                            value={quantities[row.id] ?? 1}
+                            disabled={!selected.includes(row.id)}
+                            aria-label={`Quantidade de etiquetas para ${row.name}`}
+                            onChange={(event) =>
+                              setQuantities((current) => ({
+                                ...current,
+                                [row.id]: Math.min(
+                                  100,
+                                  Math.max(1, Number(event.target.value) || 1),
+                                ),
+                              }))
+                            }
+                          />
+                        ),
                       },
                     ]}
                   />

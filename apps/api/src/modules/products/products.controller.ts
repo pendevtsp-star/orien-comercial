@@ -1,4 +1,16 @@
-import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query, Res, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Inject,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Res,
+  UseGuards,
+} from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { permissions } from "@sgc/auth";
 import { productCreateSchema, productUpdateSchema, resourceListQuerySchema } from "@sgc/types";
@@ -20,15 +32,32 @@ export class ProductsController {
 
   @RequirePermissions(permissions.products.read)
   @Get()
-  list(@CurrentTenant() tenant: TenantContext, @Query(new ZodValidationPipe(resourceListQuerySchema)) query: never) {
+  list(
+    @CurrentTenant() tenant: TenantContext,
+    @Query(new ZodValidationPipe(resourceListQuerySchema)) query: never,
+  ) {
     return this.productsService.list(tenant, query);
   }
 
   @RequirePermissions(permissions.products.read)
   @Get("labels/print")
-  async labels(@CurrentTenant() tenant: TenantContext, @Query("ids") ids: string, @Query("size") size: string | undefined, @Res() response: Response) {
+  async labels(
+    @CurrentTenant() tenant: TenantContext,
+    @Query("items") items: string | undefined,
+    @Query("ids") legacyIds: string | undefined,
+    @Query("size") size: string | undefined,
+    @Query("autoprint") autoprint: string | undefined,
+    @Res() response: Response,
+  ) {
     response.type("html");
-    response.send(await this.productsService.labels(tenant, ids, size));
+    response.send(
+      await this.productsService.labels(
+        tenant,
+        items ?? legacyIds ?? "",
+        size,
+        autoprint !== "false",
+      ),
+    );
   }
 
   @RequirePermissions(permissions.products.read)
@@ -39,7 +68,10 @@ export class ProductsController {
 
   @RequirePermissions(permissions.products.create)
   @Post()
-  create(@CurrentTenant() tenant: TenantContext, @Body(new ZodValidationPipe(productCreateSchema)) body: never) {
+  create(
+    @CurrentTenant() tenant: TenantContext,
+    @Body(new ZodValidationPipe(productCreateSchema)) body: never,
+  ) {
     return this.productsService.create(tenant, body);
   }
 
@@ -48,7 +80,7 @@ export class ProductsController {
   update(
     @CurrentTenant() tenant: TenantContext,
     @Param("id") id: string,
-    @Body(new ZodValidationPipe(productUpdateSchema)) body: never
+    @Body(new ZodValidationPipe(productUpdateSchema)) body: never,
   ) {
     return this.productsService.update(tenant, id, body);
   }

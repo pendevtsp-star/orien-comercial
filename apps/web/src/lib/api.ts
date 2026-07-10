@@ -6,7 +6,7 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly statusCode?: number,
-    readonly requestId?: string
+    readonly requestId?: string,
   ) {
     super(message);
     this.name = "ApiError";
@@ -39,7 +39,7 @@ async function request<T>(path: string, init: RequestInit, allowRefresh: boolean
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
     credentials: "include",
-    headers
+    headers,
   });
 
   if (response.status === 401 && allowRefresh && !path.startsWith("/auth/")) {
@@ -48,11 +48,15 @@ async function request<T>(path: string, init: RequestInit, allowRefresh: boolean
   }
 
   if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { message?: string; requestId?: string; statusCode?: number } | null;
+    const payload = (await response.json().catch(() => null)) as {
+      message?: string;
+      requestId?: string;
+      statusCode?: number;
+    } | null;
     const error = new ApiError(
       payload?.message ?? "Falha ao comunicar com a API.",
       payload?.statusCode ?? response.status,
-      payload?.requestId ?? response.headers.get("x-request-id") ?? requestId
+      payload?.requestId ?? response.headers.get("x-request-id") ?? requestId,
     );
     if (response.status === 401 && typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("sgc:session-expired"));
@@ -60,7 +64,20 @@ async function request<T>(path: string, init: RequestInit, allowRefresh: boolean
     throw error;
   }
 
-  return response.json() as Promise<T>;
+  if (response.status === 204) return undefined as T;
+
+  const text = await response.text();
+  if (!text.trim()) return undefined as T;
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new ApiError(
+      "A API retornou uma resposta invalida.",
+      response.status,
+      response.headers.get("x-request-id") ?? requestId,
+    );
+  }
 }
 
 async function refreshSession() {
@@ -69,15 +86,36 @@ async function refreshSession() {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json", "x-request-id": createRequestId() },
-      body: "{}"
-    }).then((response) => response.ok).catch(() => false).finally(() => {
-      refreshPromise = null;
-    });
+      body: "{}",
+    })
+      .then((response) => response.ok)
+      .catch(() => false)
+      .finally(() => {
+        refreshPromise = null;
+      });
   }
   return refreshPromise;
 }
 
 export async function openApiDocument(path: string, allowRefresh = true): Promise<void> {
+  const popup = window.open("", "_blank");
+  if (!popup) {
+    throw new Error("O navegador bloqueou a janela. Permita pop-ups para visualizar o documento.");
+  }
+  popup.opener = null;
+  popup.document.write(
+    '<!doctype html><html lang="pt-BR"><body style="font-family:Arial;padding:24px">Preparando documento...</body></html>',
+  );
+
+  try {
+    await loadApiDocument(path, popup, allowRefresh);
+  } catch (error) {
+    popup.close();
+    throw error;
+  }
+}
+
+async function loadApiDocument(path: string, popup: Window, allowRefresh: boolean): Promise<void> {
   const tenantId = getTenantId();
   const headers = new Headers();
   const requestId = createRequestId();
@@ -86,28 +124,27 @@ export async function openApiDocument(path: string, allowRefresh = true): Promis
 
   const response = await fetch(`${API_URL}${path}`, {
     credentials: "include",
-    headers
+    headers,
   });
 
-  if (response.status === 401 && allowRefresh && await refreshSession()) {
-    return openApiDocument(path, false);
+  if (response.status === 401 && allowRefresh && (await refreshSession())) {
+    return loadApiDocument(path, popup, false);
   }
 
   if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { message?: string; requestId?: string; statusCode?: number } | null;
+    const payload = (await response.json().catch(() => null)) as {
+      message?: string;
+      requestId?: string;
+      statusCode?: number;
+    } | null;
     throw new ApiError(
       payload?.message ?? "Falha ao abrir documento.",
       payload?.statusCode ?? response.status,
-      payload?.requestId ?? response.headers.get("x-request-id") ?? requestId
+      payload?.requestId ?? response.headers.get("x-request-id") ?? requestId,
     );
   }
 
   const html = await response.text();
-  const popup = window.open("", "_blank", "noopener,noreferrer");
-  if (!popup) {
-    throw new Error("Nao foi possivel abrir a janela do documento.");
-  }
-
   popup.document.open();
   popup.document.write(html);
   popup.document.close();
