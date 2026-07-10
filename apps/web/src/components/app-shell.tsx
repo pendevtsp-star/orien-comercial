@@ -136,7 +136,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <p className="text-xs text-white/68">Gestao inteligente para negocios em crescimento</p>
           </div>
         </div>
-        <nav className="grid gap-1 p-3">
+        <nav className="grid max-h-[calc(100vh-5rem)] gap-1 overflow-y-auto p-3 pb-32">
           {navigation.map((item) => {
             const Icon = item.icon;
             const active = pathname === item.href;
@@ -197,7 +197,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             Sair
           </Button>
         </header>
-        <main className="mx-auto w-full max-w-7xl overflow-x-clip px-4 py-6 lg:px-8">{children}</main>
+        <main className="mx-auto w-full min-w-0 max-w-[1600px] overflow-x-clip px-3 py-5 sm:px-4 lg:px-6 xl:px-8">{children}</main>
       </div>
     </div>
   );

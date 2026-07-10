@@ -153,7 +153,7 @@ export default function StockPage() {
         title="Estoque"
         description="Transferencias, inventario, entradas por compra e monitoramento de estoque baixo ou parado."
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={() => void openApiDocument("/stock/reports/document?kind=low-stock")}>
               Exportar estoque baixo
             </Button>

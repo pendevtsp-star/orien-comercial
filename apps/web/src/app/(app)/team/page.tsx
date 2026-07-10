@@ -340,7 +340,7 @@ export default function TeamPage() {
             value: "invites",
             label: "Convites",
             content: (
-              <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
+              <div className="grid min-w-0 gap-4 2xl:grid-cols-[360px_minmax(0,1fr)]">
                 <Card>
                   <CardContent className="grid gap-4">
                     <form className="grid gap-3" onSubmit={(event) => void invite(event)}>

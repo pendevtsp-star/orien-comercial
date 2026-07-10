@@ -331,7 +331,7 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
               <span className="font-medium text-[var(--brand-primary)]">{showingTo}</span> de{" "}
               <span className="font-medium text-[var(--brand-primary)]">{pagination.total}</span> registros
             </p>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button type="button" variant="secondary" icon={<ChevronLeft size={16} />} disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>
                 Anterior
               </Button>

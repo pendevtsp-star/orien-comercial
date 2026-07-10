@@ -14,8 +14,8 @@ export function EmptyState({
   icon?: ReactNode;
 }) {
   return (
-    <div className="grid place-items-center overflow-hidden rounded-xl border border-dashed border-[var(--brand-border)] bg-white p-8 text-center shadow-[0_12px_30px_rgba(11,29,61,0.04)] sm:p-10">
-      <div className="max-w-md">
+    <div className="grid min-w-0 max-w-full place-items-center overflow-hidden rounded-xl border border-dashed border-[var(--brand-border)] bg-white p-5 text-center shadow-[0_12px_30px_rgba(11,29,61,0.04)] sm:p-8">
+      <div className="min-w-0 max-w-md">
         {icon ? (
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface)] text-[var(--brand-secondary)] shadow-[0_10px_22px_rgba(11,29,61,0.08)]">
             {icon}

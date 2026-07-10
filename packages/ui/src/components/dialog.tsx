@@ -17,7 +17,7 @@ export function Dialog({
       <RadixDialog.Trigger asChild>{trigger}</RadixDialog.Trigger>
       <RadixDialog.Portal>
         <RadixDialog.Overlay className="fixed inset-0 z-40 bg-slate-950/35" />
-        <RadixDialog.Content className="fixed left-1/2 top-1/2 z-50 w-[min(92vw,560px)] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
+        <RadixDialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-[min(92vw,560px)] min-w-0 -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg border border-slate-200 bg-white p-4 shadow-xl sm:p-5">
           <div className="mb-4 flex items-center justify-between gap-3">
             <RadixDialog.Title className="text-base font-semibold text-slate-950">{title}</RadixDialog.Title>
             <RadixDialog.Close asChild>

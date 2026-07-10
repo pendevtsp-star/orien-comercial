@@ -51,7 +51,7 @@ export default function LoginPage() {
 
   return (
     <main className="grid min-h-screen place-items-center bg-[radial-gradient(circle_at_top,#f7f8fc_0%,#eef2f8_44%,#f8fafc_100%)] px-4">
-      <section className="w-full max-w-md rounded-2xl border border-[var(--brand-border)] bg-white p-7 shadow-[0_24px_70px_rgba(11,29,61,0.08)]">
+      <section className="w-full max-w-md rounded-2xl border border-[var(--brand-border)] bg-white p-5 shadow-[0_24px_70px_rgba(11,29,61,0.08)] sm:p-7">
         <div className="mb-6">
           <BrandLogo size="sm" className="mb-5" />
           <p className="text-sm font-medium text-[var(--brand-secondary)]">{appName}</p>

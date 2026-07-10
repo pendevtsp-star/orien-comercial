@@ -19,15 +19,15 @@ export function Button({ className, variant = "primary", icon, children, ...prop
   return (
     <button
       className={cn(
-        "inline-flex h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50",
+        "inline-flex min-h-10 max-w-full min-w-0 items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50",
         variants[variant],
         className
       )}
       {...props}
     >
-      <span className="inline-flex items-center justify-center gap-2 whitespace-nowrap">
+      <span className="inline-flex min-w-0 items-center justify-center gap-2 text-center leading-5">
         {icon ? <span aria-hidden="true" className="shrink-0">{icon}</span> : null}
-        <span>{children}</span>
+        <span className="min-w-0 break-words">{children}</span>
       </span>
     </button>
   );

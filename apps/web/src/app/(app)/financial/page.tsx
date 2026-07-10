@@ -373,7 +373,7 @@ export default function FinancialPage() {
             value: "categorias",
             label: "Categorias",
             content: (
-              <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
+              <div className="grid min-w-0 gap-4 2xl:grid-cols-[360px_minmax(0,1fr)]">
                 <Card>
                   <CardContent>
                     <form className="grid gap-3" onSubmit={(event) => void createCategory(event)}>
@@ -487,8 +487,8 @@ function FinancialColumn({
   onNextPage: () => void;
 }) {
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
-      <Card className="lg:order-2 lg:sticky lg:top-20 lg:self-start">
+    <div className="grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1fr)_340px]">
+      <Card className="2xl:order-2 2xl:sticky 2xl:top-20 2xl:self-start">
         <CardContent className="grid gap-4">
           <form className="grid gap-3" onSubmit={onSubmit}>
             <div>
