@@ -7,7 +7,7 @@ COPY apps/api ./apps/api
 RUN pnpm install --frozen-lockfile
 
 FROM deps AS builder
-RUN pnpm --filter @sgc/auth --filter @sgc/config --filter @sgc/types --filter @sgc/db --filter @sgc/api build
+RUN pnpm --filter @sgc/auth --filter @sgc/config --filter @sgc/documents --filter @sgc/types --filter @sgc/db --filter @sgc/api build
 
 FROM node:24-alpine AS runner
 WORKDIR /app
