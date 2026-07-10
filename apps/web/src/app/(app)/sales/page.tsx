@@ -2,7 +2,7 @@
 
 import { Badge, Button, Card, CardContent, DataTable, EmptyState, Input, PageHeader, Select } from "@sgc/ui";
 import { Ban, CircleDollarSign, Package2, Plus, RefreshCw, ShoppingCart, Wallet, type LucideIcon } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, openApiDocument } from "../../../lib/api";
 import { PaginationFooter } from "../../../components/pagination-footer";
 
@@ -74,6 +74,7 @@ export default function SalesPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [scannerCode, setScannerCode] = useState("");
   const [pagination, setPagination] = useState({ total: 0, page: 1, pageSize: 10 });
+  const scannerInputRef = useRef<HTMLInputElement>(null);
 
   const branchOptions = useMemo(() => branches.map((branch) => ({ label: branch.name, value: branch.id })), [branches]);
   const productOptions = useMemo(
@@ -117,6 +118,21 @@ export default function SalesPage() {
   useEffect(() => {
     void load();
   }, [page, search, statusFilter]);
+
+  useEffect(() => {
+    function handleShortcut(event: KeyboardEvent) {
+      if (event.key === "F2") {
+        event.preventDefault();
+        scannerInputRef.current?.focus();
+      }
+      if (event.key === "Escape" && document.activeElement === scannerInputRef.current) {
+        setScannerCode("");
+      }
+    }
+
+    window.addEventListener("keydown", handleShortcut);
+    return () => window.removeEventListener("keydown", handleShortcut);
+  }, []);
 
   function addItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -257,6 +273,7 @@ export default function SalesPage() {
                 <p className="text-sm text-slate-500">Adicione os produtos, ajuste preco e desconto e acompanhe o total parcial em tempo real.</p>
               </div>
               <Input
+                ref={scannerInputRef}
                 label="Leitor de código de barras"
                 placeholder="Aponte o leitor e pressione Enter"
                 value={scannerCode}
@@ -268,7 +285,7 @@ export default function SalesPage() {
                   }
                 }}
               />
-              <p className="-mt-2 text-xs text-slate-500">Leitores USB ou Bluetooth em modo teclado adicionam o item automaticamente.</p>
+              <p className="-mt-2 text-xs text-slate-500">Leitores USB ou Bluetooth em modo teclado adicionam o item automaticamente. F2 posiciona o cursor no leitor.</p>
               <form className="grid gap-3" onSubmit={addItem}>
                 <Select name="productId" label="Produto" options={productOptions} required />
                 <div className="grid gap-3 md:grid-cols-3">

@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes } from "react";
+import { forwardRef, type InputHTMLAttributes } from "react";
 import { cn } from "../lib/cn";
 
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
@@ -6,13 +6,14 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   error?: string;
 }
 
-export function Input({ className, label, error, id, ...props }: InputProps) {
+export const Input = forwardRef<HTMLInputElement, InputProps>(function Input({ className, label, error, id, ...props }, ref) {
   const inputId = id ?? props.name;
 
   return (
     <label className="grid min-w-0 gap-1.5 text-sm text-slate-700" htmlFor={inputId}>
       {label ? <span className="font-medium">{label}</span> : null}
       <input
+        ref={ref}
         id={inputId}
         className={cn(
           "h-10 w-full min-w-0 rounded-md border border-[var(--brand-border)] bg-white px-3 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[var(--brand-accent)] focus:ring-2 focus:ring-[color:rgba(245,195,74,0.2)]",
@@ -24,4 +25,6 @@ export function Input({ className, label, error, id, ...props }: InputProps) {
       {error ? <span className="text-xs text-rose-600">{error}</span> : null}
     </label>
   );
-}
+});
+
+Input.displayName = "Input";
