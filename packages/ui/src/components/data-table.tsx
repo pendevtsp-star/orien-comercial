@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { isValidElement, type ReactNode } from "react";
 import { cn } from "../lib/cn";
 
 export interface DataTableColumn<T> {
@@ -17,6 +17,7 @@ export function DataTable<T extends { id: string }>({
   empty?: ReactNode;
 }) {
   if (!rows.length) {
+    if (isValidElement(empty)) return empty;
     return (
       <div className="rounded-xl border border-dashed border-[var(--brand-border)] bg-white p-8 text-center text-sm text-slate-500">
         {empty}

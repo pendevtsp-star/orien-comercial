@@ -142,7 +142,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
       <div className="lg:pl-72">
-        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-[var(--brand-border)] bg-white/95 px-4 backdrop-blur lg:px-8">
+        <header className="sticky top-0 z-20 flex min-h-16 items-center justify-between gap-3 border-b border-[var(--brand-border)] bg-white/95 px-4 py-3 backdrop-blur lg:h-16 lg:px-8 lg:py-0">
           <div className="flex min-w-0 items-center gap-3">
             <Button variant="secondary" className="h-9 w-9 px-0 lg:hidden" aria-label="Abrir menu" onClick={() => setMobileNavigationOpen(true)}>
               <Menu size={18} />
@@ -150,8 +150,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="grid min-w-0 gap-1">
             <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Tenant ativo</p>
             <div className="flex flex-wrap items-center gap-3">
-              <p className="text-sm font-semibold text-[var(--brand-primary)]">{currentMembership?.tenantName ?? "Carregando..."}</p>
-              <p className="text-xs text-slate-500">
+              <p className="max-w-[13rem] truncate text-sm font-semibold text-[var(--brand-primary)] sm:max-w-none">{currentMembership?.tenantName ?? "Carregando..."}</p>
+              <p className="max-w-[13rem] truncate text-xs text-slate-500 sm:max-w-none">
                 Perfil {currentMembership?.roleSlug ?? "-"}{currentMembership?.branchId ? " · Filial autorizada" : " · Todas as lojas"}
               </p>
             </div>
@@ -173,7 +173,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             ) : null}
             </div>
           </div>
-          <Button variant="secondary" onClick={() => void logout()} icon={<LogOut size={16} />}>
+          <Button variant="secondary" className="shrink-0" onClick={() => void logout()} icon={<LogOut size={16} />}>
             Sair
           </Button>
         </header>

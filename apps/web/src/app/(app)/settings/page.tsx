@@ -82,8 +82,8 @@ export default function SettingsPage() {
         <Card>
           <CardContent>
             <form className="grid gap-4" onSubmit={(event) => void submit(event)}>
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
                   <h2 className="text-base font-semibold text-slate-950">Identidade da empresa</h2>
                   <p className="text-sm text-slate-500">Aplicada a relatorios, e-mails, comprovantes e documentos emitidos.</p>
                 </div>

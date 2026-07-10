@@ -147,14 +147,14 @@ export default function SubscriptionPage() {
             {(data?.plans ?? []).map((plan) => {
               const isCurrentPlan = data?.subscription?.planSlug === plan.slug;
               return (
-              <div key={plan.id} className="flex items-center justify-between rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface)] p-4">
-                <div>
+              <div key={plan.id} className="flex flex-col gap-3 rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface)] p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
                   <p className="font-medium text-[var(--brand-primary)]">{plan.name}</p>
                   <p className="text-sm text-slate-500">
                     {(plan.priceCents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}/mes
                   </p>
                 </div>
-                <Button disabled={loading || isCurrentPlan} onClick={() => void startCheckout(plan.slug)}>
+                <Button className="w-full sm:w-auto" disabled={loading || isCurrentPlan} onClick={() => void startCheckout(plan.slug)}>
                   {isCurrentPlan ? "Plano atual" : "Iniciar checkout"}
                 </Button>
               </div>
