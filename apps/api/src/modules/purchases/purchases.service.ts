@@ -32,6 +32,14 @@ export class PurchasesService {
     });
   }
 
+  async get(context: TenantContext, id: string) {
+    const order = await this.database.tenantQuery<{ branchId: string }>(context.tenantId, `SELECT po.id,po.branch_id AS "branchId",b.name AS "branchName",po.supplier_id AS "supplierId",s.name AS "supplierName",po.status,po.expected_at AS "expectedAt",po.total_amount::text AS "totalAmount",po.notes,po.created_at AS "createdAt" FROM purchase_orders po JOIN branches b ON b.id=po.branch_id JOIN suppliers s ON s.id=po.supplier_id WHERE po.tenant_id=$1 AND po.id=$2 AND po.deleted_at IS NULL`, [context.tenantId,id]);
+    const found = ensureFound(order.rows[0], "Pedido");
+    ensureBranchAccess(context, found.branchId);
+    const items = await this.database.tenantQuery(context.tenantId, `SELECT poi.product_id AS "productId",p.name AS "productName",poi.quantity::text,poi.received_quantity::text AS "receivedQuantity",poi.unit_cost::text AS "unitCost" FROM purchase_order_items poi JOIN products p ON p.id=poi.product_id WHERE poi.tenant_id=$1 AND poi.purchase_order_id=$2 ORDER BY p.name`, [context.tenantId,id]);
+    return { ...found, items: items.rows };
+  }
+
   async approve(context: TenantContext, id: string) {
     const result = await this.database.tenantTransaction(context.tenantId, async (client) => {
       const order = await client.query<{ branch_id: string; status: string }>("SELECT branch_id,status FROM purchase_orders WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL FOR UPDATE", [context.tenantId, id]);

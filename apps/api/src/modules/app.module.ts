@@ -8,6 +8,7 @@ import { CustomersModule } from "../modules/customers/customers.module";
 import { DashboardModule } from "../modules/dashboard/dashboard.module";
 import { DatabaseModule } from "../modules/database/database.module";
 import { FinancialModule } from "../modules/financial/financial.module";
+import { ImportsModule } from "../modules/imports/imports.module";
 import { ProductsModule } from "../modules/products/products.module";
 import { PurchasesModule } from "../modules/purchases/purchases.module";
 import { SalesModule } from "../modules/sales/sales.module";
@@ -37,6 +38,7 @@ import { TenantsModule } from "../modules/tenants/tenants.module";
     SuppliersModule,
     SalesModule,
     FinancialModule,
+    ImportsModule,
     SubscriptionsModule,
     DashboardModule
   ]

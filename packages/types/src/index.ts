@@ -208,6 +208,13 @@ export const purchaseOrderReceiveSchema = z.object({
   })).min(1).max(100)
 });
 
+export const importPreviewSchema = z.object({
+  entityType: z.enum(["products", "customers"]),
+  fileBase64: z.string().min(16).max(20_000_000)
+});
+
+export const importCommitSchema = z.object({ jobId: uuidSchema });
+
 export const stockTransferItemSchema = z.object({
   productId: uuidSchema,
   quantity: z.coerce.number().positive()
@@ -345,6 +352,7 @@ export type CashRegisterCloseInput = z.infer<typeof cashRegisterCloseSchema>;
 export type CashRegisterMovementInput = z.infer<typeof cashRegisterMovementSchema>;
 export type PurchaseOrderCreateInput = z.infer<typeof purchaseOrderCreateSchema>;
 export type PurchaseOrderReceiveInput = z.infer<typeof purchaseOrderReceiveSchema>;
+export type ImportPreviewInput = z.infer<typeof importPreviewSchema>;
 export type StockTransferCreateInput = z.infer<typeof stockTransferCreateSchema>;
 export type InventoryCountCreateInput = z.infer<typeof inventoryCountCreateSchema>;
 export type PurchaseEntryCreateInput = z.infer<typeof purchaseEntryCreateSchema>;

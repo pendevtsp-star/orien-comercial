@@ -3,6 +3,7 @@ import type { ProductCreateInput, ProductUpdateInput, ResourceListQuery } from "
 import { ensureBranchAccess, ensureFound, pagination, resolveSort } from "../../shared/resource-access";
 import type { TenantContext } from "../../shared/request-context";
 import { DatabaseService } from "../database/database.service";
+import bwipjs from "bwip-js";
 
 @Injectable()
 export class ProductsService {
@@ -165,4 +166,15 @@ export class ProductsService {
     ensureFound(result.rows[0], "Produto");
     return { ok: true };
   }
+
+  async labels(context: TenantContext, idsInput: string, size = "50x30") {
+    const ids = idsInput.split(",").map((id) => id.trim()).filter(Boolean).slice(0, 100);
+    if (!ids.length) throw new Error("Selecione ao menos um produto.");
+    const products = await this.database.tenantQuery<{ name:string;sku:string|null;barcode:string|null;salePrice:string }>(context.tenantId, `SELECT name,sku,barcode,sale_price::text AS "salePrice" FROM products WHERE tenant_id=$1 AND id=ANY($2::uuid[]) AND deleted_at IS NULL AND is_active=true ORDER BY name`, [context.tenantId,ids]);
+    const [width,height] = size === "40x25" ? [40,25] : size === "60x40" ? [60,40] : [50,30];
+    const labels = products.rows.map((product) => { const code=product.barcode??product.sku; const barcode=code?bwipjs.toSVG({bcid:"code128",text:code,scale:2,height:8,includetext:true,textxalign:"center"}):"<div class='missing'>SEM CODIGO</div>"; return `<article><strong>${escapeHtml(product.name)}</strong><div class="barcode">${barcode}</div><div class="price">${Number(product.salePrice).toLocaleString("pt-BR",{style:"currency",currency:"BRL"})}</div></article>`; }).join("");
+    return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Etiquetas Orien</title><style>@page{size:${width}mm ${height}mm;margin:0}*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;color:#0b1d3d}article{width:${width}mm;height:${height}mm;padding:2.5mm;display:grid;grid-template-rows:auto 1fr auto;place-items:center;text-align:center;break-after:page;overflow:hidden}strong{font-size:10pt;line-height:1.1;max-width:100%;overflow:hidden}.barcode{width:100%;display:grid;place-items:center}.barcode svg{max-width:100%;max-height:${Math.max(10,height-14)}mm}.price{font-size:12pt;font-weight:700}.missing{font-size:9pt;border:1px solid #999;padding:2mm}</style></head><body>${labels}<script>window.onload=()=>window.print()</script></body></html>`;
+  }
 }
+
+function escapeHtml(value:string){return value.replace(/[&<>"]/g,(char)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[char]!);}

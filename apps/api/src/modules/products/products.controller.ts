@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query, Res, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { permissions } from "@sgc/auth";
 import { productCreateSchema, productUpdateSchema, resourceListQuerySchema } from "@sgc/types";
@@ -9,6 +9,7 @@ import { RequirePermissions } from "../../shared/require-permissions.decorator";
 import type { TenantContext } from "../../shared/request-context";
 import { TenantContextGuard } from "../../shared/tenant-context.guard";
 import { ZodValidationPipe } from "../../shared/zod-validation.pipe";
+import type { Response } from "express";
 import { ProductsService } from "./products.service";
 
 @ApiTags("products")
@@ -21,6 +22,13 @@ export class ProductsController {
   @Get()
   list(@CurrentTenant() tenant: TenantContext, @Query(new ZodValidationPipe(resourceListQuerySchema)) query: never) {
     return this.productsService.list(tenant, query);
+  }
+
+  @RequirePermissions(permissions.products.read)
+  @Get("labels/print")
+  async labels(@CurrentTenant() tenant: TenantContext, @Query("ids") ids: string, @Query("size") size: string | undefined, @Res() response: Response) {
+    response.type("html");
+    response.send(await this.productsService.labels(tenant, ids, size));
   }
 
   @RequirePermissions(permissions.products.read)
