@@ -1,4 +1,5 @@
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { permissions } from "@sgc/auth";
 import { renderDocumentHtml } from "@sgc/documents";
 import type { SaleCancelInput, SaleCreateInput, SalesListQuery } from "@sgc/types";
 import type { PoolClient, QueryResult } from "pg";
@@ -112,6 +113,15 @@ export class SalesService {
       }
 
       const productById = new Map(products.rows.map((product) => [product.id, product]));
+      for (const item of input.items) {
+        const product = productById.get(item.productId);
+        const unitPrice = item.unitPrice ?? Number(product?.sale_price ?? 0);
+        const grossAmount = item.quantity * unitPrice;
+        if (item.discountAmount > grossAmount) throw new BadRequestException("Desconto nao pode superar o valor do item.");
+        if (grossAmount > 0 && item.discountAmount / grossAmount > 0.1 && !context.permissions.includes(permissions.sales.cancel)) {
+          throw new ForbiddenException("Descontos acima de 10% exigem autorizacao de gerente ou administrador.");
+        }
+      }
       const totalAmount = input.items.reduce((total, item) => {
         const product = productById.get(item.productId);
         const unitPrice = item.unitPrice ?? Number(product?.sale_price ?? 0);
@@ -178,7 +188,7 @@ export class SalesService {
         action: "sale.created",
         entityType: "sale",
         entityId: saleId,
-        metadata: { branchId: input.branchId, totalAmount, itemCount: input.items.length }
+        metadata: { branchId: input.branchId, totalAmount, itemCount: input.items.length, discountAmount: input.items.reduce((sum, item) => sum + item.discountAmount, 0) }
       });
 
       return { id: saleId, totalAmount, paidAmount, openAmount };

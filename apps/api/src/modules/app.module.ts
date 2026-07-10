@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { ThrottlerModule } from "@nestjs/throttler";
 import { AuthModule } from "../modules/auth/auth.module";
 import { BranchesModule } from "../modules/branches/branches.module";
+import { CashRegistersModule } from "../modules/cash-registers/cash-registers.module";
 import { ConfigModule } from "../modules/config/config.module";
 import { CustomersModule } from "../modules/customers/customers.module";
 import { DashboardModule } from "../modules/dashboard/dashboard.module";
@@ -27,6 +28,7 @@ import { TenantsModule } from "../modules/tenants/tenants.module";
     AuthModule,
     TenantsModule,
     BranchesModule,
+    CashRegistersModule,
     ProductsModule,
     CustomersModule,
     StockModule,

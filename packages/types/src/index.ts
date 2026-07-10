@@ -166,6 +166,19 @@ export const saleCancelSchema = z.object({
   reason: z.string().trim().min(3).max(180)
 });
 
+export const cashRegisterOpenSchema = z.object({
+  branchId: uuidSchema,
+  openingAmount: z.coerce.number().min(0).default(0),
+  notes: z.string().trim().max(500).optional()
+});
+
+export const cashRegisterCloseSchema = z.object({
+  closingAmount: z.coerce.number().min(0),
+  notes: z.string().trim().max(500).optional()
+});
+
+export const cashRegisterCurrentQuerySchema = z.object({ branchId: uuidSchema });
+
 export const stockTransferItemSchema = z.object({
   productId: uuidSchema,
   quantity: z.coerce.number().positive()
@@ -298,6 +311,8 @@ export type StockAdjustmentInput = z.infer<typeof stockAdjustmentSchema>;
 export type SaleCreateInput = z.infer<typeof saleCreateSchema>;
 export type FinancialEntryCreateInput = z.infer<typeof financialEntryCreateSchema>;
 export type SaleCancelInput = z.infer<typeof saleCancelSchema>;
+export type CashRegisterOpenInput = z.infer<typeof cashRegisterOpenSchema>;
+export type CashRegisterCloseInput = z.infer<typeof cashRegisterCloseSchema>;
 export type StockTransferCreateInput = z.infer<typeof stockTransferCreateSchema>;
 export type InventoryCountCreateInput = z.infer<typeof inventoryCountCreateSchema>;
 export type PurchaseEntryCreateInput = z.infer<typeof purchaseEntryCreateSchema>;
