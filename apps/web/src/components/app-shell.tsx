@@ -177,7 +177,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             Sair
           </Button>
         </header>
-        <main className="mx-auto w-full max-w-7xl px-4 py-6 lg:px-8">{children}</main>
+        <main className="mx-auto w-full max-w-7xl overflow-x-clip px-4 py-6 lg:px-8">{children}</main>
       </div>
     </div>
   );

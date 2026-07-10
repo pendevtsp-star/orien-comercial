@@ -153,8 +153,8 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
         </section>
       ) : null}
 
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-        <Card className="xl:order-2 xl:sticky xl:top-20 xl:self-start">
+      <section className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <Card className="min-w-0 xl:order-2 xl:sticky xl:top-20 xl:self-start">
           <CardContent>
             <form key={editingRow?.id ?? "create"} className="grid gap-3" onSubmit={(event) => void submit(event)}>
               <div>
@@ -199,7 +199,7 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
             </form>
           </CardContent>
         </Card>
-        <div className="grid gap-3 xl:order-1">
+        <div className="grid min-w-0 gap-3 xl:order-1">
           <Card variant="brand" className="overflow-hidden shadow-[0_28px_64px_rgba(11,29,61,0.18)]">
             <CardContent className="grid gap-4 p-6">
               <div>

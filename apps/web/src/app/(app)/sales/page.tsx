@@ -263,8 +263,8 @@ export default function SalesPage() {
         <InsightCard title="Em aberto" value={openTotal} detail="Saldo a receber das vendas" icon={CircleDollarSign} money accent />
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_400px]">
-        <div className="grid gap-4 xl:order-2 xl:sticky xl:top-20 xl:self-start">
+      <section className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_400px]">
+        <div className="grid min-w-0 gap-4 xl:order-2 xl:sticky xl:top-20 xl:self-start">
           <Card>
             <CardContent className="grid gap-4">
               <div>
@@ -352,7 +352,7 @@ export default function SalesPage() {
           </Card>
         </div>
 
-        <div className="grid gap-4 xl:order-1">
+        <div className="grid min-w-0 gap-4 xl:order-1">
           <Card variant="brand" className="overflow-hidden shadow-[0_28px_64px_rgba(11,29,61,0.18)]">
             <CardContent className="grid gap-4 p-6 lg:grid-cols-[1.1fr_0.9fr]">
               <div>
