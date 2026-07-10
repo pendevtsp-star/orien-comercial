@@ -17,6 +17,8 @@ import { CashRegistersService } from "./cash-registers.service";
 export class CashRegistersController {
   constructor(@Inject(CashRegistersService) private readonly service: CashRegistersService) {}
   @RequirePermissions(permissions.sales.read)
+  @Get() history(@CurrentTenant() tenant: TenantContext, @Query(new ZodValidationPipe(cashRegisterCurrentQuerySchema)) query: never) { return this.service.history(tenant, query); }
+  @RequirePermissions(permissions.sales.read)
   @Get("current") current(@CurrentTenant() tenant: TenantContext, @Query(new ZodValidationPipe(cashRegisterCurrentQuerySchema)) query: never) { return this.service.current(tenant, query); }
   @RequirePermissions(permissions.sales.create)
   @Post("open") open(@CurrentTenant() tenant: TenantContext, @Body(new ZodValidationPipe(cashRegisterOpenSchema)) body: never) { return this.service.open(tenant, body); }

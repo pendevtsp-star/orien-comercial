@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, Card, CardContent, Input, PageHeader, Select } from "@sgc/ui";
+import { Badge, Button, Card, CardContent, DataTable, Input, PageHeader, Select } from "@sgc/ui";
 import { Banknote, CreditCard, Minus, Plus, ScanBarcode, WalletCards, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -10,6 +10,7 @@ interface ListResponse<T> { data: T[] }
 interface Branch { id: string; name: string }
 interface Product { id: string; name: string; sku?: string; barcode?: string; salePrice: string }
 interface CashSession { id: string; branch_id: string; opening_amount: string; opened_at: string }
+interface CashHistory { id:string;status:string;openingAmount:string;expectedAmount:string;closingAmount?:string;differenceAmount?:string;openedAt:string;closedAt?:string }
 interface CartItem { productId: string; name: string; quantity: number; unitPrice: number; discountAmount: number }
 
 export default function PosPage() {
@@ -17,6 +18,7 @@ export default function PosPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [branchId, setBranchId] = useState("");
   const [cash, setCash] = useState<CashSession | null>(null);
+  const [cashHistory, setCashHistory] = useState<CashHistory[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [scanner, setScanner] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("pix");
@@ -26,7 +28,7 @@ export default function PosPage() {
   const scannerRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { void Promise.all([apiFetch<ListResponse<Branch>>("/branches?pageSize=100&isActive=true"), apiFetch<ListResponse<Product>>("/products?pageSize=100&isActive=true")]).then(([b, p]) => { setBranches(b.data); setProducts(p.data); setBranchId((current) => current || b.data[0]?.id || ""); }).catch((err) => setError(err instanceof Error ? err.message : "Falha ao abrir o PDV.")); }, []);
-  useEffect(() => { if (!branchId) return; void apiFetch<CashSession | null>(`/cash-registers/current?branchId=${branchId}`).then(setCash).catch((err) => setError(err instanceof Error ? err.message : "Falha ao consultar caixa.")); }, [branchId]);
+  useEffect(() => { if (!branchId) return; void Promise.all([apiFetch<CashSession | null>(`/cash-registers/current?branchId=${branchId}`),apiFetch<{data:CashHistory[]}>(`/cash-registers?branchId=${branchId}`)]).then(([current,history])=>{setCash(current);setCashHistory(history.data);}).catch((err) => setError(err instanceof Error ? err.message : "Falha ao consultar caixa.")); }, [branchId]);
   useEffect(() => { function shortcut(event: KeyboardEvent) { if (event.key === "F2") { event.preventDefault(); scannerRef.current?.focus(); } if (event.key === "F4") setPaymentMethod("cash"); if (event.key === "F6") setPaymentMethod("pix"); if (event.key === "F8") setPaymentMethod("card"); } window.addEventListener("keydown", shortcut); return () => window.removeEventListener("keydown", shortcut); }, []);
 
   const total = useMemo(() => cart.reduce((sum, item) => sum + item.quantity * item.unitPrice - item.discountAmount, 0), [cart]);
@@ -40,7 +42,7 @@ export default function PosPage() {
   }
 
   async function openCash(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = new FormData(event.currentTarget); try { const opened = await apiFetch<CashSession>("/cash-registers/open", { method: "POST", body: JSON.stringify({ branchId, openingAmount: Number(form.get("openingAmount") || 0) }) }); setCash(opened); scannerRef.current?.focus(); } catch (err) { setError(err instanceof Error ? err.message : "Falha ao abrir caixa."); } }
-  async function closeCash() { if (!cash) return; const value = window.prompt("Valor contado no fechamento:", total.toFixed(2)); if (value === null) return; try { await apiFetch(`/cash-registers/${cash.id}/close`, { method: "POST", body: JSON.stringify({ closingAmount: Number(value) }) }); setCash(null); setCart([]); } catch (err) { setError(err instanceof Error ? err.message : "Falha ao fechar caixa."); } }
+  async function closeCash() { if (!cash) return; const value = window.prompt("Valor contado no fechamento:", total.toFixed(2)); if (value === null) return; try { await apiFetch(`/cash-registers/${cash.id}/close`, { method: "POST", body: JSON.stringify({ closingAmount: Number(value) }) }); const history=await apiFetch<{data:CashHistory[]}>(`/cash-registers?branchId=${branchId}`);setCashHistory(history.data);setCash(null); setCart([]); } catch (err) { setError(err instanceof Error ? err.message : "Falha ao fechar caixa."); } }
   async function cashMovement(type:"supply"|"withdrawal"){if(!cash)return;const amount=window.prompt(type==="supply"?"Valor do suprimento:":"Valor da sangria:");if(!amount)return;const reason=window.prompt("Motivo da movimentação:");if(!reason)return;try{await apiFetch(`/cash-registers/${cash.id}/movements`,{method:"POST",body:JSON.stringify({type,amount:Number(amount),reason})});setError(null);}catch(err){setError(err instanceof Error?err.message:"Falha na movimentação do caixa.");}}
   function addPayment(){const allocated=paymentParts.reduce((sum,item)=>sum+item.amount,0);const amount=Number(paymentAmount||Math.max(0,total-allocated));if(amount<=0)return;setPaymentParts((current)=>[...current,{method:paymentMethod,amount,status:"paid"}]);setPaymentAmount("");}
   async function finishSale() { if (!cash || !cart.length) return; const payments=paymentParts.length?paymentParts:[{ method: paymentMethod, amount: total, status: "paid" as const }];const paid=payments.reduce((sum,item)=>sum+item.amount,0);if(Math.abs(paid-total)>0.009){setError("A soma dos pagamentos precisa ser igual ao total da venda.");return;}try { await apiFetch("/sales", { method: "POST", body: JSON.stringify({ branchId, cashRegisterSessionId: cash.id, items: cart.map(({ name: _name, ...item }) => item), payments }) }); setCart([]);setPaymentParts([]); setError(null); scannerRef.current?.focus(); } catch (err) { setError(err instanceof Error ? err.message : "Falha ao concluir venda."); } }
@@ -56,6 +58,7 @@ export default function PosPage() {
       </CardContent></Card>
       <Card variant="brand" className="h-fit"><CardContent className="grid gap-5"><div><p className="text-xs uppercase tracking-[0.18em] text-white/70">Total da venda</p><p className="mt-2 text-4xl font-semibold text-white">{total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</p></div><div className="grid grid-cols-3 gap-2"><PaymentButton active={paymentMethod === "cash"} label="Dinheiro F4" icon={<Banknote size={18} />} onClick={() => setPaymentMethod("cash")} /><PaymentButton active={paymentMethod === "pix"} label="Pix F6" icon={<WalletCards size={18} />} onClick={() => setPaymentMethod("pix")} /><PaymentButton active={paymentMethod === "card"} label="Cartão F8" icon={<CreditCard size={18} />} onClick={() => setPaymentMethod("card")} /></div><div className="grid grid-cols-[1fr_auto] gap-2"><input className="h-10 min-w-0 rounded-md border border-white/20 bg-white px-3 text-sm text-slate-950" type="number" step="0.01" value={paymentAmount} placeholder="Valor desta forma" onChange={(event)=>setPaymentAmount(event.target.value)}/><Button variant="secondary" onClick={addPayment}>Adicionar</Button></div>{paymentParts.length?<div className="grid gap-1 text-xs text-white/75">{paymentParts.map((part,index)=><div key={index} className="flex justify-between"><span>{part.method}</span><span>{part.amount.toLocaleString("pt-BR",{style:"currency",currency:"BRL"})}</span></div>)}<button type="button" className="mt-1 text-left text-[var(--brand-accent)]" onClick={()=>setPaymentParts([])}>Limpar divisão</button></div>:null}<Button className="w-full bg-[var(--brand-accent)] text-[var(--brand-primary)] hover:brightness-95" disabled={!cash || !cart.length} onClick={() => void finishSale()}>Concluir venda</Button><p className="text-xs leading-5 text-white/65">Descontos acima de 10% são recusados pela API quando o operador não possui permissão gerencial.</p></CardContent></Card>
     </div>
+    <Card><CardContent className="grid gap-3"><h2 className="font-semibold">Histórico de caixas</h2><DataTable rows={cashHistory} empty="Nenhum caixa registrado nesta loja." columns={[{key:"opened",header:"Abertura",render:(row)=>new Date(row.openedAt).toLocaleString("pt-BR")},{key:"status",header:"Status",render:(row)=><Badge>{row.status==="open"?"Aberto":"Fechado"}</Badge>},{key:"expected",header:"Esperado",render:(row)=>Number(row.expectedAmount).toLocaleString("pt-BR",{style:"currency",currency:"BRL"})},{key:"closing",header:"Contado",render:(row)=>row.closingAmount?Number(row.closingAmount).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}):"-"},{key:"difference",header:"Diferença",render:(row)=><span className={Number(row.differenceAmount??0)!==0?"font-medium text-rose-600":"text-slate-600"}>{Number(row.differenceAmount??0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"})}</span>}]} /></CardContent></Card>
   </div>;
 }
 

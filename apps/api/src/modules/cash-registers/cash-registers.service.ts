@@ -9,6 +9,12 @@ import { DatabaseService } from "../database/database.service";
 export class CashRegistersService {
   constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
 
+  async history(context: TenantContext, query: { branchId: string }) {
+    ensureBranchAccess(context, query.branchId);
+    const result = await this.database.tenantQuery(context.tenantId, `SELECT id,status,opening_amount::text AS "openingAmount",expected_amount::text AS "expectedAmount",closing_amount::text AS "closingAmount",difference_amount::text AS "differenceAmount",opened_at AS "openedAt",closed_at AS "closedAt" FROM cash_register_sessions WHERE tenant_id=$1 AND branch_id=$2 ORDER BY opened_at DESC LIMIT 50`, [context.tenantId,query.branchId]);
+    return { data: result.rows };
+  }
+
   async current(context: TenantContext, query: { branchId: string }) {
     ensureBranchAccess(context, query.branchId);
     const result = await this.database.tenantQuery(context.tenantId, `SELECT crs.*, b.name AS "branchName" FROM cash_register_sessions crs JOIN branches b ON b.id = crs.branch_id WHERE crs.tenant_id = $1 AND crs.branch_id = $2 AND crs.status = 'open' ORDER BY crs.opened_at DESC LIMIT 1`, [context.tenantId, query.branchId]);
