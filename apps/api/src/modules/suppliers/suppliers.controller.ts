@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Patch, Post, Query, Param, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Inject, Patch, Post, Query, Param, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { permissions } from "@sgc/auth";
 import { resourceListQuerySchema, supplierCreateSchema, supplierUpdateSchema } from "@sgc/types";
@@ -22,4 +22,6 @@ export class SuppliersController {
   @Post() create(@CurrentTenant() tenant: TenantContext, @Body(new ZodValidationPipe(supplierCreateSchema)) body: never) { return this.suppliers.create(tenant, body); }
   @RequirePermissions(permissions.stock.purchase)
   @Patch(":id") update(@CurrentTenant() tenant: TenantContext, @Param("id") id: string, @Body(new ZodValidationPipe(supplierUpdateSchema)) body: never) { return this.suppliers.update(tenant, id, body); }
+  @RequirePermissions(permissions.stock.purchase)
+  @Delete(":id") remove(@CurrentTenant() tenant: TenantContext, @Param("id") id: string) { return this.suppliers.remove(tenant, id); }
 }

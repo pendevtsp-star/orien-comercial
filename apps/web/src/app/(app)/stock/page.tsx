@@ -22,6 +22,12 @@ interface ProductRow {
   sku?: string;
 }
 
+interface SupplierRow {
+  id: string;
+  name: string;
+  document?: string;
+}
+
 interface StockRow {
   id: string;
   productId: string;
@@ -61,6 +67,7 @@ export default function StockPage() {
   });
   const [branches, setBranches] = useState<BranchRow[]>([]);
   const [products, setProducts] = useState<ProductRow[]>([]);
+  const [suppliers, setSuppliers] = useState<SupplierRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [stockSearch, setStockSearch] = useState("");
@@ -77,6 +84,10 @@ export default function StockPage() {
     () => products.map((product) => ({ label: `${product.name}${product.sku ? ` · ${product.sku}` : ""}`, value: product.id })),
     [products]
   );
+  const supplierOptions = useMemo(
+    () => suppliers.map((supplier) => ({ label: `${supplier.name}${supplier.document ? ` · ${supplier.document}` : ""}`, value: supplier.id })),
+    [suppliers]
+  );
 
   async function load() {
     setLoading(true);
@@ -88,12 +99,13 @@ export default function StockPage() {
       const movementQuery = new URLSearchParams({ page: String(movementPage), pageSize: "10" });
       if (movementSearch) movementQuery.set("search", movementSearch);
       if (movementTypeFilter !== "all") movementQuery.set("movementType", movementTypeFilter);
-      const [stockResponse, movementResponse, reportResponse, branchesResponse, productsResponse] = await Promise.all([
+      const [stockResponse, movementResponse, reportResponse, branchesResponse, productsResponse, suppliersResponse] = await Promise.all([
         apiFetch<ListResponse<StockRow>>(`/stock?${stockQuery.toString()}`),
         apiFetch<ListResponse<MovementRow>>(`/stock/movements?${movementQuery.toString()}`),
         apiFetch<{ lowStock: StockReportRow[]; slowMoving: StockReportRow[] }>("/stock/reports"),
         apiFetch<ListResponse<BranchRow>>("/branches?pageSize=100"),
-        apiFetch<ListResponse<ProductRow>>("/products?pageSize=100")
+        apiFetch<ListResponse<ProductRow>>("/products?pageSize=100"),
+        apiFetch<ListResponse<SupplierRow>>("/suppliers?pageSize=100&isActive=true")
       ]);
       const mappedStock = stockResponse.data.map((row) => ({ ...row, id: `${row.productId}-${row.branchName}` }));
       setStock(mappedStock);
@@ -103,6 +115,7 @@ export default function StockPage() {
       setReports(reportResponse);
       setBranches(branchesResponse.data);
       setProducts(productsResponse.data);
+      setSuppliers(suppliersResponse.data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao carregar estoque.");
     } finally {
@@ -304,7 +317,8 @@ export default function StockPage() {
 
                 <StockFormCard title="Entrada por compra" onSubmit={(event) => void submit(event, "/stock/purchase-entries", (form) => ({
                   branchId: form.get("purchaseBranchId"),
-                  supplierName: form.get("supplierName"),
+                  supplierId: form.get("supplierId"),
+                  documentNumber: form.get("documentNumber") || undefined,
                   notes: form.get("purchaseNotes") || undefined,
                   items: [
                     {
@@ -315,7 +329,8 @@ export default function StockPage() {
                   ]
                 }))}>
                   <Select name="purchaseBranchId" label="Loja" options={branchOptions} required />
-                  <Input name="supplierName" label="Fornecedor" required />
+                  <Select name="supplierId" label="Fornecedor" options={supplierOptions} required />
+                  <Input name="documentNumber" label="Número da nota ou pedido" />
                   <Select name="purchaseProductId" label="Produto" options={productOptions} required />
                   <div className="grid gap-3 md:grid-cols-2">
                     <Input name="purchaseQuantity" label="Quantidade" type="number" step="0.001" required />

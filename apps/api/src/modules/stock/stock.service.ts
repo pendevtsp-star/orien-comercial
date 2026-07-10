@@ -333,14 +333,22 @@ export class StockService {
 
     return this.database.tenantTransaction(context.tenantId, async (client) => {
       await assertBranch(client, context.tenantId, input.branchId);
+      let supplierName = input.supplierName ?? null;
+      if (input.supplierId) {
+        const supplier = await client.query<{ name: string }>(
+          "SELECT name FROM suppliers WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL AND is_active = true",
+          [context.tenantId, input.supplierId]
+        );
+        supplierName = ensureFound(supplier.rows[0], "Fornecedor").name;
+      }
       const totalAmount = input.items.reduce((sum, item) => sum + item.quantity * item.unitCost, 0);
       const purchase = await client.query<{ id: string }>(
         `
-        INSERT INTO purchase_entries (tenant_id, branch_id, supplier_name, total_amount, notes)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO purchase_entries (tenant_id, branch_id, supplier_id, supplier_name, document_number, total_amount, notes)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING id
         `,
-        [context.tenantId, input.branchId, input.supplierName, totalAmount, input.notes ?? null]
+        [context.tenantId, input.branchId, input.supplierId ?? null, supplierName, input.documentNumber ?? null, totalAmount, input.notes ?? null]
       );
       const purchaseId = purchase.rows[0]!.id;
 
@@ -371,7 +379,7 @@ export class StockService {
         action: "stock.purchase.created",
         entityType: "purchase_entry",
         entityId: purchaseId,
-        metadata: { branchId: input.branchId, supplierName: input.supplierName, totalAmount }
+        metadata: { branchId: input.branchId, supplierId: input.supplierId ?? null, supplierName, documentNumber: input.documentNumber ?? null, totalAmount }
       });
 
       return { id: purchaseId, totalAmount };

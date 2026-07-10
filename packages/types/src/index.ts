@@ -190,7 +190,9 @@ export const inventoryCountCreateSchema = z.object({
 
 export const purchaseEntryCreateSchema = z.object({
   branchId: uuidSchema,
-  supplierName: z.string().trim().min(2).max(180),
+  supplierId: uuidSchema.optional(),
+  supplierName: z.string().trim().min(2).max(180).optional(),
+  documentNumber: z.string().trim().max(80).optional(),
   notes: z.string().trim().max(500).optional(),
   items: z.array(
     z.object({
@@ -199,7 +201,7 @@ export const purchaseEntryCreateSchema = z.object({
       unitCost: z.coerce.number().min(0)
     })
   ).min(1).max(100)
-});
+}).refine((value) => value.supplierId || value.supplierName, { message: "supplierId or supplierName is required" });
 
 export const supplierCreateSchema = z.object({
   branchId: uuidSchema.optional(),

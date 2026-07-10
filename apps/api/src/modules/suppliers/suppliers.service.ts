@@ -29,4 +29,9 @@ export class SuppliersService {
     const row = await this.database.tenantQuery(context.tenantId, `UPDATE suppliers SET branch_id = COALESCE($3, branch_id), name = COALESCE($4, name), document = COALESCE($5, document), email = COALESCE($6, email), phone = COALESCE($7, phone), whatsapp = COALESCE($8, whatsapp), notes = COALESCE($9, notes), is_active = COALESCE($10, is_active), updated_at = now() WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL RETURNING *`, [context.tenantId, id, input.branchId ?? null, input.name ?? null, input.document ?? null, input.email ?? null, input.phone ?? null, input.whatsapp ?? null, input.notes ?? null, input.isActive ?? null]);
     return ensureFound(row.rows[0], "Fornecedor");
   }
+  async remove(context: TenantContext, id: string) {
+    const row = await this.database.tenantQuery(context.tenantId, "UPDATE suppliers SET deleted_at = now(), updated_at = now() WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL RETURNING id", [context.tenantId, id]);
+    ensureFound(row.rows[0], "Fornecedor");
+    return { ok: true };
+  }
 }

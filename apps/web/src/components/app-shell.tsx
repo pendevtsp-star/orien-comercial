@@ -13,6 +13,7 @@ import {
   Settings,
   ShieldCheck,
   ShoppingCart,
+  Truck,
   UsersRound,
   X
 } from "lucide-react";
@@ -26,6 +27,7 @@ const navigation = [
   { href: "/branches", label: "Lojas", icon: Building2 },
   { href: "/products", label: "Produtos", icon: Boxes },
   { href: "/stock", label: "Estoque", icon: PackageCheck },
+  { href: "/suppliers", label: "Fornecedores", icon: Truck },
   { href: "/sales", label: "Vendas", icon: ShoppingCart },
   { href: "/customers", label: "Clientes", icon: UsersRound },
   { href: "/financial", label: "Financeiro", icon: CircleDollarSign },
