@@ -17,10 +17,24 @@ async function bootstrap() {
   app.use(helmet());
   app.use(cookieParser(process.env.COOKIE_SECRET));
   app.use((request: Request & { requestId?: string }, response: Response, next: NextFunction) => {
+    const startedAt = process.hrtime.bigint();
     const incoming = request.headers["x-request-id"];
     const requestId = (Array.isArray(incoming) ? incoming[0] : incoming) || randomUUID();
     request.requestId = requestId;
     response.setHeader("x-request-id", requestId);
+    response.on("finish", () => {
+      const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+      console.log(
+        JSON.stringify({
+          type: "http_request",
+          requestId,
+          method: request.method,
+          path: request.path,
+          statusCode: response.statusCode,
+          durationMs: Number(durationMs.toFixed(1)),
+        }),
+      );
+    });
     next();
   });
   app.enableCors({
@@ -28,11 +42,17 @@ async function bootstrap() {
       config.NODE_ENV === "production"
         ? [config.WEB_APP_URL]
         : [config.WEB_APP_URL, "http://localhost:3000", "http://localhost:3001"],
-    credentials: true
+    credentials: true,
   });
   app.getHttpAdapter().get("/health", (_request: Request, response: Response) => {
-    response.status(200).json({ status: "ok" });
+    response.status(200).json({
+      status: "ok",
+      service: "orien-api",
+      version: process.env.APP_VERSION ?? "development",
+      uptimeSeconds: Math.floor(process.uptime()),
+    });
   });
+  app.enableShutdownHooks();
   app.useGlobalFilters(new HttpExceptionFilter());
 
   if (process.env.NODE_ENV !== "production") {
