@@ -342,6 +342,30 @@ export async function seedBaselineTenants(pool: Pool) {
   return { tenantA, tenantB };
 }
 
+export async function seedRoleUser(
+  pool: Pool,
+  tenant: SeededTenant,
+  role: RoleSlug,
+  input: { email: string; name: string; branchId?: string | null },
+) {
+  const password = "RoleTest123!Secure";
+  const passwordHash = await argon2.hash(`${password}${pepper}`, {
+    type: argon2.argon2id,
+    memoryCost: 65536,
+    timeCost: 3,
+    parallelism: 1,
+  });
+  const user = await pool.query<{ id: string }>(
+    "INSERT INTO users(email,name,password_hash,is_email_verified) VALUES($1,$2,$3,true) RETURNING id",
+    [input.email, input.name, passwordHash],
+  );
+  await pool.query(
+    "INSERT INTO memberships(tenant_id,user_id,role_id,branch_id,status) VALUES($1,$2,$3,$4,'active')",
+    [tenant.tenantId, user.rows[0]!.id, tenant.roleIds[role], input.branchId ?? null],
+  );
+  return { ...tenant, userId: user.rows[0]!.id, email: input.email, password };
+}
+
 async function ensurePermissions(pool: Pool) {
   for (const slug of permissionSlugs) {
     await pool.query(

@@ -2,7 +2,7 @@ import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { INestApplication } from "@nestjs/common";
 import type { Pool } from "pg";
-import { createAdminPool, createTestApp, resetDatabase, seedBaselineTenants, type SeededTenant } from "./test-helpers";
+import { createAdminPool, createTestApp, resetDatabase, seedBaselineTenants, seedRoleUser, type SeededTenant } from "./test-helpers";
 
 describe.sequential("critical api flows", () => {
   let app: INestApplication;
@@ -47,6 +47,27 @@ describe.sequential("critical api flows", () => {
 
     expect(staleRefresh.status).toBe(401);
     expect(staleRefresh.body.message).toMatch(/Refresh token invalido|Sessao expirada/);
+  });
+
+  it("persists remembered sessions and revokes access immediately on logout", async () => {
+    const agent = request.agent(app.getHttpServer());
+    const loginResponse = await agent.post("/api/v1/auth/login").send({
+      email: tenantA.email,
+      password: tenantA.password,
+      rememberMe: true,
+    });
+    expect(loginResponse.status).toBe(201);
+    const cookies = loginResponse.headers["set-cookie"] ?? [];
+    expect(cookies.some((cookie: string) => cookie.startsWith("refresh_token=") && /Max-Age=/i.test(cookie))).toBe(true);
+    const accessToken = readCookieValue(cookies, "access_token");
+
+    const logoutResponse = await agent.post("/api/v1/auth/logout");
+    expect(logoutResponse.status).toBe(201);
+
+    const revokedAccess = await request(app.getHttpServer())
+      .get("/api/v1/me")
+      .set("Authorization", `Bearer ${accessToken}`);
+    expect(revokedAccess.status).toBe(401);
   });
 
   it("enforces tenant isolation and keeps CRUD listings paginated and filterable", async () => {
@@ -326,6 +347,45 @@ describe.sequential("critical api flows", () => {
     expect(cashflowResponse.status).toBe(200);
     expect(cashflowResponse.body.receivableOpen).toBe(0);
     expect(cashflowResponse.body.paidIn).toBe(50);
+  });
+
+  it("enforces role and branch scopes for manager and seller", async () => {
+    const owner = await login(app, tenantA);
+    const secondBranch = await owner.agent
+      .post("/api/v1/branches")
+      .set("x-tenant-id", tenantA.tenantId)
+      .send({ name: "Filial Restrita", code: "RESTRITA", isActive: true });
+    expect(secondBranch.status).toBe(201);
+
+    const manager = await seedRoleUser(adminPool, tenantA, "manager", {
+      email: "manager-scope@example.com",
+      name: "Gerente Escopo",
+      branchId: tenantA.branchId,
+    });
+    const seller = await seedRoleUser(adminPool, tenantA, "seller", {
+      email: "seller-scope@example.com",
+      name: "Vendedor Escopo",
+      branchId: tenantA.branchId,
+    });
+    const managerAgent = await login(app, manager);
+    const sellerAgent = await login(app, seller);
+
+    const managerOwnBranch = await managerAgent.agent
+      .get("/api/v1/branches")
+      .set("x-tenant-id", tenantA.tenantId);
+    expect(managerOwnBranch.status).toBe(200);
+    expect(managerOwnBranch.body.data.every((row: { id: string }) => row.id === tenantA.branchId)).toBe(true);
+
+    const sellerStockAdjustment = await sellerAgent.agent
+      .post("/api/v1/stock/adjustments")
+      .set("x-tenant-id", tenantA.tenantId)
+      .send({ branchId: tenantA.branchId, productId: tenantA.branchId, quantityDelta: 1, reason: "Negado" });
+    expect(sellerStockAdjustment.status).toBe(403);
+
+    const managerForeignBranch = await managerAgent.agent
+      .get(`/api/v1/branches/${secondBranch.body.id}`)
+      .set("x-tenant-id", tenantA.tenantId);
+    expect([403, 404]).toContain(managerForeignBranch.status);
   });
 });
 

@@ -1,14 +1,16 @@
-import { BadRequestException, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, HttpException, HttpStatus, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
 import type { AppConfig } from "@sgc/config";
 import { sessions, users } from "@sgc/db";
 import type { InviteAcceptInput, LoginInput } from "@sgc/types";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import jwt from "jsonwebtoken";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import type { PoolClient } from "pg";
 import { APP_CONFIG } from "../config/config.module";
 import { DatabaseService } from "../database/database.service";
 import { PasswordService } from "./password.service";
+import { CacheService } from "../cache/cache.service";
+import { SessionStateService } from "./session-state.service";
 
 export interface AuthTokens {
   accessToken: string;
@@ -24,12 +26,22 @@ export class AuthService {
     @Inject(PasswordService)
     private readonly passwordService: PasswordService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Inject(CacheService) private readonly cache: CacheService,
+    @Inject(SessionStateService) private readonly sessionState: SessionStateService,
   ) {}
 
   async login(
     input: LoginInput,
     metadata: { userAgent?: string; ipAddress?: string },
   ): Promise<AuthTokens> {
+    const attemptKey = loginAttemptKey(input.email, metadata.ipAddress);
+    const attempts = Number((await this.cache.get(attemptKey)) ?? 0);
+    if (attempts >= 8) {
+      throw new HttpException(
+        "Muitas tentativas. Aguarde 15 minutos e tente novamente.",
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
     const [user] = await this.database.db
       .select()
       .from(users)
@@ -37,6 +49,7 @@ export class AuthService {
       .limit(1);
 
     if (!user || user.deletedAt) {
+      await this.cache.increment(attemptKey, 15 * 60);
       throw new UnauthorizedException("Credenciais invalidas.");
     }
 
@@ -47,8 +60,11 @@ export class AuthService {
     );
 
     if (!valid) {
+      await this.cache.increment(attemptKey, 15 * 60);
       throw new UnauthorizedException("Credenciais invalidas.");
     }
+
+    await this.cache.delete(attemptKey);
 
     await this.database.db
       .update(users)
@@ -89,10 +105,13 @@ export class AuthService {
       throw new UnauthorizedException("Refresh token invalido.");
     }
 
-    await this.database.db
+    const revoked = await this.database.db
       .update(sessions)
       .set({ revokedAt: new Date() })
-      .where(eq(sessions.id, session.id));
+      .where(and(eq(sessions.id, session.id), isNull(sessions.revokedAt)))
+      .returning({ id: sessions.id });
+    if (!revoked.length) throw new UnauthorizedException("Sessao expirada.");
+    await this.sessionState.revoke(session.id);
     return this.createSession(session.userId, metadata, session.isPersistent);
   }
 
@@ -102,6 +121,7 @@ export class AuthService {
       .update(sessions)
       .set({ revokedAt: new Date() })
       .where(eq(sessions.id, sessionId));
+    await this.sessionState.revoke(sessionId);
   }
 
   async listSessions(userId: string, currentSessionId: string) {
@@ -161,6 +181,7 @@ export class AuthService {
       [userId, sessionId],
     );
     if (!result.rowCount) throw new BadRequestException("Sessao nao encontrada ou ja encerrada.");
+    await this.sessionState.revoke(sessionId);
     return { ok: true };
   }
 
@@ -331,6 +352,7 @@ export class AuthService {
       isPersistent: rememberMe,
       expiresAt: new Date(Date.now() + 1000 * 60 * 60 * (rememberMe ? 24 * 30 : 12)),
     });
+    await this.sessionState.markActive(sessionId, userId);
 
     const accessToken = jwt.sign({ sub: userId, sid: sessionId }, this.config.JWT_ACCESS_SECRET, {
       algorithm: "HS256",
@@ -339,6 +361,13 @@ export class AuthService {
 
     return { accessToken, refreshToken, rememberMe };
   }
+}
+
+function loginAttemptKey(email: string, ipAddress?: string) {
+  const fingerprint = createHash("sha256")
+    .update(`${email.trim().toLowerCase()}|${ipAddress ?? "unknown"}`)
+    .digest("hex");
+  return `orien:login-attempts:${fingerprint}`;
 }
 
 async function insertAuditLog(

@@ -8,11 +8,11 @@ describe("JwtAuthGuard", () => {
     JWT_ACCESS_SECRET: "test-access-secret"
   } as never);
 
-  it("accepts a valid access token from cookies", () => {
+  it("accepts a valid access token from cookies", async () => {
     const token = jwt.sign({ sub: "user-1", sid: "session-1" }, "test-access-secret");
     const request = { cookies: { access_token: token }, headers: {} } as unknown as AuthenticatedRequest;
 
-    const result = guard.canActivate({
+    const result = await guard.canActivate({
       switchToHttp: () => ({ getRequest: () => request })
     } as never);
 
@@ -20,11 +20,11 @@ describe("JwtAuthGuard", () => {
     expect(request.user).toEqual({ userId: "user-1", sessionId: "session-1" });
   });
 
-  it("accepts a valid access token from authorization header", () => {
+  it("accepts a valid access token from authorization header", async () => {
     const token = jwt.sign({ sub: "user-2", sid: "session-2" }, "test-access-secret");
     const request = { cookies: {}, headers: { authorization: `Bearer ${token}` } } as unknown as AuthenticatedRequest;
 
-    const result = guard.canActivate({
+    const result = await guard.canActivate({
       switchToHttp: () => ({ getRequest: () => request })
     } as never);
 
@@ -32,13 +32,13 @@ describe("JwtAuthGuard", () => {
     expect(request.user).toEqual({ userId: "user-2", sessionId: "session-2" });
   });
 
-  it("rejects missing tokens", () => {
+  it("rejects missing tokens", async () => {
     const request = { cookies: {}, headers: {} } as unknown as AuthenticatedRequest;
 
-    expect(() =>
+    await expect(
       guard.canActivate({
         switchToHttp: () => ({ getRequest: () => request })
       } as never)
-    ).toThrow(/Sessao ausente/);
+    ).rejects.toThrow(/Sessao ausente/);
   });
 });

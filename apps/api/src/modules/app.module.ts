@@ -5,6 +5,7 @@ import { AlertsModule } from "../modules/alerts/alerts.module";
 import { BranchesModule } from "../modules/branches/branches.module";
 import { CashRegistersModule } from "../modules/cash-registers/cash-registers.module";
 import { ConfigModule } from "../modules/config/config.module";
+import { CacheModule } from "../modules/cache/cache.module";
 import { CustomersModule } from "../modules/customers/customers.module";
 import { DashboardModule } from "../modules/dashboard/dashboard.module";
 import { DatabaseModule } from "../modules/database/database.module";
@@ -23,6 +24,7 @@ import { TenantsModule } from "../modules/tenants/tenants.module";
 @Module({
   imports: [
     ConfigModule,
+    CacheModule,
     DatabaseModule,
     ThrottlerModule.forRoot([
       {
