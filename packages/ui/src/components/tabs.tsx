@@ -6,7 +6,7 @@ export function Tabs({
   defaultValue,
   value,
   onValueChange,
-  tabs
+  tabs,
 }: {
   defaultValue: string;
   value?: string;
@@ -14,14 +14,20 @@ export function Tabs({
   tabs: Array<{ value: string; label: string; content: ReactNode }>;
 }) {
   return (
-    <RadixTabs.Root className="min-w-0 max-w-full" defaultValue={defaultValue} value={value} onValueChange={onValueChange}>
+    <RadixTabs.Root
+      className="min-w-0 max-w-full"
+      defaultValue={defaultValue}
+      value={value}
+      onValueChange={onValueChange}
+    >
       <RadixTabs.List className="flex w-full max-w-full gap-1 overflow-x-auto rounded-xl border border-[var(--brand-border)] bg-white p-1 shadow-[0_10px_24px_rgba(11,29,61,0.04)]">
         {tabs.map((tab) => (
           <RadixTabs.Trigger
             key={tab.value}
             value={tab.value}
+            data-orien-tab="true"
             className={cn(
-              "shrink-0 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition data-[state=active]:bg-[linear-gradient(135deg,#133A7C,#2563EB)] data-[state=active]:text-white"
+              "shrink-0 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition",
             )}
           >
             {tab.label}
