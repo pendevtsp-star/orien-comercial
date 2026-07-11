@@ -50,6 +50,15 @@ export class CacheService implements OnModuleDestroy {
     }
   }
 
+  async ping(): Promise<boolean> {
+    try {
+      await this.connect();
+      return (await this.client.ping()) === "PONG";
+    } catch {
+      return false;
+    }
+  }
+
   async onModuleDestroy() {
     if (this.client.isOpen) await this.client.quit();
   }

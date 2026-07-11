@@ -367,8 +367,30 @@ describe.sequential("critical api flows", () => {
       name: "Vendedor Escopo",
       branchId: tenantA.branchId,
     });
+    const admin = await seedRoleUser(adminPool, tenantA, "admin", {
+      email: "admin-scope@example.com",
+      name: "Administrador Escopo",
+    });
+    const cashier = await seedRoleUser(adminPool, tenantA, "cashier", {
+      email: "cashier-scope@example.com",
+      name: "Caixa Escopo",
+      branchId: tenantA.branchId,
+    });
+    const stockUser = await seedRoleUser(adminPool, tenantA, "stock", {
+      email: "stock-scope@example.com",
+      name: "Estoquista Escopo",
+      branchId: tenantA.branchId,
+    });
+    const finance = await seedRoleUser(adminPool, tenantA, "finance", {
+      email: "finance-scope@example.com",
+      name: "Financeiro Escopo",
+    });
     const managerAgent = await login(app, manager);
     const sellerAgent = await login(app, seller);
+    const adminAgent = await login(app, admin);
+    const cashierAgent = await login(app, cashier);
+    const stockAgent = await login(app, stockUser);
+    const financeAgent = await login(app, finance);
 
     const managerOwnBranch = await managerAgent.agent
       .get("/api/v1/branches")
@@ -386,6 +408,19 @@ describe.sequential("critical api flows", () => {
       .get(`/api/v1/branches/${secondBranch.body.id}`)
       .set("x-tenant-id", tenantA.tenantId);
     expect([403, 404]).toContain(managerForeignBranch.status);
+
+    expect(
+      (await adminAgent.agent.get("/api/v1/branches").set("x-tenant-id", tenantA.tenantId)).status,
+    ).toBe(200);
+    expect(
+      (await cashierAgent.agent.get("/api/v1/financial/receivables").set("x-tenant-id", tenantA.tenantId)).status,
+    ).toBe(403);
+    expect(
+      (await stockAgent.agent.get("/api/v1/stock").set("x-tenant-id", tenantA.tenantId)).status,
+    ).toBe(200);
+    expect(
+      (await financeAgent.agent.get("/api/v1/financial/receivables").set("x-tenant-id", tenantA.tenantId)).status,
+    ).toBe(200);
   });
 
   it("keeps cash, cancellation, returns, purchases and transfers consistent", async () => {

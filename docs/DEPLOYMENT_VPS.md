@@ -33,8 +33,14 @@ docker compose -f docker-compose.prod.yml --profile bootstrap run --rm seed
 
 Instale `ops/nginx/orien.http.conf` como um site Nginx somente depois da
 propagacao DNS. Valide com `nginx -t` antes de recarregar o servico. Em seguida,
-emita os certificados TLS para os tres dominios e teste login, refresh e CRUD
-com o painel publico.
+emita os certificados TLS para os tres dominios, substitua a configuracao HTTP
+por `ops/nginx/orien.https.conf` e teste login, refresh e CRUD com o painel
+publico.
+
+Depois do TLS validado, use `HOST_BIND_ADDRESS=127.0.0.1` no `.env` e recrie
+somente `api`, `web` e `marketing`. Confirme que as portas 3100, 3101 e 3334
+nao estao mais acessiveis externamente antes de remover as regras transitórias
+do firewall.
 
 ## Operacao
 

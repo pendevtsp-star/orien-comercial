@@ -22,6 +22,15 @@ export class DatabaseService implements OnModuleDestroy {
     await this.connection.pool.end();
   }
 
+  async ping(): Promise<boolean> {
+    try {
+      await this.pool.query("SELECT 1");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async tenantQuery<T extends QueryResultRow = QueryResultRow>(
     tenantId: string,
     query: string,

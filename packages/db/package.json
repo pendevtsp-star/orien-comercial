@@ -11,7 +11,8 @@
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "migrate": "tsx src/migrate.ts",
-    "seed": "tsx src/seed.ts"
+    "seed": "tsx src/seed.ts",
+    "seed:homologation": "tsx src/seed-homologation.ts"
   },
   "dependencies": {
     "argon2": "^0.44.0",

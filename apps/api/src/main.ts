@@ -7,6 +7,8 @@ import { randomUUID } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
 import { loadConfig } from "@sgc/config";
 import { AppModule } from "./modules/app.module";
+import { CacheService } from "./modules/cache/cache.service";
+import { DatabaseService } from "./modules/database/database.service";
 import { HttpExceptionFilter } from "./shared/http-exception.filter";
 
 async function bootstrap() {
@@ -44,12 +46,18 @@ async function bootstrap() {
         : [config.WEB_APP_URL, "http://localhost:3000", "http://localhost:3001"],
     credentials: true,
   });
-  app.getHttpAdapter().get("/health", (_request: Request, response: Response) => {
-    response.status(200).json({
-      status: "ok",
+  app.getHttpAdapter().get("/health", async (_request: Request, response: Response) => {
+    const [database, redis] = await Promise.all([
+      app.get(DatabaseService).ping(),
+      app.get(CacheService).ping(),
+    ]);
+    const healthy = database && redis;
+    response.status(healthy ? 200 : 503).json({
+      status: healthy ? "ok" : "degraded",
       service: "orien-api",
       version: process.env.APP_VERSION ?? "development",
       uptimeSeconds: Math.floor(process.uptime()),
+      dependencies: { database, redis },
     });
   });
   app.enableShutdownHooks();

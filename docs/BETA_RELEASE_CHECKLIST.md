@@ -2,13 +2,14 @@
 
 ## Bloqueadores
 
-- [ ] Dominio e HTTPS configurados.
-- [ ] Backup automatico executado e restauracao testada.
-- [ ] Fluxos E2E de login, compra, estoque, PDV, venda e financeiro aprovados.
-- [ ] Isolamento entre tenants e filiais aprovado.
+- [ ] Dominio, DNS e HTTPS validados externamente.
+- [x] Backup automatico executado e restauracao testada.
+- [x] Fluxos E2E de login, compra, estoque, PDV, venda e financeiro aprovados.
+- [x] Isolamento entre tenants e filiais aprovado.
 - [ ] Leitor de codigo de barras e impressora termica validados em hardware real.
 - [ ] Nenhum achado critico ou alto de seguranca aberto.
-- [ ] Monitoramento de disponibilidade e alerta de erro configurados.
+- [x] Health check, monitoramento local e log de falha configurados.
+- [ ] Webhook externo de alerta configurado e testado.
 - [ ] Termos, privacidade e DPA revisados por assessoria juridica.
 - [ ] Canal oficial de suporte publicado.
 
@@ -25,6 +26,7 @@
 
 ## Operacao do piloto
 
+- [x] Empresas ficticias e perfis de homologacao preparados.
 - [ ] Empresa piloto, responsavel e periodo definidos.
 - [ ] Massa inicial importada e validada pelo cliente.
 - [ ] Treinamento curto realizado.
