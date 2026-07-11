@@ -179,14 +179,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="lg:pl-72">
         <header className="sticky top-0 z-20 flex min-h-16 items-center justify-between gap-3 border-b border-[var(--brand-border)] bg-white/95 px-4 py-3 backdrop-blur lg:h-16 lg:px-8 lg:py-0">
           <div className="flex min-w-0 items-center gap-3">
-            <Button
-              variant="secondary"
-              className="h-9 w-9 px-0 lg:hidden"
+            <button
+              type="button"
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-[var(--brand-border)] bg-white text-[var(--brand-primary)] transition hover:bg-[var(--brand-surface)] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-blue-500/25 lg:hidden"
               aria-label="Abrir menu"
               onClick={() => setMobileNavigationOpen(true)}
             >
               <Menu size={18} />
-            </Button>
+            </button>
             <div className="grid min-w-0 gap-1">
               <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">
                 Tenant ativo
