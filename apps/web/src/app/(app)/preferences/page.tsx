@@ -16,7 +16,7 @@ const themes = [
   { value: "rubi", label: "Rubi", colors: ["#241119", "#881337", "#E11D48"] },
   { value: "solaris", label: "Solaris", colors: ["#111111", "#D6A600", "#FFD54A"] },
 ] as const;
-const routes = [
+const routes: Array<[string, string]> = [
   ["/dashboard", "Dashboard"],
   ["/pos", "PDV"],
   ["/sales", "Vendas"],
@@ -26,7 +26,7 @@ const routes = [
   ["/customers", "Clientes"],
   ["/purchases", "Compras"],
 ];
-const widgets = [
+const widgets: Array<[string, string]> = [
   ["executive", "Resumo executivo"],
   ["financial", "Posicao financeira"],
   ["indicators", "Indicadores operacionais"],
