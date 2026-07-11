@@ -112,6 +112,7 @@
   transition-duration: 0.01ms !important;
 }
 :root:not([data-dashboard-widgets~="executive"]) [data-dashboard-widget="executive"],
+:root:not([data-dashboard-widgets~="financial"]) [data-dashboard-widget="financial"],
 :root:not([data-dashboard-widgets~="indicators"]) [data-dashboard-widget="indicators"],
 :root:not([data-dashboard-widgets~="performance"]) [data-dashboard-widget="performance"],
 :root:not([data-dashboard-widgets~="period"]) [data-dashboard-widget="period"],

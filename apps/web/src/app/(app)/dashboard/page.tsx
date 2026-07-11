@@ -132,8 +132,12 @@ export default function DashboardPage() {
         />
       ) : null}
 
-      <section data-dashboard-widget="executive" className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-        <Card variant="brand" className="overflow-hidden shadow-[0_30px_70px_rgba(11,29,61,0.18)]">
+      <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+        <Card
+          data-dashboard-widget="executive"
+          variant="brand"
+          className="overflow-hidden shadow-[0_30px_70px_rgba(11,29,61,0.18)]"
+        >
           <CardContent className="relative grid gap-6 p-6 lg:grid-cols-[1.2fr_0.8fr]">
             <div className="absolute inset-y-0 right-0 hidden w-1/2 bg-[radial-gradient(circle_at_top_right,rgba(245,195,74,0.16),transparent_42%)] lg:block" />
             <div className="relative">
@@ -171,7 +175,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card data-dashboard-widget="financial">
           <CardContent className="grid gap-4">
             <div className="flex items-center justify-between">
               <div>
