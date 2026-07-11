@@ -7,7 +7,7 @@ CREDENTIALS_FILE=${CREDENTIALS_FILE:-/srv/apps/orien_comercial/ops/homologation-
 umask 077
 password=$(openssl rand -base64 24 | tr -d '\n')
 cd "$APP_DIR"
-HOMOLOGATION_SEED_PASSWORD="$password" docker compose -f docker-compose.prod.yml run --rm --no-deps api \
+HOMOLOGATION_SEED_PASSWORD="$password" docker compose -f docker-compose.prod.yml run --rm --no-deps -e HOMOLOGATION_SEED_PASSWORD api \
   pnpm --filter @sgc/db seed:homologation
 
 {
