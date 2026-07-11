@@ -64,21 +64,45 @@
   --foreground: #eef3fb;
   --brand-surface: #101722;
   --brand-border: #273449;
+  --dark-card: #121a26;
+  --dark-card-subtle: #0d1520;
+  --dark-muted: #a7b4c7;
+  --dark-control: #111a27;
+}
+:root[data-color-mode="dark"][data-theme="safira"] {
+  --brand-secondary: #0891b2;
+  --brand-highlight: #22d3ee;
+}
+:root[data-color-mode="dark"][data-theme="esmeralda"] {
+  --brand-secondary: #0f8f7f;
+  --brand-highlight: #34d399;
+}
+:root[data-color-mode="dark"][data-theme="grafite"] {
+  --brand-secondary: #64748b;
+  --brand-highlight: #3b82f6;
+}
+:root[data-color-mode="dark"][data-theme="rubi"] {
+  --brand-secondary: #be123c;
+  --brand-highlight: #fb4268;
 }
 :root[data-color-mode="dark"][data-theme="solaris"] {
   --background: #080808;
   --foreground: #fff8df;
-  --brand-surface: #15130d;
-  --brand-border: #40371d;
-  --brand-secondary: #d6a600;
+  --brand-surface: #101010;
+  --brand-border: #383329;
+  --brand-secondary: #c99d00;
   --brand-highlight: #ffd54a;
+  --dark-card: #151515;
+  --dark-card-subtle: #0d0d0d;
+  --dark-muted: #cbc3a9;
+  --dark-control: #171717;
 }
 :root[data-color-mode="dark"] body {
   background: var(--background);
   color: var(--foreground);
 }
 :root[data-color-mode="dark"] .bg-white {
-  background-color: #121a26 !important;
+  background-color: var(--dark-card) !important;
 }
 :root[data-color-mode="dark"] .text-slate-500 {
   color: #a7b4c7 !important;
@@ -86,11 +110,56 @@
 :root[data-color-mode="dark"] .text-slate-600 {
   color: #c0cad8 !important;
 }
+:root[data-color-mode="dark"] header {
+  background: color-mix(in srgb, var(--dark-card) 96%, transparent) !important;
+  color: var(--foreground);
+}
+:root[data-color-mode="dark"] main h1,
+:root[data-color-mode="dark"] main h2,
+:root[data-color-mode="dark"] main h3,
+:root[data-color-mode="dark"] main label,
+:root[data-color-mode="dark"] main [class*="text-[var(--brand-primary)]"],
+:root[data-color-mode="dark"] header [class*="text-[var(--brand-primary)]"] {
+  color: var(--foreground) !important;
+}
+:root[data-color-mode="dark"] main [class*="text-[var(--brand-secondary)]"] {
+  color: var(--brand-highlight) !important;
+}
+:root[data-color-mode="dark"] main p,
+:root[data-color-mode="dark"] main td,
+:root[data-color-mode="dark"] main span {
+  border-color: var(--brand-border);
+}
 :root[data-color-mode="dark"] input,
 :root[data-color-mode="dark"] select,
 :root[data-color-mode="dark"] textarea {
   color: var(--foreground);
-  background: #121a26;
+  background: var(--dark-control);
+  border-color: var(--brand-border);
+}
+:root[data-color-mode="dark"] input::placeholder,
+:root[data-color-mode="dark"] textarea::placeholder {
+  color: var(--dark-muted);
+  opacity: 1;
+}
+:root[data-color-mode="dark"] table {
+  color: var(--foreground);
+}
+:root[data-color-mode="dark"] thead {
+  background: var(--dark-card-subtle) !important;
+}
+:root[data-color-mode="dark"] th {
+  color: var(--brand-highlight) !important;
+}
+:root[data-color-mode="dark"] td {
+  color: var(--foreground) !important;
+}
+:root[data-color-mode="dark"] [data-orien-tab="true"] {
+  color: #cbd5e1;
+}
+:root[data-color-mode="dark"] [data-orien-tab="true"]:hover {
+  background: color-mix(in srgb, var(--brand-highlight) 14%, var(--dark-card));
+  color: var(--foreground);
 }
 :root[data-density="compact"] {
   font-size: 15px;
