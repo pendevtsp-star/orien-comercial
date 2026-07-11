@@ -13,7 +13,7 @@ FROM node:24-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 RUN corepack enable
-COPY --from=builder /app/package.json /app/pnpm-workspace.yaml ./
+COPY --from=builder /app/package.json /app/pnpm-workspace.yaml /app/tsconfig.base.json ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/apps/api ./apps/api
