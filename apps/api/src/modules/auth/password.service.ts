@@ -8,7 +8,7 @@ export class PasswordService {
       type: argon2.argon2id,
       memoryCost: 65536,
       timeCost: 3,
-      parallelism: 1
+      parallelism: 1,
     });
   }
 

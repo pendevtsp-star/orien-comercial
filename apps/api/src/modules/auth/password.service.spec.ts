@@ -6,7 +6,11 @@ describe("PasswordService", () => {
     const service = new PasswordService();
     const hash = await service.hashPassword("StrongPassword123!", "pepper-value");
 
-    await expect(service.verifyPassword(hash, "StrongPassword123!", "pepper-value")).resolves.toBe(true);
-    await expect(service.verifyPassword(hash, "StrongPassword123!", "other-pepper")).resolves.toBe(false);
+    await expect(service.verifyPassword(hash, "StrongPassword123!", "pepper-value")).resolves.toBe(
+      true,
+    );
+    await expect(service.verifyPassword(hash, "StrongPassword123!", "other-pepper")).resolves.toBe(
+      false,
+    );
   });
 });

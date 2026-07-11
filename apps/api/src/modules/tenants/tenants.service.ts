@@ -1,19 +1,29 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import type { AppConfig } from "@sgc/config";
-import { defaultTenantBranding, renderEmailHtml, resolveBranding, type TenantBranding } from "@sgc/documents";
+import {
+  defaultTenantBranding,
+  renderEmailHtml,
+  resolveBranding,
+  type TenantBranding,
+} from "@sgc/documents";
 import type {
   AuditLogListQuery,
   InviteListQuery,
   MembershipListQuery,
   MembershipUpdateInput,
   TenantBrandingInput,
-  UserInviteInput
+  UserInviteInput,
 } from "@sgc/types";
 import { createHash, randomBytes } from "node:crypto";
 import type { PoolClient } from "pg";
 import { DatabaseService } from "../database/database.service";
 import type { TenantContext } from "../../shared/request-context";
-import { ensureBranchAccess, ensureFound, pagination, resolveSort } from "../../shared/resource-access";
+import {
+  ensureBranchAccess,
+  ensureFound,
+  pagination,
+  resolveSort,
+} from "../../shared/resource-access";
 import { APP_CONFIG } from "../config/config.module";
 
 interface MeUserRow {
@@ -22,6 +32,7 @@ interface MeUserRow {
   name: string;
   isEmailVerified: boolean;
   lastLoginAt: Date | null;
+  mustChangePassword: boolean;
 }
 
 interface MembershipRow {
@@ -55,13 +66,13 @@ interface TenantRow {
 export class TenantsService {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
-    @Inject(APP_CONFIG) private readonly config: AppConfig
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
   async getMe(userId: string) {
     const userResult = await this.database.pool.query<MeUserRow>(
-      "SELECT id, email, name, is_email_verified AS \"isEmailVerified\", last_login_at AS \"lastLoginAt\" FROM users WHERE id = $1 AND deleted_at IS NULL",
-      [userId]
+      'SELECT id, email, name, is_email_verified AS "isEmailVerified", last_login_at AS "lastLoginAt", must_change_password AS "mustChangePassword" FROM users WHERE id = $1 AND deleted_at IS NULL',
+      [userId],
     );
 
     const memberships = await this.database.pool.query<MembershipRow>(
@@ -84,12 +95,12 @@ export class TenantsService {
       GROUP BY t.id, m.id, r.slug
       ORDER BY t.name ASC
       `,
-      [userId]
+      [userId],
     );
 
     return {
       user: userResult.rows[0],
-      memberships: memberships.rows
+      memberships: memberships.rows,
     };
   }
 
@@ -100,18 +111,21 @@ export class TenantsService {
       FROM tenants
       WHERE id = $1 AND deleted_at IS NULL
       `,
-      [context.tenantId]
+      [context.tenantId],
     );
 
     return {
       tenant: result.rows[0],
       membership: context,
-      branding: await this.getBranding(context)
+      branding: await this.getBranding(context),
     };
   }
 
   async getBranding(context: TenantContext): Promise<TenantBranding> {
-    const result = await this.database.tenantQuery<{ value: Partial<TenantBranding> | null; tenant_name: string }>(
+    const result = await this.database.tenantQuery<{
+      value: Partial<TenantBranding> | null;
+      tenant_name: string;
+    }>(
       context.tenantId,
       `
       SELECT ts.value, t.name AS tenant_name
@@ -122,14 +136,14 @@ export class TenantsService {
       WHERE t.id = $1
       LIMIT 1
       `,
-      [context.tenantId]
+      [context.tenantId],
     );
 
     const row = result.rows[0];
     return resolveBranding({
       ...defaultTenantBranding,
       companyName: row?.tenant_name ?? defaultTenantBranding.companyName,
-      ...(row?.value ?? {})
+      ...(row?.value ?? {}),
     });
   }
 
@@ -143,7 +157,7 @@ export class TenantsService {
         ON CONFLICT (tenant_id, key) DO UPDATE
         SET value = EXCLUDED.value, updated_at = now()
         `,
-        [context.tenantId, JSON.stringify(branding)]
+        [context.tenantId, JSON.stringify(branding)],
       );
 
       await insertAuditLog(client, {
@@ -151,7 +165,11 @@ export class TenantsService {
         actorUserId: currentActor(context),
         action: "tenant.branding.updated",
         entityType: "tenant_settings",
-        metadata: { companyName: branding.companyName, primaryColor: branding.primaryColor, accentColor: branding.accentColor }
+        metadata: {
+          companyName: branding.companyName,
+          primaryColor: branding.primaryColor,
+          accentColor: branding.accentColor,
+        },
       });
 
       return branding;
@@ -188,7 +206,7 @@ export class TenantsService {
       JOIN users u ON u.id = m.user_id
       WHERE ${filters.join(" AND ")}
       `,
-      params
+      params,
     );
 
     params.push(page.pageSize, page.offset);
@@ -218,13 +236,17 @@ export class TenantsService {
       ORDER BY u.name ASC
       LIMIT $${params.length - 1} OFFSET $${params.length}
       `,
-      params
+      params,
     );
 
     return { data: result.rows, pagination: { ...page, total: Number(count.rows[0]?.total ?? 0) } };
   }
 
-  async updateMembership(context: TenantContext, membershipId: string, input: MembershipUpdateInput) {
+  async updateMembership(
+    context: TenantContext,
+    membershipId: string,
+    input: MembershipUpdateInput,
+  ) {
     ensureBranchAccess(context, input.branchId);
 
     return this.database.tenantTransaction(context.tenantId, async (client) => {
@@ -238,7 +260,7 @@ export class TenantsService {
         WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
         RETURNING id AS "membershipId", user_id AS "userId", branch_id AS "branchId", status
         `,
-        [context.tenantId, membershipId, input.roleId, input.branchId ?? null, input.status]
+        [context.tenantId, membershipId, input.roleId, input.branchId ?? null, input.status],
       );
 
       const membership = ensureFound(result.rows[0], "Membro");
@@ -248,7 +270,7 @@ export class TenantsService {
         action: "membership.updated",
         entityType: "membership",
         entityId: membershipId,
-        metadata: { roleId: input.roleId, branchId: input.branchId ?? null, status: input.status }
+        metadata: { roleId: input.roleId, branchId: input.branchId ?? null, status: input.status },
       });
 
       return membership;
@@ -267,7 +289,9 @@ export class TenantsService {
 
     if (query.search) {
       params.push(`%${query.search}%`);
-      filters.push(`(i.email ILIKE $${params.length} OR r.name ILIKE $${params.length} OR COALESCE(b.name, '') ILIKE $${params.length})`);
+      filters.push(
+        `(i.email ILIKE $${params.length} OR r.name ILIKE $${params.length} OR COALESCE(b.name, '') ILIKE $${params.length})`,
+      );
     }
 
     const count = await this.database.tenantQuery<{ total: string }>(
@@ -279,7 +303,7 @@ export class TenantsService {
       LEFT JOIN branches b ON b.id = i.branch_id
       WHERE ${filters.join(" AND ")}
       `,
-      params
+      params,
     );
 
     params.push(page.pageSize, page.offset);
@@ -302,7 +326,7 @@ export class TenantsService {
       ORDER BY i.created_at DESC
       LIMIT $${params.length - 1} OFFSET $${params.length}
       `,
-      params
+      params,
     );
 
     return { data: result.rows, pagination: { ...page, total: Number(count.rows[0]?.total ?? 0) } };
@@ -323,7 +347,7 @@ export class TenantsService {
         JOIN users u ON u.id = m.user_id
         WHERE m.tenant_id = $1 AND u.email = $2 AND m.deleted_at IS NULL
         `,
-        [context.tenantId, input.email]
+        [context.tenantId, input.email],
       );
       if (duplicateMember.rowCount) {
         throw new BadRequestException("Usuario ja participa deste tenant.");
@@ -338,7 +362,14 @@ export class TenantsService {
         VALUES ($1, $2, $3, $4, $5, $6, now() + interval '7 days')
         RETURNING id
         `,
-        [context.tenantId, input.email, input.roleId, input.branchId ?? null, currentActor(context), tokenHash]
+        [
+          context.tenantId,
+          input.email,
+          input.roleId,
+          input.branchId ?? null,
+          currentActor(context),
+          tokenHash,
+        ],
       );
 
       await insertAuditLog(client, {
@@ -347,7 +378,7 @@ export class TenantsService {
         action: "invite.created",
         entityType: "invite",
         entityId: result.rows[0]!.id,
-        metadata: { email: input.email, roleSlug: role.slug, branchId: input.branchId ?? null }
+        metadata: { email: input.email, roleSlug: role.slug, branchId: input.branchId ?? null },
       });
 
       const inviteUrl = `${this.config.WEB_APP_URL}/login?invite=${encodeURIComponent(token)}`;
@@ -365,8 +396,8 @@ export class TenantsService {
           bodyHtml: `<p>Use o link abaixo para criar sua senha e concluir seu acesso.</p><p><strong>Perfil:</strong> ${escapeHtml(role.name || role.slug)}</p>`,
           ctaLabel: "Aceitar convite",
           ctaUrl: inviteUrl,
-          outro: "Se voce nao esperava este convite, ignore esta mensagem."
-        })
+          outro: "Se voce nao esperava este convite, ignore esta mensagem.",
+        }),
       };
     });
   }
@@ -378,7 +409,7 @@ export class TenantsService {
     const sort = resolveSort(
       query,
       { createdAt: "a.created_at", action: "a.action", entityType: "a.entity_type" },
-      "createdAt"
+      "createdAt",
     );
 
     if (query.search) {
@@ -389,7 +420,7 @@ export class TenantsService {
     const count = await this.database.tenantQuery<{ total: string }>(
       context.tenantId,
       `SELECT count(*)::text AS total FROM audit_logs a WHERE ${filters.join(" AND ")}`,
-      params
+      params,
     );
 
     params.push(page.pageSize, page.offset);
@@ -410,7 +441,7 @@ export class TenantsService {
       ORDER BY ${sort.field} ${sort.direction}, a.created_at DESC
       LIMIT $${params.length - 1} OFFSET $${params.length}
       `,
-      params
+      params,
     );
 
     return { data: result.rows, pagination: { ...page, total: Number(count.rows[0]?.total ?? 0) } };
@@ -425,7 +456,7 @@ export class TenantsService {
       WHERE tenant_id = $1
       ORDER BY name ASC
       `,
-      [context.tenantId]
+      [context.tenantId],
     );
     return { data: result.rows };
   }
@@ -442,16 +473,16 @@ function currentActor(context: TenantContext) {
 async function assertRole(client: PoolClient, tenantId: string, roleId: string) {
   const result = await client.query<{ id: string; slug: string; name: string }>(
     "SELECT id, slug, name FROM roles WHERE tenant_id = $1 AND id = $2",
-    [tenantId, roleId]
+    [tenantId, roleId],
   );
   return ensureFound(result.rows[0], "Perfil");
 }
 
 async function assertBranch(client: PoolClient, tenantId: string, branchId: string) {
-  const result = await client.query("SELECT id FROM branches WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL", [
-    tenantId,
-    branchId
-  ]);
+  const result = await client.query(
+    "SELECT id FROM branches WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL",
+    [tenantId, branchId],
+  );
   ensureFound(result.rows[0], "Filial");
 }
 
@@ -464,7 +495,7 @@ async function insertAuditLog(
     entityType: string;
     entityId?: string | null;
     metadata?: Record<string, unknown>;
-  }
+  },
 ) {
   await client.query(
     `
@@ -477,8 +508,8 @@ async function insertAuditLog(
       input.action,
       input.entityType,
       input.entityId ?? null,
-      JSON.stringify(input.metadata ?? {})
-    ]
+      JSON.stringify(input.metadata ?? {}),
+    ],
   );
 }
 

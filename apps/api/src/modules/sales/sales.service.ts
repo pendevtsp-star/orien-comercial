@@ -3,7 +3,12 @@ import { permissions } from "@sgc/auth";
 import { renderDocumentHtml } from "@sgc/documents";
 import type { SaleCancelInput, SaleCreateInput, SalesListQuery } from "@sgc/types";
 import type { PoolClient, QueryResult } from "pg";
-import { ensureBranchAccess, ensureFound, pagination, resolveSort } from "../../shared/resource-access";
+import {
+  ensureBranchAccess,
+  ensureFound,
+  pagination,
+  resolveSort,
+} from "../../shared/resource-access";
 import type { TenantContext } from "../../shared/request-context";
 import { loadTenantBranding } from "../../shared/tenant-branding";
 import { DatabaseService } from "../database/database.service";
@@ -19,7 +24,7 @@ export class SalesService {
     const sort = resolveSort(
       query,
       { createdAt: "s.created_at", totalAmount: "s.total_amount", status: "s.status" },
-      "createdAt"
+      "createdAt",
     );
 
     if (context.branchId) {
@@ -29,7 +34,9 @@ export class SalesService {
 
     if (query.search) {
       params.push(`%${query.search}%`);
-      filters.push(`(c.name ILIKE $${params.length} OR b.name ILIKE $${params.length} OR COALESCE(s.notes, '') ILIKE $${params.length})`);
+      filters.push(
+        `(c.name ILIKE $${params.length} OR b.name ILIKE $${params.length} OR COALESCE(s.notes, '') ILIKE $${params.length})`,
+      );
     }
 
     if (query.status) {
@@ -46,7 +53,7 @@ export class SalesService {
       LEFT JOIN customers c ON c.id = s.customer_id
       WHERE ${filters.join(" AND ")}
       `,
-      params
+      params,
     );
 
     params.push(page.pageSize, page.offset);
@@ -85,7 +92,7 @@ export class SalesService {
       ORDER BY ${sort.field} ${sort.direction}, s.created_at DESC
       LIMIT $${params.length - 1} OFFSET $${params.length}
       `,
-      params
+      params,
     );
 
     return { data: rows.rows, pagination: { ...page, total: Number(count.rows[0]?.total ?? 0) } };
@@ -100,9 +107,10 @@ export class SalesService {
       if (input.cashRegisterSessionId) {
         const cashSession = await client.query(
           "SELECT id FROM cash_register_sessions WHERE tenant_id = $1 AND id = $2 AND branch_id = $3 AND status = 'open'",
-          [context.tenantId, input.cashRegisterSessionId, input.branchId]
+          [context.tenantId, input.cashRegisterSessionId, input.branchId],
         );
-        if (!cashSession.rowCount) throw new BadRequestException("Caixa informado nao esta aberto para esta loja.");
+        if (!cashSession.rowCount)
+          throw new BadRequestException("Caixa informado nao esta aberto para esta loja.");
       }
 
       const productIds = input.items.map((item) => item.productId);
@@ -112,7 +120,7 @@ export class SalesService {
         FROM products
         WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NULL AND is_active = true
         `,
-        [context.tenantId, productIds]
+        [context.tenantId, productIds],
       );
 
       if (products.rowCount !== productIds.length) {
@@ -124,9 +132,16 @@ export class SalesService {
         const product = productById.get(item.productId);
         const unitPrice = item.unitPrice ?? Number(product?.sale_price ?? 0);
         const grossAmount = item.quantity * unitPrice;
-        if (item.discountAmount > grossAmount) throw new BadRequestException("Desconto nao pode superar o valor do item.");
-        if (grossAmount > 0 && item.discountAmount / grossAmount > 0.1 && !context.permissions.includes(permissions.sales.cancel)) {
-          throw new ForbiddenException("Descontos acima de 10% exigem autorizacao de gerente ou administrador.");
+        if (item.discountAmount > grossAmount)
+          throw new BadRequestException("Desconto nao pode superar o valor do item.");
+        if (
+          grossAmount > 0 &&
+          item.discountAmount / grossAmount > 0.1 &&
+          !context.permissions.includes(permissions.sales.cancel)
+        ) {
+          throw new ForbiddenException(
+            "Descontos acima de 10% exigem autorizacao de gerente ou administrador.",
+          );
         }
       }
       const totalAmount = input.items.reduce((total, item) => {
@@ -139,13 +154,44 @@ export class SalesService {
         throw new BadRequestException("Total da venda nao pode ser negativo.");
       }
 
+      const plannedPaidAmount = input.payments
+        .filter((payment) => payment.status === "paid")
+        .reduce((sum, payment) => sum + payment.amount, 0);
+      const plannedCreditAmount = Math.max(0, totalAmount - plannedPaidAmount);
+      if (input.customerId && plannedCreditAmount > 0) {
+        const policy = await client.query<{ credit_limit: string; blocked: boolean }>(
+          `SELECT credit_limit::text,blocked FROM customer_credit_accounts WHERE tenant_id=$1 AND customer_id=$2`,
+          [context.tenantId, input.customerId],
+        );
+        const exposure = await client.query<{ total: string }>(
+          `SELECT COALESCE(sum(amount),0)::text total FROM accounts_receivable WHERE tenant_id=$1 AND customer_id=$2 AND status IN('open','overdue')`,
+          [context.tenantId, input.customerId],
+        );
+        if (policy.rows[0]?.blocked)
+          throw new ForbiddenException("Crediario bloqueado para este cliente.");
+        if (
+          policy.rows[0] &&
+          Number(exposure.rows[0]?.total ?? 0) + plannedCreditAmount >
+            Number(policy.rows[0].credit_limit)
+        )
+          throw new ForbiddenException("Venda excede o limite de crediario do cliente.");
+      }
+
       const sale = await client.query<{ id: string }>(
         `
         INSERT INTO sales (tenant_id, branch_id, customer_id, seller_user_id, cash_register_session_id, status, total_amount, notes)
         VALUES ($1, $2, $3, $4, $5, 'sold', $6, $7)
         RETURNING id
         `,
-        [context.tenantId, input.branchId, input.customerId ?? null, context.userId ?? null, input.cashRegisterSessionId ?? null, totalAmount, input.notes ?? null]
+        [
+          context.tenantId,
+          input.branchId,
+          input.customerId ?? null,
+          context.userId ?? null,
+          input.cashRegisterSessionId ?? null,
+          totalAmount,
+          input.notes ?? null,
+        ],
       );
       const saleId = sale.rows[0]!.id;
 
@@ -158,10 +204,25 @@ export class SalesService {
           INSERT INTO sale_items (tenant_id, sale_id, product_id, description, quantity, unit_price, discount_amount)
           VALUES ($1, $2, $3, $4, $5, $6, $7)
           `,
-          [context.tenantId, saleId, item.productId, product.name, item.quantity, unitPrice, item.discountAmount]
+          [
+            context.tenantId,
+            saleId,
+            item.productId,
+            product.name,
+            item.quantity,
+            unitPrice,
+            item.discountAmount,
+          ],
         );
 
-        await decrementStock(client, context.tenantId, input.branchId, item.productId, item.quantity, saleId);
+        await decrementStock(
+          client,
+          context.tenantId,
+          input.branchId,
+          item.productId,
+          item.quantity,
+          saleId,
+        );
       }
 
       const paidAmount = input.payments
@@ -174,7 +235,7 @@ export class SalesService {
           INSERT INTO sale_payments (tenant_id, sale_id, method, amount, status, paid_at)
           VALUES ($1, $2, $3, $4, $5, CASE WHEN $5 = 'paid' THEN now() ELSE NULL END)
           `,
-          [context.tenantId, saleId, payment.method, payment.amount, payment.status]
+          [context.tenantId, saleId, payment.method, payment.amount, payment.status],
         );
       }
 
@@ -185,7 +246,14 @@ export class SalesService {
           INSERT INTO accounts_receivable (tenant_id, branch_id, customer_id, sale_id, amount, due_date, status, description)
           VALUES ($1, $2, $3, $4, $5, CURRENT_DATE, 'open', $6)
           `,
-          [context.tenantId, input.branchId, input.customerId ?? null, saleId, openAmount, `Saldo da venda ${saleId}`]
+          [
+            context.tenantId,
+            input.branchId,
+            input.customerId ?? null,
+            saleId,
+            openAmount,
+            `Saldo da venda ${saleId}`,
+          ],
         );
       }
 
@@ -195,7 +263,12 @@ export class SalesService {
         action: "sale.created",
         entityType: "sale",
         entityId: saleId,
-        metadata: { branchId: input.branchId, totalAmount, itemCount: input.items.length, discountAmount: input.items.reduce((sum, item) => sum + item.discountAmount, 0) }
+        metadata: {
+          branchId: input.branchId,
+          totalAmount,
+          itemCount: input.items.length,
+          discountAmount: input.items.reduce((sum, item) => sum + item.discountAmount, 0),
+        },
       });
 
       return { id: saleId, totalAmount, paidAmount, openAmount };
@@ -215,7 +288,7 @@ export class SalesService {
         FROM sales
         WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
         `,
-        [context.tenantId, saleId]
+        [context.tenantId, saleId],
       );
       const sale = ensureFound(saleResult.rows[0], "Venda");
       ensureBranchAccess(context, sale.branch_id);
@@ -226,7 +299,7 @@ export class SalesService {
 
       const items = await client.query<{ product_id: string; quantity: string }>(
         "SELECT product_id, quantity::text FROM sale_items WHERE tenant_id = $1 AND sale_id = $2",
-        [context.tenantId, saleId]
+        [context.tenantId, saleId],
       );
 
       for (const item of items.rows) {
@@ -237,7 +310,7 @@ export class SalesService {
           ON CONFLICT (tenant_id, branch_id, product_id)
           DO UPDATE SET quantity = stock_balances.quantity + EXCLUDED.quantity, updated_at = now()
           `,
-          [context.tenantId, sale.branch_id, item.product_id, Number(item.quantity)]
+          [context.tenantId, sale.branch_id, item.product_id, Number(item.quantity)],
         );
 
         await client.query(
@@ -245,7 +318,14 @@ export class SalesService {
           INSERT INTO stock_movements (tenant_id, branch_id, product_id, movement_type, quantity, reason, actor_user_id)
           VALUES ($1, $2, $3, 'sale_cancel_in', $4, $5, $6)
           `,
-          [context.tenantId, sale.branch_id, item.product_id, Number(item.quantity), `Cancelamento da venda ${saleId}`, context.userId ?? null]
+          [
+            context.tenantId,
+            sale.branch_id,
+            item.product_id,
+            Number(item.quantity),
+            `Cancelamento da venda ${saleId}`,
+            context.userId ?? null,
+          ],
         );
       }
 
@@ -255,12 +335,12 @@ export class SalesService {
         SET status = 'cancelled', cancelled_at = now(), cancelled_reason = $3, updated_at = now()
         WHERE tenant_id = $1 AND id = $2
         `,
-        [context.tenantId, saleId, input.reason]
+        [context.tenantId, saleId, input.reason],
       );
 
       await client.query(
         "UPDATE accounts_receivable SET status = 'cancelled', updated_at = now() WHERE tenant_id = $1 AND sale_id = $2 AND status <> 'paid'",
-        [context.tenantId, saleId]
+        [context.tenantId, saleId],
       );
 
       await insertAuditLog(client, {
@@ -269,7 +349,7 @@ export class SalesService {
         action: "sale.cancelled",
         entityType: "sale",
         entityId: saleId,
-        metadata: { reason: input.reason }
+        metadata: { reason: input.reason },
       });
 
       return { ok: true };
@@ -280,7 +360,7 @@ export class SalesService {
     const sale = await this.database.tenantQuery<{ branch_id: string }>(
       context.tenantId,
       "SELECT branch_id FROM sales WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL",
-      [context.tenantId, saleId]
+      [context.tenantId, saleId],
     );
     const saleRow = ensureFound(sale.rows[0], "Venda");
     ensureBranchAccess(context, saleRow.branch_id);
@@ -299,7 +379,7 @@ export class SalesService {
         WHERE tenant_id = $1 AND sale_id = $2
         ORDER BY created_at ASC
         `,
-        [context.tenantId, saleId]
+        [context.tenantId, saleId],
       ),
       this.database.tenantQuery<{
         method: string;
@@ -313,7 +393,7 @@ export class SalesService {
         WHERE tenant_id = $1 AND reason ILIKE $2
         ORDER BY created_at ASC
         `,
-        [context.tenantId, `%${saleId}%`]
+        [context.tenantId, `%${saleId}%`],
       ),
       this.database.tenantQuery(
         context.tenantId,
@@ -323,7 +403,7 @@ export class SalesService {
         WHERE tenant_id = $1 AND sale_id = $2
         ORDER BY created_at ASC
         `,
-        [context.tenantId, saleId]
+        [context.tenantId, saleId],
       ),
       this.database.tenantQuery(
         context.tenantId,
@@ -333,15 +413,15 @@ export class SalesService {
         WHERE tenant_id = $1 AND entity_type = 'sale' AND entity_id = $2
         ORDER BY created_at ASC
         `,
-        [context.tenantId, saleId]
-      )
+        [context.tenantId, saleId],
+      ),
     ]);
 
     return {
       payments: payments.rows,
       movements: movements.rows,
       receivables: financial.rows,
-      audit: audit.rows
+      audit: audit.rows,
     };
   }
 
@@ -372,11 +452,14 @@ export class SalesService {
       WHERE s.tenant_id = $1 AND s.id = $2 AND s.deleted_at IS NULL
       LIMIT 1
       `,
-      [context.tenantId, saleId]
+      [context.tenantId, saleId],
     );
     const sale = ensureFound(saleResult.rows[0], "Venda");
 
-    const [items, payments]: [QueryResult<SaleDocumentItemRow>, QueryResult<SaleDocumentPaymentRow>] = await Promise.all([
+    const [items, payments]: [
+      QueryResult<SaleDocumentItemRow>,
+      QueryResult<SaleDocumentPaymentRow>,
+    ] = await Promise.all([
       this.database.tenantQuery<SaleDocumentItemRow>(
         context.tenantId,
         `
@@ -385,7 +468,7 @@ export class SalesService {
         WHERE tenant_id = $1 AND sale_id = $2
         ORDER BY description ASC
         `,
-        [context.tenantId, saleId]
+        [context.tenantId, saleId],
       ),
       this.database.tenantQuery<SaleDocumentPaymentRow>(
         context.tenantId,
@@ -395,8 +478,8 @@ export class SalesService {
         WHERE tenant_id = $1 AND sale_id = $2
         ORDER BY created_at ASC
         `,
-        [context.tenantId, saleId]
-      )
+        [context.tenantId, saleId],
+      ),
     ]);
 
     return renderDocumentHtml({
@@ -408,7 +491,7 @@ export class SalesService {
         { label: "Venda", value: sale.id.slice(0, 8) },
         { label: "Loja", value: sale.branch_name },
         { label: "Cliente", value: sale.customer_name ?? "Consumidor final" },
-        { label: "Emitido em", value: sale.created_at.toLocaleString("pt-BR") }
+        { label: "Emitido em", value: sale.created_at.toLocaleString("pt-BR") },
       ],
       sections: [
         {
@@ -418,14 +501,14 @@ export class SalesService {
             {
               label: "Pago",
               value: toMoney(
-                payments.rows.reduce((sum, payment) => sum + Number(payment.amount), 0)
-              )
+                payments.rows.reduce((sum, payment) => sum + Number(payment.amount), 0),
+              ),
             },
             {
               label: "Itens",
-              value: String(items.rows.length)
-            }
-          ]
+              value: String(items.rows.length),
+            },
+          ],
         },
         {
           title: "Itens vendidos",
@@ -434,15 +517,15 @@ export class SalesService {
               { key: "description", label: "Item" },
               { key: "quantity", label: "Qtd" },
               { key: "unitPrice", label: "Preco unit." },
-              { key: "discountAmount", label: "Desconto" }
+              { key: "discountAmount", label: "Desconto" },
             ],
             rows: items.rows.map((item) => ({
               description: item.description,
               quantity: item.quantity,
               unitPrice: toMoney(item.unitPrice),
-              discountAmount: toMoney(item.discountAmount)
-            }))
-          }
+              discountAmount: toMoney(item.discountAmount),
+            })),
+          },
         },
         {
           title: "Pagamentos",
@@ -450,44 +533,51 @@ export class SalesService {
             columns: [
               { key: "method", label: "Metodo" },
               { key: "amount", label: "Valor" },
-              { key: "status", label: "Status" }
+              { key: "status", label: "Status" },
             ],
             rows: payments.rows.map((payment) => ({
               method: payment.method,
               amount: toMoney(payment.amount),
-              status: payment.status
-            }))
-          }
-        }
-      ]
+              status: payment.status,
+            })),
+          },
+        },
+      ],
     });
   }
 }
 
 async function assertBranch(client: PoolClient, tenantId: string, branchId: string) {
-  const branch = await client.query("SELECT id FROM branches WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL", [
-    tenantId,
-    branchId
-  ]);
+  const branch = await client.query(
+    "SELECT id FROM branches WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL",
+    [tenantId, branchId],
+  );
   ensureFound(branch.rows[0], "Filial");
 }
 
 async function assertCustomer(client: PoolClient, tenantId: string, customerId: string) {
   const customer = await client.query(
     "SELECT id FROM customers WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL",
-    [tenantId, customerId]
+    [tenantId, customerId],
   );
   ensureFound(customer.rows[0], "Cliente");
 }
 
-async function decrementStock(client: PoolClient, tenantId: string, branchId: string, productId: string, quantity: number, saleId: string) {
+async function decrementStock(
+  client: PoolClient,
+  tenantId: string,
+  branchId: string,
+  productId: string,
+  quantity: number,
+  saleId: string,
+) {
   await client.query(
     `
     INSERT INTO stock_balances (tenant_id, branch_id, product_id, quantity)
     VALUES ($1, $2, $3, 0)
     ON CONFLICT (tenant_id, branch_id, product_id) DO NOTHING
     `,
-    [tenantId, branchId, productId]
+    [tenantId, branchId, productId],
   );
 
   const balance = await client.query<{ quantity: string }>(
@@ -497,7 +587,7 @@ async function decrementStock(client: PoolClient, tenantId: string, branchId: st
     WHERE tenant_id = $1 AND branch_id = $2 AND product_id = $3
     RETURNING quantity::text
     `,
-    [tenantId, branchId, productId, quantity]
+    [tenantId, branchId, productId, quantity],
   );
 
   if (Number(balance.rows[0]?.quantity ?? 0) < 0) {
@@ -509,7 +599,7 @@ async function decrementStock(client: PoolClient, tenantId: string, branchId: st
     INSERT INTO stock_movements (tenant_id, branch_id, product_id, movement_type, quantity, reason)
     VALUES ($1, $2, $3, 'sale_out', $4, $5)
     `,
-    [tenantId, branchId, productId, -quantity, `Venda ${saleId}`]
+    [tenantId, branchId, productId, -quantity, `Venda ${saleId}`],
   );
 }
 
@@ -522,7 +612,7 @@ async function insertAuditLog(
     entityType: string;
     entityId?: string | null;
     metadata?: Record<string, unknown>;
-  }
+  },
 ) {
   await client.query(
     `
@@ -535,8 +625,8 @@ async function insertAuditLog(
       input.action,
       input.entityType,
       input.entityId ?? null,
-      JSON.stringify(input.metadata ?? {})
-    ]
+      JSON.stringify(input.metadata ?? {}),
+    ],
   );
 }
 

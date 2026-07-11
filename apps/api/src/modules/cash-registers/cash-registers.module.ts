@@ -5,5 +5,9 @@ import { TenantContextGuard } from "../../shared/tenant-context.guard";
 import { CashRegistersController } from "./cash-registers.controller";
 import { CashRegistersService } from "./cash-registers.service";
 
-@Module({ imports: [DatabaseModule], controllers: [CashRegistersController], providers: [CashRegistersService, TenantContextGuard, PermissionsGuard] })
+@Module({
+  imports: [DatabaseModule],
+  controllers: [CashRegistersController],
+  providers: [CashRegistersService, TenantContextGuard, PermissionsGuard],
+})
 export class CashRegistersModule {}

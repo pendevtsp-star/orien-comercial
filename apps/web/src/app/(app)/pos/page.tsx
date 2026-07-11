@@ -35,6 +35,7 @@ interface CashHistory {
   differenceAmount?: string;
   openedAt: string;
   closedAt?: string;
+  approvalStatus?: string;
 }
 interface CartItem {
   productId: string;
@@ -104,17 +105,29 @@ export default function PosPage() {
   );
   const branchOptions = branches.map((branch) => ({ label: branch.name, value: branch.id }));
 
-  function scan() {
+  async function scan() {
     const code = scanner.trim();
     const product = products.find((item) => item.barcode === code || item.sku === code);
     if (!product) {
       setError(`Produto não encontrado para ${code}.`);
       return;
     }
+    const currentQuantity = cart.find((item) => item.productId === product.id)?.quantity ?? 0;
+    let resolvedPrice = Number(product.salePrice);
+    try {
+      const pricing = await apiFetch<{ price: number }>(
+        `/operations/prices/resolve?productId=${product.id}&branchId=${branchId}&quantity=${currentQuantity + 1}`,
+      );
+      resolvedPrice = pricing.price;
+    } catch {
+      // O preco base permanece disponivel se nenhuma regra promocional for aplicavel.
+    }
     setCart((current) =>
       current.some((item) => item.productId === product.id)
         ? current.map((item) =>
-            item.productId === product.id ? { ...item, quantity: item.quantity + 1 } : item,
+            item.productId === product.id
+              ? { ...item, quantity: item.quantity + 1, unitPrice: resolvedPrice }
+              : item,
           )
         : [
             ...current,
@@ -122,7 +135,7 @@ export default function PosPage() {
               productId: product.id,
               name: product.name,
               quantity: 1,
-              unitPrice: Number(product.salePrice),
+              unitPrice: resolvedPrice,
               discountAmount: 0,
             },
           ],
@@ -148,7 +161,7 @@ export default function PosPage() {
   }
   async function closeCash() {
     if (!cash) return;
-    const value = window.prompt("Valor contado no fechamento:", total.toFixed(2));
+    const value = window.prompt("Conferencia cega: informe o valor contado no caixa:");
     if (value === null) return;
     try {
       await apiFetch(`/cash-registers/${cash.id}/close`, {
@@ -287,7 +300,7 @@ export default function PosPage() {
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     event.preventDefault();
-                    scan();
+                    void scan();
                   }
                 }}
               />
@@ -473,6 +486,32 @@ export default function PosPage() {
                         currency: "BRL",
                       })
                     : "-",
+              },
+              {
+                key: "approval",
+                header: "Aprovacao",
+                render: (row) =>
+                  row.approvalStatus === "pending" ? (
+                    <Button
+                      variant="secondary"
+                      onClick={() =>
+                        void apiFetch(`/cash-registers/${row.id}/approve`, {
+                          method: "POST",
+                          body: "{}",
+                        }).then(() =>
+                          setCashHistory((current) =>
+                            current.map((item) =>
+                              item.id === row.id ? { ...item, approvalStatus: "approved" } : item,
+                            ),
+                          ),
+                        )
+                      }
+                    >
+                      Aprovar divergencia
+                    </Button>
+                  ) : (
+                    <Badge>{row.approvalStatus === "approved" ? "Aprovada" : "Regular"}</Badge>
+                  ),
               },
               {
                 key: "difference",

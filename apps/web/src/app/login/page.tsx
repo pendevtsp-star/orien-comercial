@@ -7,6 +7,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { apiFetch, setTenantId } from "../../lib/api";
 
 interface MeResponse {
+  user: { mustChangePassword?: boolean };
   memberships: Array<{ tenantId: string }>;
 }
 const appName = process.env.NEXT_PUBLIC_APP_NAME ?? "Orien";
@@ -41,7 +42,7 @@ export default function LoginPage() {
       const me = await apiFetch<MeResponse>("/me");
       const firstTenant = me.memberships[0]?.tenantId;
       if (firstTenant) setTenantId(firstTenant);
-      router.push("/dashboard");
+      router.push(me.user.mustChangePassword ? "/change-password" : "/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Nao foi possivel entrar.");
     } finally {

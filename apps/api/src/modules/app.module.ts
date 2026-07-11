@@ -11,6 +11,7 @@ import { DatabaseModule } from "../modules/database/database.module";
 import { FinancialModule } from "../modules/financial/financial.module";
 import { ImportsModule } from "../modules/imports/imports.module";
 import { ProductsModule } from "../modules/products/products.module";
+import { OperationsModule } from "../modules/operations/operations.module";
 import { PurchasesModule } from "../modules/purchases/purchases.module";
 import { SalesModule } from "../modules/sales/sales.module";
 import { StockModule } from "../modules/stock/stock.module";
@@ -25,8 +26,8 @@ import { TenantsModule } from "../modules/tenants/tenants.module";
     ThrottlerModule.forRoot([
       {
         ttl: 60_000,
-        limit: 120
-      }
+        limit: 120,
+      },
     ]),
     AuthModule,
     AlertsModule,
@@ -34,6 +35,7 @@ import { TenantsModule } from "../modules/tenants/tenants.module";
     BranchesModule,
     CashRegistersModule,
     ProductsModule,
+    OperationsModule,
     PurchasesModule,
     CustomersModule,
     StockModule,
@@ -42,7 +44,7 @@ import { TenantsModule } from "../modules/tenants/tenants.module";
     FinancialModule,
     ImportsModule,
     SubscriptionsModule,
-    DashboardModule
-  ]
+    DashboardModule,
+  ],
 })
 export class AppModule {}

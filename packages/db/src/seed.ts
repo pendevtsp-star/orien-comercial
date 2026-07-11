@@ -321,9 +321,9 @@ async function main() {
 
       for (const demoUser of demoUsers) {
         const demo = await pool.query<{ id: string }>(
-          `INSERT INTO users (email,name,password_hash,is_email_verified)
-           VALUES ($1,$2,$3,true)
-           ON CONFLICT (email) DO UPDATE SET name=EXCLUDED.name,password_hash=EXCLUDED.password_hash,updated_at=now()
+          `INSERT INTO users (email,name,password_hash,is_email_verified,must_change_password)
+           VALUES ($1,$2,$3,true,true)
+           ON CONFLICT (email) DO UPDATE SET name=EXCLUDED.name,password_hash=EXCLUDED.password_hash,must_change_password=true,updated_at=now()
            RETURNING id`,
           [demoUser.email, demoUser.name, demoPasswordHash],
         );

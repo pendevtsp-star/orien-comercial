@@ -1,7 +1,24 @@
-import { Body, Controller, Delete, Get, Inject, Param, Post, Req, Res, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Inject,
+  Param,
+  Post,
+  Req,
+  Res,
+  UseGuards,
+} from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { Throttle } from "@nestjs/throttler";
-import { forgotPasswordSchema, inviteAcceptSchema, loginSchema, resetPasswordSchema } from "@sgc/types";
+import {
+  forgotPasswordSchema,
+  inviteAcceptSchema,
+  loginSchema,
+  resetPasswordSchema,
+} from "@sgc/types";
+import { z } from "zod";
 import type { Request, Response } from "express";
 import { JwtAuthGuard } from "../../shared/auth.guard";
 import { CurrentUser } from "../../shared/current-user.decorator";
@@ -13,7 +30,7 @@ const cookieBase = {
   httpOnly: true,
   secure: process.env.NODE_ENV === "production" && process.env.COOKIE_SECURE !== "false",
   sameSite: "lax" as const,
-  path: "/"
+  path: "/",
 };
 
 @ApiTags("auth")
@@ -26,11 +43,11 @@ export class AuthController {
   async login(
     @Body(new ZodValidationPipe(loginSchema)) body: unknown,
     @Req() request: Request,
-    @Res({ passthrough: true }) response: Response
+    @Res({ passthrough: true }) response: Response,
   ) {
     const tokens = await this.authService.login(body as never, {
       userAgent: request.headers["user-agent"],
-      ipAddress: request.ip
+      ipAddress: request.ip,
     });
 
     setAuthCookies(response, tokens);
@@ -52,6 +69,25 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post("change-password")
+  changePassword(
+    @CurrentUser() user: AuthUser,
+    @Body(
+      new ZodValidationPipe(
+        z.object({ currentPassword: z.string().min(1), newPassword: z.string().min(12).max(128) }),
+      ),
+    )
+    body: { currentPassword: string; newPassword: string },
+  ) {
+    return this.authService.changePassword(
+      user.userId,
+      user.sessionId,
+      body.currentPassword,
+      body.newPassword,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Delete("sessions/:id")
   revokeSession(@CurrentUser() user: AuthUser, @Param("id") id: string) {
     return this.authService.revokeSession(user.userId, id);
@@ -60,10 +96,13 @@ export class AuthController {
   @Throttle({ default: { ttl: 60_000, limit: 20 } })
   @Post("refresh")
   async refresh(@Req() request: Request, @Res({ passthrough: true }) response: Response) {
-    const tokens = await this.authService.refresh(request.cookies?.refresh_token as string | undefined, {
-      userAgent: request.headers["user-agent"],
-      ipAddress: request.ip
-    });
+    const tokens = await this.authService.refresh(
+      request.cookies?.refresh_token as string | undefined,
+      {
+        userAgent: request.headers["user-agent"],
+        ipAddress: request.ip,
+      },
+    );
 
     setAuthCookies(response, tokens);
     return { ok: true };
@@ -77,7 +116,9 @@ export class AuthController {
 
   @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @Post("password/reset")
-  reset(@Body(new ZodValidationPipe(resetPasswordSchema)) body: { token: string; password: string }) {
+  reset(
+    @Body(new ZodValidationPipe(resetPasswordSchema)) body: { token: string; password: string },
+  ) {
     return this.authService.resetPassword(body.token, body.password);
   }
 
@@ -85,7 +126,7 @@ export class AuthController {
   @Post("invites/accept")
   async acceptInvite(
     @Body(new ZodValidationPipe(inviteAcceptSchema)) body: unknown,
-    @Res({ passthrough: true }) response: Response
+    @Res({ passthrough: true }) response: Response,
   ) {
     const tokens = await this.authService.acceptInvite(body as never);
     setAuthCookies(response, tokens);
@@ -93,14 +134,19 @@ export class AuthController {
   }
 }
 
-function setAuthCookies(response: Response, tokens: { accessToken: string; refreshToken: string; rememberMe: boolean }) {
+function setAuthCookies(
+  response: Response,
+  tokens: { accessToken: string; refreshToken: string; rememberMe: boolean },
+) {
   response.cookie("access_token", tokens.accessToken, {
     ...cookieBase,
-    maxAge: 1000 * 60 * 15
+    maxAge: 1000 * 60 * 15,
   });
-  response.cookie("refresh_token", tokens.refreshToken, tokens.rememberMe
-    ? { ...cookieBase, maxAge: 1000 * 60 * 60 * 24 * 30 }
-    : cookieBase);
+  response.cookie(
+    "refresh_token",
+    tokens.refreshToken,
+    tokens.rememberMe ? { ...cookieBase, maxAge: 1000 * 60 * 60 * 24 * 30 } : cookieBase,
+  );
 }
 
 function clearAuthCookies(response: Response) {
