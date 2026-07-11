@@ -50,6 +50,19 @@ CREATE TABLE IF NOT EXISTS quote_items (
   discount_amount numeric(12,2) NOT NULL DEFAULT 0, reserved_quantity numeric(12,3) NOT NULL DEFAULT 0
 );
 
+ALTER TABLE quotes
+  ADD COLUMN IF NOT EXISTS seller_user_id uuid REFERENCES users(id),
+  ADD COLUMN IF NOT EXISTS valid_until date,
+  ADD COLUMN IF NOT EXISTS notes varchar(500),
+  ADD COLUMN IF NOT EXISTS converted_sale_id uuid REFERENCES sales(id);
+UPDATE quotes SET valid_until=COALESCE(valid_until,expires_at::date,CURRENT_DATE+7) WHERE valid_until IS NULL;
+ALTER TABLE quotes ALTER COLUMN valid_until SET NOT NULL;
+
+ALTER TABLE quote_items
+  ADD COLUMN IF NOT EXISTS product_id uuid REFERENCES products(id),
+  ADD COLUMN IF NOT EXISTS discount_amount numeric(12,2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS reserved_quantity numeric(12,3) NOT NULL DEFAULT 0;
+
 CREATE TABLE IF NOT EXISTS customer_credit_accounts (
   customer_id uuid PRIMARY KEY REFERENCES customers(id) ON DELETE CASCADE, tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   credit_limit numeric(12,2) NOT NULL DEFAULT 0, blocked boolean NOT NULL DEFAULT false, block_reason varchar(300),
