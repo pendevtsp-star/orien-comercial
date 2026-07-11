@@ -13,6 +13,112 @@
   --brand-border: #d9e1ee;
 }
 
+:root[data-theme="safira"] {
+  --brand-primary: #071b33;
+  --brand-primary-strong: #041426;
+  --brand-secondary: #075985;
+  --brand-highlight: #06b6d4;
+  --brand-accent: #38bdf8;
+  --brand-surface: #eef7fb;
+  --brand-border: #cfe4ed;
+}
+:root[data-theme="esmeralda"] {
+  --brand-primary: #092c2a;
+  --brand-primary-strong: #061f1e;
+  --brand-secondary: #0f766e;
+  --brand-highlight: #10b981;
+  --brand-accent: #f5c34a;
+  --brand-surface: #eff8f5;
+  --brand-border: #cee7df;
+}
+:root[data-theme="grafite"] {
+  --brand-primary: #20252d;
+  --brand-primary-strong: #15191f;
+  --brand-secondary: #475569;
+  --brand-highlight: #2563eb;
+  --brand-accent: #f5c34a;
+  --brand-surface: #f1f3f5;
+  --brand-border: #d8dde4;
+}
+:root[data-theme="rubi"] {
+  --brand-primary: #241119;
+  --brand-primary-strong: #180b10;
+  --brand-secondary: #881337;
+  --brand-highlight: #e11d48;
+  --brand-accent: #f5c34a;
+  --brand-surface: #fbf1f4;
+  --brand-border: #ecd4dc;
+}
+:root[data-theme="solaris"] {
+  --brand-primary: #111111;
+  --brand-primary-strong: #050505;
+  --brand-secondary: #7a5800;
+  --brand-highlight: #d6a600;
+  --brand-accent: #ffd54a;
+  --brand-surface: #f7f5ef;
+  --brand-border: #e5dcc4;
+}
+
+:root[data-color-mode="dark"] {
+  --background: #090d14;
+  --foreground: #eef3fb;
+  --brand-surface: #101722;
+  --brand-border: #273449;
+}
+:root[data-color-mode="dark"][data-theme="solaris"] {
+  --background: #080808;
+  --foreground: #fff8df;
+  --brand-surface: #15130d;
+  --brand-border: #40371d;
+  --brand-secondary: #d6a600;
+  --brand-highlight: #ffd54a;
+}
+:root[data-color-mode="dark"] body {
+  background: var(--background);
+  color: var(--foreground);
+}
+:root[data-color-mode="dark"] .bg-white {
+  background-color: #121a26 !important;
+}
+:root[data-color-mode="dark"] .text-slate-500 {
+  color: #a7b4c7 !important;
+}
+:root[data-color-mode="dark"] .text-slate-600 {
+  color: #c0cad8 !important;
+}
+:root[data-color-mode="dark"] input,
+:root[data-color-mode="dark"] select,
+:root[data-color-mode="dark"] textarea {
+  color: var(--foreground);
+  background: #121a26;
+}
+:root[data-density="compact"] {
+  font-size: 15px;
+}
+:root[data-density="compact"] table th,
+:root[data-density="compact"] table td {
+  padding-top: 0.5rem !important;
+  padding-bottom: 0.5rem !important;
+}
+:root[data-density="compact"] input,
+:root[data-density="compact"] select {
+  min-height: 2.25rem;
+}
+:root[data-reduce-motion="true"] *,
+:root[data-reduce-motion="true"] *::before,
+:root[data-reduce-motion="true"] *::after {
+  scroll-behavior: auto !important;
+  animation-duration: 0.01ms !important;
+  transition-duration: 0.01ms !important;
+}
+:root:not([data-dashboard-widgets~="executive"]) [data-dashboard-widget="executive"],
+:root:not([data-dashboard-widgets~="indicators"]) [data-dashboard-widget="indicators"],
+:root:not([data-dashboard-widgets~="performance"]) [data-dashboard-widget="performance"],
+:root:not([data-dashboard-widgets~="period"]) [data-dashboard-widget="period"],
+:root:not([data-dashboard-widgets~="goals"]) [data-dashboard-widget="goals"] {
+  display: none !important;
+}
+
 html,
 body {
   min-height: 100%;

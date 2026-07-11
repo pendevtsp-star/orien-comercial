@@ -11,6 +11,7 @@ import { DatabaseModule } from "../modules/database/database.module";
 import { FinancialModule } from "../modules/financial/financial.module";
 import { ImportsModule } from "../modules/imports/imports.module";
 import { ProductsModule } from "../modules/products/products.module";
+import { PreferencesModule } from "../modules/preferences/preferences.module";
 import { OperationsModule } from "../modules/operations/operations.module";
 import { PurchasesModule } from "../modules/purchases/purchases.module";
 import { SalesModule } from "../modules/sales/sales.module";
@@ -35,6 +36,7 @@ import { TenantsModule } from "../modules/tenants/tenants.module";
     BranchesModule,
     CashRegistersModule,
     ProductsModule,
+    PreferencesModule,
     OperationsModule,
     PurchasesModule,
     CustomersModule,

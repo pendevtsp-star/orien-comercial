@@ -10,14 +10,18 @@ import {
   CircleDollarSign,
   ClipboardList,
   CreditCard,
+  ChevronDown,
   LogOut,
   Menu,
+  Moon,
   PackageCheck,
+  Palette,
   Settings,
   Wrench,
   ScanBarcode,
   ShieldCheck,
   ShoppingCart,
+  Sun,
   Truck,
   UsersRound,
   X,
@@ -26,6 +30,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch, getTenantId, setTenantId } from "../lib/api";
+import { applyPreferences, defaultPreferences, type UserPreferences } from "../lib/preferences";
 
 const navigation = [
   { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
@@ -44,6 +49,7 @@ const navigation = [
   { href: "/team", label: "Equipe", icon: ShieldCheck },
   { href: "/subscription", label: "Assinatura", icon: CreditCard },
   { href: "/settings", label: "Configuracoes", icon: Settings },
+  { href: "/preferences", label: "Preferencias", icon: Palette },
   { href: "/sessions", label: "Dispositivos", icon: ShieldCheck },
 ];
 const appName = process.env.NEXT_PUBLIC_APP_NAME ?? "Orien";
@@ -54,8 +60,27 @@ interface MeResponse {
     tenantId: string;
     tenantName: string;
     branchId: string | null;
+    branchName?: string | null;
     roleSlug: string;
   }>;
+}
+
+function roleLabel(slug?: string | null) {
+  return (
+    (
+      {
+        owner: "Proprietario",
+        admin: "Administrador",
+        manager: "Gerente",
+        seller: "Vendedor",
+        cashier: "Caixa",
+        stock: "Estoquista",
+        finance: "Financeiro",
+        support: "Suporte",
+        viewer: "Consulta",
+      } as Record<string, string>
+    )[slug ?? ""] ?? "Perfil"
+  );
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -63,6 +88,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [me, setMe] = useState<MeResponse | null>(null);
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [preferences, setPreferences] = useState<UserPreferences>(defaultPreferences);
+  const [notificationCount, setNotificationCount] = useState(0);
 
   useEffect(() => {
     apiFetch<MeResponse>("/me")
@@ -78,6 +106,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       })
       .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    void apiFetch<UserPreferences>("/preferences").then((value) => {
+      setPreferences(value);
+      applyPreferences(value);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!me || !getTenantId()) return;
+    void apiFetch<{ notifications: number }>("/operations/overview")
+      .then((value) => setNotificationCount(Number(value.notifications ?? 0)))
+      .catch(() => undefined);
+  }, [me]);
 
   useEffect(() => {
     function redirectToLogin() {
@@ -96,6 +138,36 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       null
     );
   }, [me]);
+  const orderedNavigation = useMemo(
+    () =>
+      [...navigation].sort(
+        (a, b) =>
+          Number(preferences.favoriteRoutes.includes(b.href)) -
+          Number(preferences.favoriteRoutes.includes(a.href)),
+      ),
+    [preferences.favoriteRoutes],
+  );
+  const compact = preferences.sidebarMode === "compact";
+  const collapsed = preferences.sidebarMode === "collapsed";
+  const roleName = roleLabel(currentMembership?.roleSlug);
+  const initials = (me?.user.name ?? "Orien")
+    .split(" ")
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+
+  async function quickMode() {
+    const next = {
+      ...preferences,
+      colorMode: preferences.colorMode === "dark" ? "light" : "dark",
+    } as UserPreferences;
+    setPreferences(next);
+    applyPreferences(next);
+    await apiFetch("/preferences", { method: "PATCH", body: JSON.stringify(next) }).catch(
+      () => undefined,
+    );
+  }
 
   async function logout() {
     await apiFetch("/auth/logout", { method: "POST", body: "{}" }).catch(() => undefined);
@@ -125,7 +197,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </Button>
             </div>
             <nav className="orien-sidebar-scroll grid gap-1 overflow-y-auto p-3">
-              {navigation.map((item) => {
+              {orderedNavigation.map((item) => {
                 const Icon = item.icon;
                 const active = pathname === item.href;
                 return (
@@ -144,44 +216,57 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </aside>
         </div>
       ) : null}
-      <aside className="fixed inset-y-0 left-0 hidden w-72 border-r border-[#11284f] bg-[var(--brand-primary)] text-white lg:block">
-        <div className="flex h-20 items-center border-b border-white/10 px-5">
-          <div className="grid gap-1">
-            <BrandLogo size="sm" theme="dark" />
-            <p className="text-xs text-white/68">Gestao inteligente para negocios em crescimento</p>
+      {!collapsed ? (
+        <aside
+          className={`fixed inset-y-0 left-0 hidden border-r border-[#11284f] bg-[var(--brand-primary)] text-white lg:block ${compact ? "w-20" : "w-72"}`}
+        >
+          <div className="flex h-20 items-center border-b border-white/10 px-5">
+            <div className="grid gap-1">
+              <BrandLogo size="sm" theme="dark" iconOnly={compact} />
+              {!compact ? (
+                <p className="text-xs text-white/68">
+                  Gestao inteligente para negocios em crescimento
+                </p>
+              ) : null}
+            </div>
           </div>
-        </div>
-        <nav className="orien-sidebar-scroll grid max-h-[calc(100vh-5rem)] gap-1 overflow-y-auto p-3 pb-32">
-          {navigation.map((item) => {
-            const Icon = item.icon;
-            const active = pathname === item.href;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex h-11 items-center gap-3 rounded-md px-3 text-sm font-medium transition ${
-                  active
-                    ? "bg-[linear-gradient(135deg,#133A7C,#2563EB)] text-white shadow-[0_10px_24px_rgba(37,99,235,0.28)]"
-                    : "text-white/74 hover:bg-white/8 hover:text-white"
-                }`}
-              >
-                <Icon size={17} />
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
-        <div className="absolute inset-x-3 bottom-3 rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-white/72">
-          <p className="font-medium text-white">{appName}</p>
-          <p className="mt-1">Painel premium para operacao comercial, financeira e multiunidade.</p>
-        </div>
-      </aside>
-      <div className="lg:pl-72">
+          <nav className="orien-sidebar-scroll grid max-h-[calc(100vh-5rem)] gap-1 overflow-y-auto p-3 pb-32">
+            {orderedNavigation.map((item) => {
+              const Icon = item.icon;
+              const active = pathname === item.href;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  title={compact ? item.label : undefined}
+                  className={`flex h-11 items-center rounded-md text-sm font-medium transition ${compact ? "justify-center px-0" : "gap-3 px-3"} ${
+                    active
+                      ? "bg-[linear-gradient(135deg,#133A7C,#2563EB)] text-white shadow-[0_10px_24px_rgba(37,99,235,0.28)]"
+                      : "text-white/74 hover:bg-white/8 hover:text-white"
+                  }`}
+                >
+                  <Icon size={17} />
+                  {!compact ? item.label : null}
+                </Link>
+              );
+            })}
+          </nav>
+          {!compact ? (
+            <div className="absolute inset-x-3 bottom-3 rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-white/72">
+              <p className="font-medium text-white">{appName}</p>
+              <p className="mt-1">
+                Painel premium para operacao comercial, financeira e multiunidade.
+              </p>
+            </div>
+          ) : null}
+        </aside>
+      ) : null}
+      <div className={collapsed ? "" : compact ? "lg:pl-20" : "lg:pl-72"}>
         <header className="sticky top-0 z-20 flex min-h-16 items-center justify-between gap-3 border-b border-[var(--brand-border)] bg-white/95 px-4 py-3 backdrop-blur lg:h-16 lg:px-8 lg:py-0">
           <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-[var(--brand-border)] bg-white text-[var(--brand-primary)] transition hover:bg-[var(--brand-surface)] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-blue-500/25 lg:hidden"
+              className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-[var(--brand-border)] bg-white text-[var(--brand-primary)] transition hover:bg-[var(--brand-surface)] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-blue-500/25 ${collapsed ? "" : "lg:hidden"}`}
               aria-label="Abrir menu"
               onClick={() => setMobileNavigationOpen(true)}
             >
@@ -218,14 +303,80 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               ) : null}
             </div>
           </div>
-          <Button
-            variant="secondary"
-            className="shrink-0"
-            onClick={() => void logout()}
-            icon={<LogOut size={16} />}
-          >
-            Sair
-          </Button>
+          <div className="relative flex shrink-0 items-center gap-2">
+            <Link
+              href="/operations"
+              className="relative inline-flex h-10 w-10 items-center justify-center rounded-md border border-[var(--brand-border)] bg-white text-[var(--brand-primary)]"
+              aria-label="Notificacoes"
+            >
+              <BellRing size={17} />
+              {notificationCount ? (
+                <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-rose-600 px-1 text-center text-[10px] font-semibold text-white">
+                  {Math.min(notificationCount, 99)}
+                </span>
+              ) : null}
+            </Link>
+            <button
+              type="button"
+              className="flex min-w-0 items-center gap-2 rounded-md border border-[var(--brand-border)] bg-white p-1.5 pr-2 text-left"
+              onClick={() => setAccountOpen((value) => !value)}
+            >
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--brand-primary)] text-xs font-semibold text-white">
+                {initials}
+              </span>
+              <span className="hidden min-w-0 sm:grid">
+                <strong className="max-w-32 truncate text-xs text-[var(--brand-primary)]">
+                  {me?.user.name ?? "Carregando"}
+                </strong>
+                <span className="text-[11px] text-slate-500">{roleName}</span>
+              </span>
+              <ChevronDown size={14} />
+            </button>
+            {accountOpen ? (
+              <div className="absolute right-0 top-12 z-50 grid w-72 gap-1 rounded-md border border-[var(--brand-border)] bg-white p-2 shadow-2xl">
+                <div className="border-b border-[var(--brand-border)] p-3">
+                  <p className="font-semibold text-[var(--brand-primary)]">{me?.user.name}</p>
+                  <p className="truncate text-xs text-slate-500">{me?.user.email}</p>
+                  <p className="mt-2 text-xs text-[var(--brand-secondary)]">
+                    {roleName} ·{" "}
+                    {currentMembership?.branchId ? "Filial autorizada" : "Todas as lojas"}
+                  </p>
+                </div>
+                <button
+                  className="flex items-center gap-2 rounded-md p-3 text-sm hover:bg-[var(--brand-surface)]"
+                  onClick={() => void quickMode()}
+                >
+                  {preferences.colorMode === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+                  Alternar claro/escuro
+                </button>
+                <Link
+                  className="rounded-md p-3 text-sm hover:bg-[var(--brand-surface)]"
+                  href="/preferences"
+                >
+                  Aparencia e preferencias
+                </Link>
+                <Link
+                  className="rounded-md p-3 text-sm hover:bg-[var(--brand-surface)]"
+                  href="/sessions"
+                >
+                  Dispositivos conectados
+                </Link>
+                <Link
+                  className="rounded-md p-3 text-sm hover:bg-[var(--brand-surface)]"
+                  href="/change-password"
+                >
+                  Trocar senha
+                </Link>
+                <button
+                  className="flex items-center gap-2 rounded-md p-3 text-left text-sm text-rose-600 hover:bg-rose-50"
+                  onClick={() => void logout()}
+                >
+                  <LogOut size={16} />
+                  Sair
+                </button>
+              </div>
+            ) : null}
+          </div>
         </header>
         <main className="mx-auto w-full min-w-0 max-w-[1600px] overflow-x-clip px-3 py-5 sm:px-4 lg:px-6 xl:px-8">
           {children}

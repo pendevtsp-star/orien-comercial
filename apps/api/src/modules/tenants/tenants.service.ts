@@ -84,15 +84,17 @@ export class TenantsService {
         t.status AS "tenantStatus",
         m.id AS "membershipId",
         m.branch_id AS "branchId",
+        b.name AS "branchName",
         r.slug AS "roleSlug",
         COALESCE(array_agg(p.slug) FILTER (WHERE p.slug IS NOT NULL), '{}') AS permissions
       FROM memberships m
       JOIN tenants t ON t.id = m.tenant_id
       JOIN roles r ON r.id = m.role_id
+      LEFT JOIN branches b ON b.id = m.branch_id
       LEFT JOIN role_permissions rp ON rp.role_id = r.id
       LEFT JOIN permissions p ON p.id = rp.permission_id
       WHERE m.user_id = $1 AND m.status = 'active' AND m.deleted_at IS NULL
-      GROUP BY t.id, m.id, r.slug
+      GROUP BY t.id, m.id, r.slug, b.name
       ORDER BY t.name ASC
       `,
       [userId],

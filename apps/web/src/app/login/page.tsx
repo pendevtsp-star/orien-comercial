@@ -5,6 +5,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch, setTenantId } from "../../lib/api";
+import type { UserPreferences } from "../../lib/preferences";
 
 interface MeResponse {
   user: { mustChangePassword?: boolean };
@@ -20,7 +21,9 @@ export default function LoginPage() {
   const [sessionExpired, setSessionExpired] = useState(false);
 
   useEffect(() => {
-    setSessionExpired(new URLSearchParams(window.location.search).get("reason") === "session-expired");
+    setSessionExpired(
+      new URLSearchParams(window.location.search).get("reason") === "session-expired",
+    );
   }, []);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -36,13 +39,18 @@ export default function LoginPage() {
         body: JSON.stringify({
           email: form.get("email"),
           password: form.get("password"),
-          rememberMe: form.get("rememberMe") === "on"
-        })
+          rememberMe: form.get("rememberMe") === "on",
+        }),
       });
       const me = await apiFetch<MeResponse>("/me");
       const firstTenant = me.memberships[0]?.tenantId;
       if (firstTenant) setTenantId(firstTenant);
-      router.push(me.user.mustChangePassword ? "/change-password" : "/dashboard");
+      if (me.user.mustChangePassword) {
+        router.push("/change-password");
+      } else {
+        const preferences = await apiFetch<UserPreferences>("/preferences");
+        router.push(preferences.startPage || "/dashboard");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Nao foi possivel entrar.");
     } finally {
@@ -56,11 +64,19 @@ export default function LoginPage() {
         <div className="mb-6">
           <BrandLogo size="sm" className="mb-5" />
           <p className="text-sm font-medium text-[var(--brand-secondary)]">{appName}</p>
-          <h1 className="mt-1 text-3xl font-semibold text-[var(--brand-primary)]">Entrar no painel</h1>
-          <p className="mt-2 text-sm text-slate-500">Use uma conta vinculada ao tenant para acessar dados reais.</p>
+          <h1 className="mt-1 text-3xl font-semibold text-[var(--brand-primary)]">
+            Entrar no painel
+          </h1>
+          <p className="mt-2 text-sm text-slate-500">
+            Use uma conta vinculada ao tenant para acessar dados reais.
+          </p>
         </div>
         <form className="grid gap-4" onSubmit={(event) => void onSubmit(event)}>
-          {sessionExpired ? <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">Sua sessão expirou. Entre novamente para continuar.</p> : null}
+          {sessionExpired ? (
+            <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              Sua sessão expirou. Entre novamente para continuar.
+            </p>
+          ) : null}
           <Input label="E-mail" name="email" type="email" autoComplete="email" required />
           <label className="grid gap-1.5 text-sm text-slate-700" htmlFor="password">
             <span className="font-medium">Senha</span>
@@ -85,10 +101,21 @@ export default function LoginPage() {
             </div>
           </label>
           <label className="flex cursor-pointer items-start gap-3 text-sm text-slate-600">
-            <input name="rememberMe" type="checkbox" className="mt-0.5 h-4 w-4 rounded border-[var(--brand-border)] accent-[var(--brand-secondary)]" />
-            <span><span className="font-medium text-[var(--brand-primary)]">Manter conectado</span><span className="mt-0.5 block text-xs text-slate-500">Use apenas em um dispositivo pessoal. A sessão poderá ser renovada por até 30 dias.</span></span>
+            <input
+              name="rememberMe"
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 rounded border-[var(--brand-border)] accent-[var(--brand-secondary)]"
+            />
+            <span>
+              <span className="font-medium text-[var(--brand-primary)]">Manter conectado</span>
+              <span className="mt-0.5 block text-xs text-slate-500">
+                Use apenas em um dispositivo pessoal. A sessão poderá ser renovada por até 30 dias.
+              </span>
+            </span>
           </label>
-          {error ? <p className="rounded-md bg-rose-50 p-3 text-sm text-rose-700">{error}</p> : null}
+          {error ? (
+            <p className="rounded-md bg-rose-50 p-3 text-sm text-rose-700">{error}</p>
+          ) : null}
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? "Entrando..." : "Entrar"}
           </Button>
