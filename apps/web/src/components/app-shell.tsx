@@ -381,6 +381,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <main className="mx-auto w-full min-w-0 max-w-[1600px] overflow-x-clip px-3 py-5 sm:px-4 lg:px-6 xl:px-8">
           {children}
         </main>
+        <footer className="px-3 pb-4 text-center text-[11px] text-slate-500 sm:px-4 lg:px-6">
+          Orien · Beta privado
+        </footer>
       </div>
     </div>
   );
