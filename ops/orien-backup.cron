@@ -1,0 +1,1 @@
+17 3 * * * root /srv/apps/orien_comercial/app/ops/backup-postgres.sh >> /srv/apps/orien_comercial/backups/backup.log 2>&1
