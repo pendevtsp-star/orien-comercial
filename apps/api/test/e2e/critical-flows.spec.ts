@@ -387,6 +387,128 @@ describe.sequential("critical api flows", () => {
       .set("x-tenant-id", tenantA.tenantId);
     expect([403, 404]).toContain(managerForeignBranch.status);
   });
+
+  it("keeps cash, cancellation, returns, purchases and transfers consistent", async () => {
+    const agent = await login(app, tenantA);
+    const tenantHeader = { "x-tenant-id": tenantA.tenantId };
+    const targetBranch = await agent
+      .post("/api/v1/branches")
+      .set(tenantHeader)
+      .send({ name: "Destino E2E", code: "DEST-E2E", isActive: true });
+    const product = await agent
+      .post("/api/v1/products")
+      .set(tenantHeader)
+      .send({
+        branchId: tenantA.branchId,
+        name: "Produto Operacional",
+        sku: "OP-E2E-001",
+        unit: "un",
+        costPrice: 10,
+        salePrice: 20,
+        minStock: 1,
+        isActive: true,
+      });
+    const customer = await agent
+      .post("/api/v1/customers")
+      .set(tenantHeader)
+      .send({ branchId: tenantA.branchId, name: "Cliente Operacional", isActive: true });
+    await agent.post("/api/v1/stock/adjustments").set(tenantHeader).send({
+      branchId: tenantA.branchId,
+      productId: product.body.id,
+      quantityDelta: 10,
+      reason: "Carga operacional",
+    });
+
+    const cash = await agent.post("/api/v1/cash-registers/open").set(tenantHeader).send({
+      branchId: tenantA.branchId,
+      openingAmount: 100,
+    });
+    expect(cash.status).toBe(201);
+    const cashSale = await agent.post("/api/v1/sales").set(tenantHeader).send({
+      branchId: tenantA.branchId,
+      cashRegisterSessionId: cash.body.id,
+      customerId: customer.body.id,
+      items: [{ productId: product.body.id, quantity: 1, unitPrice: 20 }],
+      payments: [{ method: "dinheiro", amount: 20, status: "paid" }],
+    });
+    expect(cashSale.status).toBe(201);
+    const closed = await agent
+      .post(`/api/v1/cash-registers/${cash.body.id}/close`)
+      .set(tenantHeader)
+      .send({ closingAmount: 120 });
+    expect(closed.status).toBe(201);
+    expect(Number(closed.body.difference_amount)).toBe(0);
+
+    const cancellable = await agent.post("/api/v1/sales").set(tenantHeader).send({
+      branchId: tenantA.branchId,
+      customerId: customer.body.id,
+      items: [{ productId: product.body.id, quantity: 2, unitPrice: 20 }],
+      payments: [],
+    });
+    const cancelled = await agent
+      .post(`/api/v1/sales/${cancellable.body.id}/cancel`)
+      .set(tenantHeader)
+      .send({ reason: "Cancelamento operacional" });
+    expect(cancelled.status).toBe(201);
+
+    const returnable = await agent.post("/api/v1/sales").set(tenantHeader).send({
+      branchId: tenantA.branchId,
+      customerId: customer.body.id,
+      items: [{ productId: product.body.id, quantity: 2, unitPrice: 20 }],
+      payments: [{ method: "pix", amount: 40, status: "paid" }],
+    });
+    const saleItems = await agent
+      .get(`/api/v1/operations/sales/${returnable.body.id}/items`)
+      .set(tenantHeader);
+    const returned = await agent.post("/api/v1/operations/returns").set(tenantHeader).send({
+      saleId: returnable.body.id,
+      reason: "Devolucao operacional",
+      refundMethod: "customer_credit",
+      items: [{ saleItemId: saleItems.body.data[0].id, quantity: 1 }],
+    });
+    expect(returned.status).toBe(201);
+
+    const supplier = await agent.post("/api/v1/suppliers").set(tenantHeader).send({
+      branchId: tenantA.branchId,
+      name: "Fornecedor E2E",
+      document: "11222333000144",
+      isActive: true,
+    });
+    const purchase = await agent.post("/api/v1/purchases").set(tenantHeader).send({
+      branchId: tenantA.branchId,
+      supplierId: supplier.body.id,
+      items: [{ productId: product.body.id, quantity: 5, unitCost: 9 }],
+    });
+    expect((await agent.post(`/api/v1/purchases/${purchase.body.id}/approve`).set(tenantHeader)).status).toBe(201);
+    const received = await agent
+      .post(`/api/v1/purchases/${purchase.body.id}/receive`)
+      .set(tenantHeader)
+      .send({ documentNumber: "NF-E2E", items: [{ productId: product.body.id, quantity: 5 }] });
+    expect(received.status).toBe(201);
+    expect(received.body.status).toBe("received");
+
+    const transfer = await agent.post("/api/v1/stock/transfers").set(tenantHeader).send({
+      sourceBranchId: tenantA.branchId,
+      targetBranchId: targetBranch.body.id,
+      items: [{ productId: product.body.id, quantity: 3 }],
+    });
+    expect(transfer.status).toBe(201);
+
+    const audit = await adminPool.query<{ action: string }>(
+      "SELECT action FROM audit_logs WHERE tenant_id=$1 ORDER BY created_at",
+      [tenantA.tenantId],
+    );
+    expect(audit.rows.map((row) => row.action)).toEqual(
+      expect.arrayContaining([
+        "cash_register.opened",
+        "cash_register.closed",
+        "sale.cancelled",
+        "sale.returned",
+        "purchase_order.received",
+        "stock.transfer.created",
+      ]),
+    );
+  });
 });
 
 async function login(app: INestApplication, tenant: SeededTenant) {
