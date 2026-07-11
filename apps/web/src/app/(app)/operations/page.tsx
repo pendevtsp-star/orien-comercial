@@ -42,6 +42,7 @@ type Quote = {
   itemCount: number;
 };
 type Credit = {
+  id: string;
   customerId: string;
   name: string;
   creditLimit: string;

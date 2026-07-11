@@ -452,7 +452,7 @@ export class OperationsService {
     const filter = id ? (params.push(id), "AND cu.id=$2") : "";
     const r = await this.db.tenantQuery(
       c.tenantId,
-      `SELECT cu.id "customerId",cu.name,COALESCE(a.credit_limit,0)::text "creditLimit",COALESCE(a.blocked,false) blocked,a.block_reason "blockReason",COALESCE((SELECT sum(ar.amount) FROM accounts_receivable ar WHERE ar.customer_id=cu.id AND ar.status IN('open','overdue')),0)::text exposure,COALESCE((SELECT sum(cr.balance) FROM customer_credits cr WHERE cr.customer_id=cu.id AND cr.status='available'),0)::text "storeCredit" FROM customers cu LEFT JOIN customer_credit_accounts a ON a.customer_id=cu.id WHERE cu.tenant_id=$1 AND cu.deleted_at IS NULL ${filter} ORDER BY cu.name LIMIT 200`,
+      `SELECT cu.id,cu.id "customerId",cu.name,COALESCE(a.credit_limit,0)::text "creditLimit",COALESCE(a.blocked,false) blocked,a.block_reason "blockReason",COALESCE((SELECT sum(ar.amount) FROM accounts_receivable ar WHERE ar.customer_id=cu.id AND ar.status IN('open','overdue')),0)::text exposure,COALESCE((SELECT sum(cr.balance) FROM customer_credits cr WHERE cr.customer_id=cu.id AND cr.status='available'),0)::text "storeCredit" FROM customers cu LEFT JOIN customer_credit_accounts a ON a.customer_id=cu.id WHERE cu.tenant_id=$1 AND cu.deleted_at IS NULL ${filter} ORDER BY cu.name LIMIT 200`,
       params,
     );
     return { data: r.rows };
