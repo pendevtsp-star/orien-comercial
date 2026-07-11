@@ -397,7 +397,7 @@ async function login(app: INestApplication, tenant: SeededTenant) {
   });
 
   expect(response.status).toBe(201);
-  return { agent, cookies: extractCookies(response) };
+  return Object.assign(agent, { agent, cookies: extractCookies(response) });
 }
 
 function extractCookies(response: { headers?: { "set-cookie"?: string[] } }) {
