@@ -233,7 +233,7 @@ export class SalesService {
         await client.query(
           `
           INSERT INTO sale_payments (tenant_id, sale_id, method, amount, status, paid_at)
-          VALUES ($1, $2, $3, $4, $5, CASE WHEN $5 = 'paid' THEN now() ELSE NULL END)
+          VALUES ($1, $2, $3, $4, $5::varchar, CASE WHEN $5::varchar = 'paid' THEN now() ELSE NULL END)
           `,
           [context.tenantId, saleId, payment.method, payment.amount, payment.status],
         );
