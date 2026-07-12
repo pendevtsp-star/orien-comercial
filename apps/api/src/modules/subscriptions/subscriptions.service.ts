@@ -105,7 +105,7 @@ export class SubscriptionsService {
         const subscriptionResponse = await fetch(`${this.config.ASAAS_API_URL}/subscriptions`, {
           method: "POST",
           headers: { accept: "application/json", "content-type": "application/json", access_token: this.config.ASAAS_API_KEY },
-          body: JSON.stringify({ customer: externalCustomerId, billingType: input.billingType, value: selectedPlan.price_cents / 100, nextDueDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10), externalReference: context.tenantId, description: `Orien ${selectedPlan.name}` })
+          body: JSON.stringify({ customer: externalCustomerId, billingType: input.billingType, value: selectedPlan.price_cents / 100, cycle: "MONTHLY", nextDueDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10), externalReference: context.tenantId, description: `Orien ${selectedPlan.name}` })
         });
         if (!subscriptionResponse.ok) throw new Error("O Asaas recusou o checkout. Revise as credenciais e o cadastro.");
         const subscriptionData = (await subscriptionResponse.json()) as { id?: string; invoiceUrl?: string };
