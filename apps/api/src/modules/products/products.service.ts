@@ -94,7 +94,7 @@ export class ProductsService {
       "SELECT * FROM products WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL",
       [context.tenantId, id],
     );
-    const product = ensureFound(result.rows[0], "Produto");
+    const product = ensureFound(result.rows[0], "Produto") as Record<string, unknown>;
     ensureBranchAccess(context, product.branch_id as string | null);
     const images = await this.database.tenantQuery(
       context.tenantId,
@@ -160,7 +160,7 @@ export class ProductsService {
   }
 
   async update(context: TenantContext, id: string, input: ProductUpdateInput) {
-    const existing = await this.get(context, id);
+    const existing = (await this.get(context, id)) as Record<string, unknown>;
     ensureBranchAccess(context, input.branchId ?? (existing.branch_id as string | null));
 
     const result = await this.database.tenantQuery(
@@ -202,7 +202,7 @@ export class ProductsService {
       ],
     );
 
-    const updated = ensureFound(result.rows[0], "Produto");
+    const updated = ensureFound(result.rows[0], "Produto") as Record<string, unknown>;
     if (input.imageUrl !== undefined) await this.setPrimaryImage(context, id, input.imageUrl);
     await this.database.tenantQuery(
       context.tenantId,
