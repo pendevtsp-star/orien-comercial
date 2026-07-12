@@ -31,7 +31,7 @@ export default function MarketingPage() {
   const [employees, setEmployees] = useState(5);
   const [hours, setHours] = useState(5);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
-  const active = productViews[view];
+  const active = productViews[view] ?? productViews[0]!;
   const Icon = active.icon;
   const monthlyGain = useMemo(() => employees * hours * 4 * 32 + Math.round(employees * 190), [employees, hours]);
 
