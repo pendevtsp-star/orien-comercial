@@ -37,6 +37,13 @@ export class SubscriptionsController {
     return this.subscriptionsService.checkout(tenant, body);
   }
 
+  @UseGuards(JwtAuthGuard, TenantContextGuard, PermissionsGuard)
+  @RequirePermissions(permissions.subscriptions.manage)
+  @Post("cancel")
+  cancel(@CurrentTenant() tenant: TenantContext) {
+    return this.subscriptionsService.cancel(tenant);
+  }
+
   @Post("webhooks/asaas")
   asaasWebhook(
     @Body(new ZodValidationPipe(asaasWebhookSchema)) body: never,

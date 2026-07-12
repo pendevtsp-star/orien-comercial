@@ -68,16 +68,22 @@ export default function SubscriptionPage() {
     }
   }
 
+  async function cancelSubscription() {
+    if (!window.confirm("Cancelar a renovação automática? Você mantém o acesso até o fim do ciclo já pago.")) return;
+    try {
+      await apiFetch("/subscriptions/cancel", { method: "POST", body: "{}" });
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao cancelar a assinatura.");
+    }
+  }
+
   return (
     <div className="grid gap-6">
       <PageHeader
         title="Minha assinatura"
         description="Assinatura SaaS via Asaas sandbox, checkout inicial e historico de cobranca."
-        actions={
-          <Button variant="secondary" onClick={() => void load()} icon={<RefreshCw size={16} />}>
-            Atualizar dados
-          </Button>
-        }
+        actions={<div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={() => void load()} icon={<RefreshCw size={16} />}>Atualizar dados</Button>{data?.subscription && data.subscription.status !== "cancelled" ? <Button variant="secondary" onClick={() => void cancelSubscription()}>Cancelar renovação</Button> : null}</div>}
       />
       {error ? <p className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</p> : null}
 
@@ -155,7 +161,7 @@ export default function SubscriptionPage() {
                   </p>
                 </div>
                 <Button className="w-full sm:w-auto" disabled={loading || isCurrentPlan} onClick={() => void startCheckout(plan.slug)}>
-                  {isCurrentPlan ? "Plano atual" : "Iniciar checkout"}
+                  {isCurrentPlan ? "Plano atual" : data?.subscription?.status === "cancelled" ? "Renovar com este plano" : "Fazer upgrade"}
                 </Button>
               </div>
               );

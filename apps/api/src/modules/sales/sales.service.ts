@@ -257,6 +257,23 @@ export class SalesService {
         );
       }
 
+      if (input.customerId && openAmount <= 0) {
+        const campaign = await client.query<{ rule: { pointsPerReal?: number } }>(
+          `SELECT lr.rule FROM loyalty_campaigns lc JOIN loyalty_rules lr ON lr.campaign_id=lc.id WHERE lc.tenant_id=$1 AND lc.is_active=true ORDER BY lc.created_at DESC LIMIT 1`,
+          [context.tenantId],
+        );
+        const pointsPerReal = Number(campaign.rows[0]?.rule?.pointsPerReal ?? 0);
+        const points = Math.floor(totalAmount * pointsPerReal);
+        if (points > 0) {
+          const wallet = await client.query<{ id: string }>(
+            `INSERT INTO loyalty_wallets (tenant_id,customer_id,points_balance) VALUES ($1,$2,0) ON CONFLICT (tenant_id,customer_id) DO UPDATE SET updated_at=now() RETURNING id`,
+            [context.tenantId, input.customerId],
+          );
+          await client.query("UPDATE loyalty_wallets SET points_balance=points_balance+$2,updated_at=now() WHERE id=$1", [wallet.rows[0]!.id, points]);
+          await client.query("INSERT INTO loyalty_ledger (tenant_id,wallet_id,movement_type,points,metadata) VALUES ($1,$2,'sale_paid',$3,$4::jsonb)", [context.tenantId, wallet.rows[0]!.id, points, JSON.stringify({ saleId, totalAmount })]);
+        }
+      }
+
       await insertAuditLog(client, {
         tenantId: context.tenantId,
         actorUserId: context.userId,

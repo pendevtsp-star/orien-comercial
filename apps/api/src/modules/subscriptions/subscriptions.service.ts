@@ -225,6 +225,26 @@ export class SubscriptionsService {
     });
   }
 
+  async cancel(context: TenantContext) {
+    const subscription = await this.database.tenantQuery(
+      context.tenantId,
+      `SELECT id,provider,provider_subscription_id AS "providerSubscriptionId",status,current_period_ends_at AS "currentPeriodEndsAt",COALESCE(is_lifetime,false) AS "isLifetime" FROM subscriptions WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 1`,
+      [context.tenantId],
+    );
+    const current = ensureFound(subscription.rows[0], "Assinatura");
+    if (current.isLifetime) throw new BadRequestException("Acesso vitalício não possui cobrança recorrente para cancelar.");
+    if (["cancelled", "canceled"].includes(current.status)) return { ok: true, alreadyCancelled: true, accessUntil: current.currentPeriodEndsAt ?? null };
+    if (current.provider === "asaas" && current.providerSubscriptionId && this.config.ASAAS_API_KEY) {
+      const response = await fetch(`${this.config.ASAAS_API_URL}/subscriptions/${current.providerSubscriptionId}`, { method: "DELETE", headers: { accept: "application/json", access_token: this.config.ASAAS_API_KEY } });
+      if (!response.ok) throw new BadRequestException("Não foi possível cancelar a recorrência no Asaas. Tente novamente em instantes.");
+    }
+    await this.database.tenantTransaction(context.tenantId, async (client) => {
+      await client.query("UPDATE subscriptions SET status='cancelled',updated_at=now() WHERE id=$1", [current.id]);
+      await insertAuditLog(client, { tenantId: context.tenantId, actorUserId: context.userId, action: "subscription.cancelled", entityType: "subscription", entityId: current.id, metadata: { provider: current.provider, accessUntil: current.currentPeriodEndsAt ?? null } });
+    });
+    return { ok: true, accessUntil: current.currentPeriodEndsAt ?? null };
+  }
+
   async handleAsaasWebhook(payload: AsaasWebhookInput, token?: string) {
     if (this.config.ASAAS_WEBHOOK_TOKEN && token !== this.config.ASAAS_WEBHOOK_TOKEN) {
       throw new ForbiddenException("Webhook token invalido.");
