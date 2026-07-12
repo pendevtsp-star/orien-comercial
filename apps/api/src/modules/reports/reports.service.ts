@@ -58,7 +58,8 @@ export class ReportsService {
   }
 
   async overviewDocument(context: TenantContext, startDate?: string, endDate?: string) {
-    const [branding, data] = await Promise.all([loadTenantBranding(this.database, context.tenantId), this.overview(context, startDate, endDate)]);
+    const [branding, rawData] = await Promise.all([loadTenantBranding(this.database, context.tenantId), this.overview(context, startDate, endDate)]);
+    const data = rawData as Record<string, any> & { period: { startDate: string; endDate: string } };
     return renderDocumentHtml({ title: "Relatório gerencial", subtitle: "Leitura executiva de vendas e relacionamento no período selecionado.", badge: "Orien Relatórios", branding, meta: [{ label: "Período", value: `${data.period.startDate} a ${data.period.endDate}` }, { label: "Escopo", value: context.branchId ? "Filial autorizada" : "Todas as lojas" }, { label: "Emitido em", value: new Date().toLocaleString("pt-BR") }], sections: [{ title: "Resumo executivo", metrics: [{ label: "Vendas", value: String(data.salesCount ?? 0) }, { label: "Receita", value: Number(data.grossRevenue ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) }, { label: "Ticket médio", value: Number(data.averageTicket ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) }], contentHtml: `<p>Base ativa de clientes: <strong>${data.customers ?? 0}</strong>. Descontos concedidos: <strong>${Number(data.discounts ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong>.</p>` }] });
   }
 }

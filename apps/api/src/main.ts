@@ -6,7 +6,7 @@ import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
-import type { NextFunction, Request, Response } from "express";
+import { static as serveStatic, type NextFunction, type Request, type Response } from "express";
 import { loadConfig } from "@sgc/config";
 import { AppModule } from "./modules/app.module";
 import { CacheService } from "./modules/cache/cache.service";
@@ -20,7 +20,7 @@ async function bootstrap() {
   app.setGlobalPrefix("api/v1");
   const uploadDir = resolve(config.UPLOAD_DIR);
   mkdirSync(uploadDir, { recursive: true });
-  app.useStaticAssets(uploadDir, { prefix: "/uploads/" });
+  app.getHttpAdapter().getInstance().use("/uploads", serveStatic(uploadDir));
   app.use(helmet());
   app.use(cookieParser(process.env.COOKIE_SECRET));
   app.use((request: Request & { requestId?: string }, response: Response, next: NextFunction) => {
