@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import type { AppConfig } from "@sgc/config";
 import type { AsaasWebhookInput, SubscriptionCheckoutInput } from "@sgc/types";
 import type { PoolClient, QueryResult } from "pg";
@@ -71,11 +71,19 @@ export class SubscriptionsService {
       );
       const selectedPlan = ensureFound(plan.rows[0], "Plano");
 
-      const tenant = await client.query<{ name: string; id: string }>(
+      const tenant = await client.query<{ name: string; id: string; document: string | null }>(
         "SELECT id, name FROM tenants WHERE id = $1 AND deleted_at IS NULL",
         [context.tenantId]
       );
       const tenantRow = ensureFound(tenant.rows[0], "Tenant");
+      const legalEntity = await client.query<{ document: string }>(
+        "SELECT document FROM legal_entities WHERE tenant_id = $1 AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 1",
+        [context.tenantId]
+      );
+      const document = legalEntity.rows[0]?.document.replace(/\D/g, "");
+      if (!document || ![11, 14].includes(document.length)) {
+        throw new BadRequestException("Cadastre o CPF ou CNPJ da empresa antes de iniciar a assinatura.");
+      }
 
       let providerSubscriptionId: string | null = null;
       let checkoutUrl = buildMockCheckoutUrl(this.config.ASAAS_API_URL, context.tenantId, selectedPlan.slug);
@@ -84,6 +92,7 @@ export class SubscriptionsService {
       if (this.config.ASAAS_API_KEY) {
         const customerPayload = {
           name: tenantRow.name,
+          cpfCnpj: document,
           externalReference: context.tenantId
         };
         const customerResponse = await fetch(`${this.config.ASAAS_API_URL}/customers`, {
