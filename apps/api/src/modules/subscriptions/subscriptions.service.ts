@@ -22,8 +22,10 @@ export class SubscriptionsService {
     if (![11, 14].includes(document.length)) throw new BadRequestException("Informe um CPF ou CNPJ válido.");
     const existingEmail = await this.database.pool.query("SELECT id FROM users WHERE lower(email)=lower($1) AND deleted_at IS NULL", [input.email]);
     if (existingEmail.rowCount) throw new BadRequestException("Este e-mail já possui uma conta. Entre no painel para contratar outro plano.");
-    const plan = await this.database.pool.query<{ id: string }>("SELECT id FROM plans WHERE slug=$1 AND is_active=true", [input.planSlug]);
+    const plan = await this.database.pool.query<{ id: string; name: string; price_cents: number }>("SELECT id,name,price_cents FROM plans WHERE slug=$1 AND is_active=true", [input.planSlug]);
     if (!plan.rows[0]) throw new BadRequestException("Plano indisponível.");
+    const selectedPlan = plan.rows[0];
+    const coupon = await this.resolveCoupon(input.couponCode, input.planSlug, selectedPlan.price_cents);
 
     const client = await this.database.pool.connect();
     let context: TenantContext;
@@ -47,8 +49,21 @@ export class SubscriptionsService {
     } finally {
       client.release();
     }
-    const checkout = await this.checkout(context, input);
-    return { ...checkout, tenantId: context.tenantId, loginUrl: `${this.config.WEB_APP_URL}/login?email=${encodeURIComponent(input.email)}` };
+    const amountCents = selectedPlan.price_cents - coupon.discountCents;
+    if (amountCents < 100) throw new BadRequestException("O cupom deixa o valor da assinatura abaixo do mínimo permitido.");
+    let checkoutUrl = buildMockCheckoutUrl(this.config.ASAAS_API_URL, context.tenantId, input.planSlug);
+    let providerCheckoutId: string | null = null;
+    if (this.config.ASAAS_API_KEY) {
+      const nextDueDate = new Date(Date.now() + 86400000).toISOString();
+      const response = await fetch(`${this.config.ASAAS_API_URL}/checkouts`, { method: "POST", headers: { accept: "application/json", "content-type": "application/json", access_token: this.config.ASAAS_API_KEY }, body: JSON.stringify({ billingTypes: ["PIX", "CREDIT_CARD"], chargeTypes: ["RECURRENT"], minutesToExpire: 1440, externalReference: context.tenantId, callback: { successUrl: "https://useorien.com.br/checkout?status=success", cancelUrl: "https://useorien.com.br/checkout?status=cancelled", expiredUrl: "https://useorien.com.br/checkout?status=expired" }, items: [{ externalReference: selectedPlan.id, name: `Orien ${selectedPlan.name}`, description: "Assinatura mensal Orien", quantity: 1, value: amountCents / 100 }], customerData: { name: input.ownerName, cpfCnpj: document, email: input.email }, subscription: { cycle: "MONTHLY", nextDueDate } }) });
+      if (!response.ok) throw new BadRequestException("Não foi possível gerar o checkout de pagamento. Revise os dados informados.");
+      const payload = await response.json() as { id?: string; link?: string };
+      providerCheckoutId = payload.id ?? null;
+      checkoutUrl = payload.link ?? checkoutUrl;
+    }
+    await this.database.pool.query("INSERT INTO subscriptions (tenant_id,plan_id,provider,status,checkout_url) VALUES ($1,$2,'asaas','pending_activation',$3)", [context.tenantId, selectedPlan.id, checkoutUrl]);
+    if (coupon.id) await this.redeemCoupon(coupon.id, context.tenantId, coupon.discountCents);
+    return { provider: "asaas", status: "pending_activation", checkoutUrl, providerCheckoutId, tenantId: context.tenantId, discountCents: coupon.discountCents, loginUrl: `${this.config.WEB_APP_URL}/login?email=${encodeURIComponent(input.email)}` };
   }
 
   async current(context: TenantContext) {
@@ -98,6 +113,22 @@ export class SubscriptionsService {
       invoices: invoices.rows,
       provider: { env: this.config.ASAAS_ENV }
     };
+  }
+
+  private async resolveCoupon(code: string | undefined, planSlug: string, priceCents: number) {
+    if (!code) return { id: null as string | null, discountCents: 0 };
+    const result = await this.database.pool.query<{ id: string; discount_type: "percent" | "fixed"; discount_value_cents: number; allowed_plan_slugs: string[]; max_redemptions: number | null; redemption_count: number }>("SELECT id,discount_type,discount_value_cents,allowed_plan_slugs,max_redemptions,redemption_count FROM saas_coupons WHERE upper(code)=upper($1) AND is_active=true AND (starts_at IS NULL OR starts_at<=now()) AND (expires_at IS NULL OR expires_at>now())", [code]);
+    const coupon = result.rows[0];
+    if (!coupon || (coupon.max_redemptions !== null && coupon.redemption_count >= coupon.max_redemptions)) throw new BadRequestException("Cupom inválido, expirado ou indisponível.");
+    const allowedPlans = Array.isArray(coupon.allowed_plan_slugs) ? coupon.allowed_plan_slugs : [];
+    if (allowedPlans.length && !allowedPlans.includes(planSlug)) throw new BadRequestException("Este cupom não é válido para o plano selecionado.");
+    return { id: coupon.id, discountCents: Math.min(priceCents, coupon.discount_type === "percent" ? Math.round(priceCents * coupon.discount_value_cents / 100) : coupon.discount_value_cents) };
+  }
+
+  private async redeemCoupon(couponId: string, tenantId: string, discountCents: number) {
+    const result = await this.database.pool.query("UPDATE saas_coupons SET redemption_count=redemption_count+1,updated_at=now() WHERE id=$1 AND is_active=true AND (max_redemptions IS NULL OR redemption_count<max_redemptions) RETURNING id", [couponId]);
+    if (!result.rowCount) throw new BadRequestException("Este cupom não está mais disponível.");
+    await this.database.pool.query("INSERT INTO saas_coupon_redemptions (coupon_id,tenant_id,discount_cents) VALUES ($1,$2,$3)", [couponId, tenantId, discountCents]);
   }
 
   async checkout(context: TenantContext, input: SubscriptionCheckoutInput) {
@@ -230,6 +261,8 @@ export class SubscriptionsService {
             SELECT tenant_id
             FROM subscriptions
             WHERE external_customer_id = $1 OR provider_subscription_id = $1
+            UNION ALL
+            SELECT id AS tenant_id FROM tenants WHERE id::text = $1 AND deleted_at IS NULL
             LIMIT 1
             `,
             [tenantId]

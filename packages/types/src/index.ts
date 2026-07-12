@@ -327,7 +327,8 @@ export const publicSubscriptionCheckoutSchema = subscriptionCheckoutSchema.exten
   document: z.string().trim().min(11).max(20),
   ownerName: z.string().trim().min(2).max(160),
   email: z.string().email().transform((value) => value.toLowerCase()),
-  password: z.string().min(12).max(256)
+  password: z.string().min(12).max(256),
+  couponCode: z.string().trim().min(3).max(48).optional()
 });
 
 export const asaasWebhookSchema = z.object({
