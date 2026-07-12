@@ -5,10 +5,17 @@ APP_DIR=${APP_DIR:-/srv/apps/orien_comercial/app}
 CREDENTIALS_FILE=${CREDENTIALS_FILE:-/srv/apps/orien_comercial/ops/homologation-credentials.txt}
 
 umask 077
-password=$(openssl rand -base64 24 | tr -d '\n')
+password=$(openssl rand -hex 24)
 cd "$APP_DIR"
 HOMOLOGATION_SEED_PASSWORD="$password" docker compose -f docker-compose.prod.yml run --rm --no-deps -e HOMOLOGATION_SEED_PASSWORD api \
   pnpm --filter @sgc/db seed:homologation
+
+payload=$(printf '{"email":"stock.homolog-horizonte@orien.test","password":"%s"}' "$password")
+status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -H 'Content-Type: application/json' \
+  --data "$payload" \
+  http://127.0.0.1:3334/api/v1/auth/login)
+test "$status" = "201"
 
 {
   printf 'Homologacao Orien - gerado em %s UTC\n\n' "$(date -u +%FT%TZ)"
