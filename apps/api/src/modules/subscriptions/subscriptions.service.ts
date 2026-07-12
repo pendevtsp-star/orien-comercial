@@ -52,21 +52,6 @@ export class SubscriptionsService {
       client.release();
     }
     return { provider: "manual", status: "trial", trialStarted: true, trialEndsAt: trialEndsAt.toISOString(), tenantId: context.tenantId, loginUrl: `${this.config.WEB_APP_URL}/login?email=${encodeURIComponent(input.email)}&trial=1` };
-    const amountCents = selectedPlan.price_cents - coupon.discountCents;
-    if (amountCents < 100) throw new BadRequestException("O cupom deixa o valor da assinatura abaixo do mínimo permitido.");
-    let checkoutUrl = buildMockCheckoutUrl(this.config.ASAAS_API_URL, context.tenantId, input.planSlug);
-    let providerCheckoutId: string | null = null;
-    if (this.config.ASAAS_API_KEY) {
-      const nextDueDate = new Date(Date.now() + 86400000).toISOString();
-      const response = await fetch(`${this.config.ASAAS_API_URL}/checkouts`, { method: "POST", headers: { accept: "application/json", "content-type": "application/json", access_token: this.config.ASAAS_API_KEY }, body: JSON.stringify({ billingTypes: ["PIX", "CREDIT_CARD"], chargeTypes: ["RECURRENT"], minutesToExpire: 1440, externalReference: context.tenantId, callback: { successUrl: "https://useorien.com.br/checkout?status=success", cancelUrl: "https://useorien.com.br/checkout?status=cancelled", expiredUrl: "https://useorien.com.br/checkout?status=expired" }, items: [{ externalReference: selectedPlan.id, name: `Orien ${selectedPlan.name}`, description: "Assinatura mensal Orien", quantity: 1, value: amountCents / 100 }], customerData: { name: input.ownerName, cpfCnpj: document, email: input.email }, subscription: { cycle: "MONTHLY", nextDueDate } }) });
-      if (!response.ok) throw new BadRequestException("Não foi possível gerar o checkout de pagamento. Revise os dados informados.");
-      const payload = await response.json() as { id?: string; link?: string };
-      providerCheckoutId = payload.id ?? null;
-      checkoutUrl = payload.link ?? checkoutUrl;
-    }
-    await this.database.pool.query("INSERT INTO subscriptions (tenant_id,plan_id,provider,status,checkout_url) VALUES ($1,$2,'asaas','pending_activation',$3)", [context.tenantId, selectedPlan.id, checkoutUrl]);
-    if (coupon.id) await this.redeemCoupon(coupon.id, context.tenantId, coupon.discountCents);
-    return { provider: "asaas", status: "pending_activation", checkoutUrl, providerCheckoutId, tenantId: context.tenantId, discountCents: coupon.discountCents, loginUrl: `${this.config.WEB_APP_URL}/login?email=${encodeURIComponent(input.email)}` };
   }
 
   async current(context: TenantContext) {
