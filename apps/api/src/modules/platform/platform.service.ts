@@ -284,18 +284,13 @@ export class PlatformService {
   ) {
     const note = (input.note ?? "").trim().slice(0, 500);
     if (input.enabled) {
-      if (!this.config.ASAAS_API_KEY)
-        throw new BadRequestException(
-          "Configure a chave Asaas antes de conceder acesso vitalício.",
-        );
       const plan = await this.database.pool.query<{ id: string; slug: string }>(
         "SELECT id,slug FROM plans WHERE slug='enterprise' AND is_active=true",
       );
       if (!plan.rows[0]) throw new BadRequestException("Plano Enterprise não está disponível.");
-      const externalCustomerId = await this.ensureAsaasLifetimeCustomer(tenantId);
       const result = await this.database.pool.query(
-        "UPDATE subscriptions SET plan_id=$2,provider='asaas',provider_subscription_id=NULL,external_customer_id=$3,checkout_url=NULL,status='active',is_lifetime=true,is_complimentary=true,lifetime_granted_at=now(),lifetime_note=$4,current_period_ends_at=NULL,updated_at=now() WHERE tenant_id=$1 RETURNING id",
-        [tenantId, plan.rows[0].id, externalCustomerId, note || null],
+        "UPDATE subscriptions SET plan_id=$2,provider='manual',provider_subscription_id=NULL,external_customer_id=NULL,checkout_url=NULL,status='active',is_lifetime=true,is_complimentary=true,lifetime_granted_at=now(),lifetime_note=$3,current_period_ends_at=NULL,updated_at=now() WHERE tenant_id=$1 RETURNING id",
+        [tenantId, plan.rows[0].id, note || null],
       );
       if (!result.rows[0]) throw new BadRequestException("Assinatura não encontrada.");
       await this.database.pool.query(
@@ -304,11 +299,10 @@ export class PlatformService {
       );
       await this.audit(actor, "subscription.lifetime.granted", "tenant", tenantId, {
         planSlug: plan.rows[0].slug,
-        provider: "asaas",
-        externalCustomerId,
+        provider: "manual",
         note,
       });
-      return { ok: true, isLifetime: true, provider: "asaas", externalCustomerId };
+      return { ok: true, isLifetime: true, provider: "manual" };
     }
     const result = await this.database.pool.query(
       "UPDATE subscriptions SET is_lifetime=false,is_complimentary=false,lifetime_granted_at=NULL,lifetime_note=NULL,updated_at=now() WHERE tenant_id=$1 RETURNING id",
@@ -317,47 +311,6 @@ export class PlatformService {
     if (!result.rows[0]) throw new BadRequestException("Assinatura não encontrada.");
     await this.audit(actor, "subscription.lifetime.revoked", "tenant", tenantId, { note });
     return { ok: true, isLifetime: false };
-  }
-  private async ensureAsaasLifetimeCustomer(tenantId: string) {
-    const current = await this.database.pool.query<{ external_customer_id: string | null }>(
-      "SELECT external_customer_id FROM subscriptions WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 1",
-      [tenantId],
-    );
-    if (current.rows[0]?.external_customer_id) return current.rows[0].external_customer_id;
-    const tenant = await this.database.pool.query<{ name: string; document: string | null }>(
-      "SELECT t.name,le.document FROM tenants t LEFT JOIN legal_entities le ON le.tenant_id=t.id AND le.deleted_at IS NULL WHERE t.id=$1 AND t.deleted_at IS NULL ORDER BY le.created_at ASC LIMIT 1",
-      [tenantId],
-    );
-    const record = tenant.rows[0];
-    const document = record?.document?.replace(/\\D/g, "");
-    if (!record || !document || ![11, 14].includes(document.length))
-      throw new BadRequestException(
-        "Cadastre CPF ou CNPJ válido antes de vincular o acesso vitalício ao Asaas.",
-      );
-    const apiKey = this.config.ASAAS_API_KEY;
-    if (!apiKey) throw new BadRequestException("Chave Asaas indisponível.");
-    const response = await fetch(`${this.config.ASAAS_API_URL}/customers`, {
-      method: "POST",
-      headers: {
-        accept: "application/json",
-        "content-type": "application/json",
-        access_token: apiKey,
-      },
-      body: JSON.stringify({
-        name: record.name,
-        cpfCnpj: document,
-        externalReference: tenantId,
-        observations: "Acesso vitalício Orien - sem recorrência e sem cobrança",
-      }),
-    });
-    if (!response.ok)
-      throw new BadRequestException(
-        "Não foi possível criar o cliente no Asaas para o acesso vitalício.",
-      );
-    const payload = (await response.json()) as { id?: string };
-    if (!payload.id)
-      throw new BadRequestException("O Asaas não retornou o identificador do cliente.");
-    return payload.id;
   }
   async supportNotes(tenantId: string) {
     const result = await this.database.pool.query(

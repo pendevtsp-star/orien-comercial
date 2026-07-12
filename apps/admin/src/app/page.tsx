@@ -594,7 +594,7 @@ function Tenants({
                 onClick={() => {
                   if (
                     window.confirm(
-                      "Conceder acesso vitalício Enterprise completo? Será criado ou vinculado um cliente no Asaas, sem recorrência, cartão ou cobrança; esse benefício não entra no MRR.",
+                      "Conceder acesso vitalício Enterprise completo? Não haverá vínculo, cobrança ou cliente criado no Asaas da Orien; esse benefício não entra no MRR.",
                     )
                   )
                     void act(
@@ -606,7 +606,7 @@ function Tenants({
                             note: "Acesso vitalício de parceria/teste",
                           }),
                         }),
-                      "Acesso vitalício Enterprise vinculado ao Asaas.",
+                      "Acesso vitalício Enterprise concedido sem cobrança SaaS.",
                     );
                 }}
               >
