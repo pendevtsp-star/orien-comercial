@@ -21,7 +21,7 @@ export default function CheckoutPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const selected = useMemo(() => plans[planSlug] ?? plans.pro, [planSlug]);
+  const selected = useMemo(() => plans[planSlug] ?? { label: "Pro", price: "R$ 199/mês", description: "Operação completa para empresas em expansão." }, [planSlug]);
 
   useEffect(() => {
     const plan = new URLSearchParams(window.location.search).get("plan");
