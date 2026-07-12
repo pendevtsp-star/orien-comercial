@@ -33,22 +33,22 @@ import { apiFetch, getTenantId, setTenantId } from "../lib/api";
 import { applyPreferences, defaultPreferences, type UserPreferences } from "../lib/preferences";
 
 const navigation = [
-  { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
-  { href: "/branches", label: "Lojas", icon: Building2 },
-  { href: "/products", label: "Produtos", icon: Boxes },
-  { href: "/stock", label: "Estoque", icon: PackageCheck },
-  { href: "/suppliers", label: "Fornecedores", icon: Truck },
-  { href: "/purchases", label: "Compras", icon: ClipboardList },
-  { href: "/sales", label: "Vendas", icon: ShoppingCart },
-  { href: "/pos", label: "PDV", icon: ScanBarcode },
-  { href: "/customers", label: "Clientes", icon: UsersRound },
-  { href: "/catalog-tools", label: "Ferramentas", icon: Wrench },
-  { href: "/financial", label: "Financeiro", icon: CircleDollarSign },
-  { href: "/alerts", label: "Alertas", icon: BellRing },
-  { href: "/operations", label: "Operacoes avancadas", icon: Layers3 },
-  { href: "/team", label: "Equipe", icon: ShieldCheck },
-  { href: "/subscription", label: "Assinatura", icon: CreditCard },
-  { href: "/settings", label: "Configuracoes", icon: Settings },
+  { href: "/dashboard", label: "Dashboard", icon: BarChart3, permissions: ["dashboard.read"] },
+  { href: "/branches", label: "Lojas", icon: Building2, permissions: ["branches.read"] },
+  { href: "/products", label: "Produtos", icon: Boxes, permissions: ["products.read"] },
+  { href: "/stock", label: "Estoque", icon: PackageCheck, permissions: ["stock.read"] },
+  { href: "/suppliers", label: "Fornecedores", icon: Truck, permissions: ["stock.purchase"] },
+  { href: "/purchases", label: "Compras", icon: ClipboardList, permissions: ["stock.purchase"] },
+  { href: "/sales", label: "Vendas", icon: ShoppingCart, permissions: ["sales.read"] },
+  { href: "/pos", label: "PDV", icon: ScanBarcode, permissions: ["sales.create"] },
+  { href: "/customers", label: "Clientes", icon: UsersRound, permissions: ["customers.read"] },
+  { href: "/catalog-tools", label: "Ferramentas", icon: Wrench, permissions: ["products.read"] },
+  { href: "/financial", label: "Financeiro", icon: CircleDollarSign, permissions: ["financial.read"] },
+  { href: "/alerts", label: "Alertas", icon: BellRing, permissions: ["stock.read"] },
+  { href: "/operations", label: "Operacoes avancadas", icon: Layers3, permissions: ["dashboard.read"] },
+  { href: "/team", label: "Equipe", icon: ShieldCheck, permissions: ["users.read"] },
+  { href: "/subscription", label: "Assinatura", icon: CreditCard, permissions: ["subscriptions.read"] },
+  { href: "/settings", label: "Configuracoes", icon: Settings, permissions: ["tenants.read"] },
   { href: "/preferences", label: "Preferencias", icon: Palette },
   { href: "/sessions", label: "Dispositivos", icon: ShieldCheck },
 ];
@@ -62,6 +62,7 @@ interface MeResponse {
     branchId: string | null;
     branchName?: string | null;
     roleSlug: string;
+    permissions: string[];
   }>;
 }
 
@@ -138,18 +139,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       null
     );
   }, [me]);
+  const allowedNavigation = useMemo(() => {
+    const granted = currentMembership?.permissions ?? [];
+    return navigation.filter((item) =>
+      !item.permissions || item.permissions.every((permission) => granted.includes(permission)),
+    );
+  }, [currentMembership]);
   const orderedNavigation = useMemo(
     () =>
-      [...navigation].sort(
+      [...allowedNavigation].sort(
         (a, b) =>
           Number(preferences.favoriteRoutes.includes(b.href)) -
           Number(preferences.favoriteRoutes.includes(a.href)),
       ),
-    [preferences.favoriteRoutes],
+    [allowedNavigation, preferences.favoriteRoutes],
   );
   const compact = preferences.sidebarMode === "compact";
   const collapsed = preferences.sidebarMode === "collapsed";
   const roleName = roleLabel(currentMembership?.roleSlug);
+  const routeItem = navigation.find((item) => pathname === item.href);
+  const grantedPermissions = currentMembership?.permissions ?? [];
+  const routeAllowed =
+    !routeItem ||
+    !routeItem.permissions ||
+    routeItem.permissions.every((permission) => grantedPermissions.includes(permission));
   const initials = (me?.user.name ?? "Orien")
     .split(" ")
     .slice(0, 2)
@@ -173,6 +186,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     await apiFetch("/auth/logout", { method: "POST", body: "{}" }).catch(() => undefined);
     router.push("/login");
   }
+
+  useEffect(() => {
+    if (!me || routeAllowed) return;
+    router.replace(orderedNavigation[0]?.href ?? "/preferences");
+  }, [me, orderedNavigation, routeAllowed, router]);
 
   return (
     <div className="min-h-screen bg-[var(--brand-surface)]">
@@ -379,7 +397,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
         <main className="mx-auto w-full min-w-0 max-w-[1600px] overflow-x-clip px-3 py-5 sm:px-4 lg:px-6 xl:px-8">
-          {children}
+          {!me ? (
+            <div className="py-16 text-center text-sm text-slate-500">Carregando acesso...</div>
+          ) : routeAllowed ? (
+            children
+          ) : (
+            <div className="py-16 text-center text-sm text-slate-500">Redirecionando para uma area autorizada...</div>
+          )}
         </main>
         <footer className="px-3 pb-4 text-center text-[11px] text-slate-500 sm:px-4 lg:px-6">
           Orien · Beta privado

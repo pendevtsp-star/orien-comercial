@@ -1,5 +1,6 @@
 "use client";
-import { BrandLogo, Button, Input } from "@sgc/ui";
+import { BrandLogo, Button } from "@sgc/ui";
+import { Eye, EyeOff } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "../../lib/api";
@@ -8,6 +9,7 @@ export default function ChangePasswordPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [visible, setVisible] = useState<Record<string, boolean>>({});
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -30,12 +32,13 @@ export default function ChangePasswordPage() {
     }
   }
   return (
-    <main className="grid min-h-screen place-items-center bg-[var(--brand-surface)] p-4">
+    <main className="auth-page grid min-h-screen place-items-center p-4">
       <form
-        className="grid w-full max-w-md gap-4 rounded-lg border border-[var(--brand-border)] bg-white p-6 shadow-xl"
+        className="auth-panel grid w-full max-w-md gap-4 rounded-xl border border-[var(--brand-border)] bg-white p-6 shadow-xl"
         onSubmit={(event) => void submit(event)}
       >
-        <BrandLogo />
+        <div className="auth-brand-light"><BrandLogo /></div>
+        <div className="auth-brand-dark"><BrandLogo theme="dark" /></div>
         <div>
           <h1 className="text-3xl font-semibold text-[var(--brand-primary)]">
             Crie sua senha definitiva
@@ -45,14 +48,25 @@ export default function ChangePasswordPage() {
           </p>
         </div>
         {error ? <p className="rounded-md bg-rose-50 p-3 text-sm text-rose-700">{error}</p> : null}
-        <Input name="currentPassword" label="Senha temporaria" type="password" required />
-        <Input name="newPassword" label="Nova senha" type="password" minLength={12} required />
-        <Input
+        <PasswordField
+          name="currentPassword"
+          label="Senha temporaria"
+          visible={visible.currentPassword}
+          onToggle={() => setVisible((value) => ({ ...value, currentPassword: !value.currentPassword }))}
+        />
+        <PasswordField
+          name="newPassword"
+          label="Nova senha"
+          minLength={12}
+          visible={visible.newPassword}
+          onToggle={() => setVisible((value) => ({ ...value, newPassword: !value.newPassword }))}
+        />
+        <PasswordField
           name="confirmPassword"
           label="Confirmar nova senha"
-          type="password"
           minLength={12}
-          required
+          visible={visible.confirmPassword}
+          onToggle={() => setVisible((value) => ({ ...value, confirmPassword: !value.confirmPassword }))}
         />
         <Button type="submit" disabled={loading}>
           {loading ? "Alterando..." : "Definir nova senha"}
@@ -60,4 +74,42 @@ export default function ChangePasswordPage() {
       </form>
     </main>
   );
+}
+
+function PasswordField({
+  name,
+  label,
+  minLength,
+  visible,
+  onToggle,
+}: {
+  name: string;
+  label: string;
+  minLength?: number;
+  visible?: boolean;
+  onToggle: () => void;
+}) {
+  return <label className="grid gap-1.5 text-sm text-slate-700" htmlFor={name}>
+    <span className="font-medium">{label}</span>
+    <span className="relative">
+      <input
+        id={name}
+        name={name}
+        type={visible ? "text" : "password"}
+        autoComplete={name === "currentPassword" ? "current-password" : "new-password"}
+        minLength={minLength}
+        required
+        className="h-10 w-full rounded-md border border-[var(--brand-border)] bg-white px-3 pr-11 text-sm text-slate-950 outline-none transition focus:border-[var(--brand-accent)] focus:ring-2 focus:ring-[color:rgba(245,195,74,0.2)]"
+      />
+      <button
+        type="button"
+        className="absolute inset-y-0 right-0 inline-flex w-10 items-center justify-center text-slate-500 transition hover:text-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-accent)]"
+        onClick={onToggle}
+        aria-label={visible ? `Ocultar ${label.toLowerCase()}` : `Mostrar ${label.toLowerCase()}`}
+        title={visible ? "Ocultar senha" : "Mostrar senha"}
+      >
+        {visible ? <EyeOff size={18} /> : <Eye size={18} />}
+      </button>
+    </span>
+  </label>;
 }
