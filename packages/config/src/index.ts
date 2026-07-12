@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+const optionalUrl = z.preprocess((value) => (value === "" ? undefined : value), z.string().url().optional());
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   APP_ENV: z.string().default("local"),
@@ -29,6 +31,9 @@ const envSchema = z.object({
   ASAAS_WEBHOOK_TOKEN: z.string().optional(),
   RESEND_API_KEY: z.string().optional(),
   ALERT_FROM_EMAIL: z.string().email().default("alertas@useorien.com.br"),
+  SENTRY_DSN: optionalUrl,
+  SENTRY_ENVIRONMENT: z.string().default("local"),
+  NEXT_PUBLIC_SENTRY_DSN: optionalUrl,
 });
 
 export type AppConfig = z.infer<typeof envSchema>;

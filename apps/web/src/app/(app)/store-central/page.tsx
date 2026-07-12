@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Store,
   UsersRound,
+  ShieldAlert,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -26,6 +27,7 @@ interface OperationalStatus {
     criticalStock: number;
     overdueReceivables: number;
     pendingTasks: number;
+    integrationErrors: number;
   };
   checklist: Array<{ key: string; label: string; done: boolean; href: string }>;
   progressPercent: number;
@@ -95,6 +97,13 @@ export default function StoreCentralPage() {
       detail: "pendência(s) operacionais",
       href: "/tasks",
       icon: ClipboardList,
+    },
+    {
+      title: "Integrações",
+      value: status?.counts.integrationErrors ?? 0,
+      detail: "conector(es) com erro",
+      href: "/integrations",
+      icon: ShieldAlert,
     },
   ];
 
@@ -191,7 +200,7 @@ export default function StoreCentralPage() {
         </Card>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         {blockers.map((item) => {
           const Icon = item.icon;
           return (

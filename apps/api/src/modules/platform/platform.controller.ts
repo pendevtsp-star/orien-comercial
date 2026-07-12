@@ -90,6 +90,10 @@ export class PlatformController {
     await this.ok(u);
     return this.p.health();
   }
+  @Get("errors") async errors(@CurrentUser() u: AuthUser) {
+    await this.ok(u);
+    return this.p.errors();
+  }
   @Get("webhooks") async webhooks(@CurrentUser() u: AuthUser, @Query("status") status?: string) {
     await this.ok(u);
     return this.p.webhooks(status);

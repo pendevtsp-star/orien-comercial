@@ -23,6 +23,7 @@ export class DashboardService {
       criticalStock,
       overdueReceivables,
       pendingTasks,
+      integrationErrors,
       onboarding,
     ] = await Promise.all([
       this.database.tenantQuery<{ total: string }>(
@@ -81,6 +82,11 @@ export class DashboardService {
         `SELECT count(*)::text total FROM operational_tasks WHERE tenant_id=$1 AND status IN ('open','in_progress') ${branchFilter}`,
         params,
       ),
+      this.database.tenantQuery<{ total: string }>(
+        context.tenantId,
+        "SELECT count(*)::text total FROM tenant_integrations WHERE tenant_id=$1 AND status='error'",
+        [context.tenantId],
+      ),
       this.database.tenantQuery<{ value: { dismissed?: boolean; completedKeys?: string[] } | null }>(
         context.tenantId,
         "SELECT value FROM tenant_settings WHERE tenant_id=$1 AND key='onboarding' AND deleted_at IS NULL LIMIT 1",
@@ -99,6 +105,7 @@ export class DashboardService {
       criticalStock: Number(criticalStock.rows[0]?.total ?? 0),
       overdueReceivables: Number(overdueReceivables.rows[0]?.total ?? 0),
       pendingTasks: Number(pendingTasks.rows[0]?.total ?? 0),
+      integrationErrors: Number(integrationErrors.rows[0]?.total ?? 0),
     };
 
     const persisted = onboarding.rows[0]?.value ?? {};

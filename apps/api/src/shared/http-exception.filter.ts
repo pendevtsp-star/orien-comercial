@@ -1,8 +1,20 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from "@nestjs/common";
 import type { Request, Response } from "express";
 
+export interface ApiErrorEvent {
+  requestId: string;
+  method: string;
+  path: string;
+  statusCode: number;
+  errorCode: string;
+  message: string;
+  userAgent?: string;
+}
+
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
+  constructor(private readonly recordError?: (event: ApiErrorEvent) => Promise<void>) {}
+
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const request = ctx.getRequest<Request & { requestId?: string }>();
@@ -18,6 +30,20 @@ export class HttpExceptionFilter implements ExceptionFilter {
     if (!(exception instanceof HttpException)) {
       const errorMessage = exception instanceof Error ? exception.message : "Unknown error";
       console.error(`[${requestId}] Unhandled API error on ${request.method} ${request.url}:`, errorMessage);
+    }
+
+    if (status >= 500) {
+      void this.recordError?.({
+        requestId,
+        method: request.method,
+        path: String(request.originalUrl || request.url),
+        statusCode: status,
+        errorCode,
+        message: Array.isArray(message) ? message.map(String).join("; ") : message,
+        userAgent: Array.isArray(request.headers["user-agent"])
+          ? request.headers["user-agent"][0]
+          : request.headers["user-agent"],
+      }).catch(() => undefined);
     }
 
     response.setHeader("x-request-id", requestId);

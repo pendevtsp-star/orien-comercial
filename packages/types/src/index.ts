@@ -271,7 +271,10 @@ export const importPreviewSchema = z.object({
   fileBase64: z.string().min(16).max(20_000_000),
 });
 
-export const importCommitSchema = z.object({ jobId: uuidSchema });
+export const importCommitSchema = z.object({
+  jobId: uuidSchema,
+  ignoreRejectedRows: z.boolean().default(false),
+});
 
 export const alertRuleSchema = z.object({
   type: z.enum(["low_stock", "overdue_receivables", "cancelled_sales"]),

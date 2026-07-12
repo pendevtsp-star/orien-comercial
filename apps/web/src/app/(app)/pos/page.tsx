@@ -4,7 +4,7 @@ import { Badge, Button, Card, CardContent, DataTable, Input, PageHeader, Select 
 import { Banknote, CreditCard, Minus, Plus, ScanBarcode, WalletCards, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { apiFetch } from "../../../lib/api";
+import { apiFetch, openApiDocument } from "../../../lib/api";
 
 interface ListResponse<T> {
   data: T[];
@@ -44,6 +44,12 @@ interface CartItem {
   unitPrice: number;
   discountAmount: number;
 }
+interface PrintingSettings {
+  receiptMode: string;
+  receiptCopies: number;
+  defaultPrinterName?: string;
+  silentPrint: boolean;
+}
 
 export default function PosPage() {
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -61,6 +67,7 @@ export default function PosPage() {
     Array<{ method: string; amount: number; status: "paid" }>
   >([]);
   const [pendingSync, setPendingSync] = useState(0);
+  const [printing, setPrinting] = useState<PrintingSettings | null>(null);
   const [isOnline, setIsOnline] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const scannerRef = useRef<HTMLInputElement>(null);
@@ -138,10 +145,12 @@ export default function PosPage() {
     void Promise.all([
       apiFetch<CashSession | null>(`/cash-registers/current?branchId=${branchId}`),
       apiFetch<{ data: CashHistory[] }>(`/cash-registers?branchId=${branchId}`),
+      apiFetch<PrintingSettings>(`/printing-settings?branchId=${branchId}`),
     ])
-      .then(([current, history]) => {
+      .then(([current, history, printSettings]) => {
         setCash(current);
         setCashHistory(history.data);
+        setPrinting(printSettings);
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Falha ao consultar caixa."));
   }, [branchId]);
@@ -175,6 +184,23 @@ export default function PosPage() {
     await addProduct(product);
     setScanner("");
     scannerRef.current?.focus();
+  }
+  async function addFirstManualSuggestion() {
+    const product =
+      productSuggestions[0] ??
+      products.find((item) => {
+        const search = productSearch.trim().toLowerCase();
+        return (
+          item.name.toLowerCase().includes(search) ||
+          item.sku?.toLowerCase() === search ||
+          item.barcode === search
+        );
+      });
+    if (!product) {
+      setError("Nenhum produto encontrado para a busca informada.");
+      return;
+    }
+    await addProduct(product);
   }
 
   async function addProduct(product: Product) {
@@ -281,7 +307,12 @@ export default function PosPage() {
       const payload = {
         branchId,
         cashRegisterSessionId: cash.id,
-        items: cart.map(({ name: _name, ...item }) => item),
+        items: cart.map((item) => ({
+          productId: item.productId,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          discountAmount: item.discountAmount,
+        })),
         payments,
       };
       window.localStorage.setItem("orien.pos.last-cart", JSON.stringify({ items: cart, branchId }));
@@ -291,7 +322,13 @@ export default function PosPage() {
         pending.push({ payload, idempotencyKey: createIdempotencyKey() });
         window.localStorage.setItem(queueKey, JSON.stringify(pending));
         setPendingSync(pending.length);
-      } else await apiFetch("/sales", { method: "POST", headers: { "idempotency-key": createIdempotencyKey() }, body: JSON.stringify(payload) });
+      } else {
+        const result = await apiFetch<{ id?: string; sale?: { id?: string } }>("/sales", { method: "POST", headers: { "idempotency-key": createIdempotencyKey() }, body: JSON.stringify(payload) });
+        const saleId = result.id ?? result.sale?.id;
+        if (saleId && printing?.receiptMode !== "none") {
+          void openApiDocument(`/sales/${saleId}/document`, printing?.silentPrint ?? false).catch(() => undefined);
+        }
+      }
       setCart([]);
       setPaymentParts([]);
       setError(null);
@@ -349,7 +386,14 @@ export default function PosPage() {
             </div>
           ))}
         </div>
-        <Badge>{isOnline ? "Sincronização imediata" : "Venda será enviada depois"}</Badge>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Badge>{isOnline ? "Sincronização imediata" : "Venda será enviada depois"}</Badge>
+          <Badge>
+            {printing
+              ? `Comprovante: ${receiptModeLabel(printing.receiptMode)} · ${printing.receiptCopies} via(s)`
+              : "Comprovante: padrão da loja"}
+          </Badge>
+        </div>
       </section>
       {error ? (
         <p className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
@@ -405,6 +449,12 @@ export default function PosPage() {
                     value={productSearch}
                     placeholder="Digite nome, SKU ou código"
                     onChange={(event) => setProductSearch(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void addFirstManualSuggestion();
+                      }
+                    }}
                   />
                   {productSuggestions.length ? (
                     <div className="absolute z-20 mt-1 grid w-full overflow-hidden rounded-md border border-[var(--brand-border)] bg-white shadow-xl">
@@ -571,8 +621,8 @@ export default function PosPage() {
               Concluir venda
             </Button>
             <p className="text-xs leading-5 text-white/65">
-              Descontos acima de 10% são recusados pela API quando o operador não possui permissão
-              gerencial.
+              Fechamento enxuto: adicione produtos, escolha uma ou mais formas de pagamento e
+              conclua. O comprovante usa o padrão da loja configurado em Impressoras.
             </p>
           </CardContent>
         </Card>
@@ -667,6 +717,11 @@ export default function PosPage() {
 }
 
 function createIdempotencyKey() { return `pos_${crypto.randomUUID().replaceAll("-", "")}`; }
+function receiptModeLabel(mode: string) {
+  if (mode === "none") return "não imprimir";
+  if (mode === "thermal") return "térmico";
+  return "navegador";
+}
 
 function PaymentButton({
   active,

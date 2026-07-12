@@ -29,5 +29,5 @@ export class ImportsController {
   @RequirePermissions(permissions.products.create, permissions.customers.create)
   @Post("preview") preview(@CurrentTenant() tenant: TenantContext, @Body(new ZodValidationPipe(importPreviewSchema)) body: never) { return this.service.preview(tenant, body); }
   @RequirePermissions(permissions.products.create, permissions.customers.create)
-  @Post("commit") commit(@CurrentTenant() tenant: TenantContext, @Body(new ZodValidationPipe(importCommitSchema)) body: { jobId: string }) { return this.service.commit(tenant, body.jobId); }
+  @Post("commit") commit(@CurrentTenant() tenant: TenantContext, @Body(new ZodValidationPipe(importCommitSchema)) body: { jobId: string; ignoreRejectedRows?: boolean }) { return this.service.commit(tenant, body.jobId, body.ignoreRejectedRows ?? false); }
 }

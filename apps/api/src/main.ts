@@ -68,7 +68,27 @@ async function bootstrap() {
     });
   });
   app.enableShutdownHooks();
-  app.useGlobalFilters(new HttpExceptionFilter());
+  const database = app.get(DatabaseService);
+  app.useGlobalFilters(
+    new HttpExceptionFilter(async (event) => {
+      await database.pool.query(
+        `
+        INSERT INTO platform_error_events
+          (request_id, method, path, status_code, error_code, message, user_agent)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `,
+        [
+          event.requestId,
+          event.method,
+          event.path,
+          event.statusCode,
+          event.errorCode,
+          event.message.slice(0, 600),
+          event.userAgent?.slice(0, 300) ?? null,
+        ],
+      );
+    }),
+  );
 
   if (process.env.NODE_ENV !== "production") {
     const config = new DocumentBuilder()

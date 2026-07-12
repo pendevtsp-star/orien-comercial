@@ -33,6 +33,11 @@ export default function CatalogToolsPage() {
   const [size, setSize] = useState("50x30");
   const [entityType, setEntityType] = useState("products");
   const [preview, setPreview] = useState<Preview | null>(null);
+  const [importReport, setImportReport] = useState<{
+    importedRows: number;
+    rejectedRows: number;
+    ignoredRejectedRows?: boolean;
+  } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -68,6 +73,7 @@ export default function CatalogToolsPage() {
         body: JSON.stringify({ entityType, fileBase64: base64 }),
       });
       setPreview(result);
+      setImportReport(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao analisar planilha.");
     } finally {
@@ -75,15 +81,20 @@ export default function CatalogToolsPage() {
       event.target.value = "";
     }
   }
-  async function commit() {
-    if (!preview || preview.rejectedRows) return;
+  async function commit(ignoreRejectedRows = false) {
+    if (!preview || (preview.rejectedRows && !ignoreRejectedRows)) return;
     setLoading(true);
     try {
-      await apiFetch("/imports/commit", {
+      const result = await apiFetch<{
+        importedRows: number;
+        rejectedRows: number;
+        ignoredRejectedRows?: boolean;
+      }>("/imports/commit", {
         method: "POST",
-        body: JSON.stringify({ jobId: preview.jobId }),
+        body: JSON.stringify({ jobId: preview.jobId, ignoreRejectedRows }),
       });
       setPreview(null);
+      setImportReport(result);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao importar planilha.");
@@ -320,16 +331,61 @@ export default function CatalogToolsPage() {
                             Planilha validada e pronta para importação transacional.
                           </p>
                         )}
-                        <Button
-                          disabled={loading || preview.rejectedRows > 0}
-                          onClick={() => void commit()}
-                        >
-                          Confirmar importação
-                        </Button>
+                        {preview.preview.length ? (
+                          <div className="overflow-x-auto rounded-md border border-[var(--brand-border)]">
+                            <table className="min-w-[720px] w-full text-sm">
+                              <thead className="bg-[var(--brand-surface)] text-left text-xs uppercase tracking-[0.14em] text-[var(--brand-secondary)]">
+                                <tr>
+                                  {Object.keys(preview.preview[0] ?? {}).slice(0, 6).map((key) => (
+                                    <th key={key} className="px-3 py-2">{translatePreviewKey(key)}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {preview.preview.slice(0, 8).map((row, index) => (
+                                  <tr key={index} className="border-t border-[var(--brand-border)]">
+                                    {Object.keys(preview.preview[0] ?? {}).slice(0, 6).map((key) => (
+                                      <td key={key} className="px-3 py-2">{formatPreviewValue(row[key])}</td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : null}
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            disabled={loading || preview.rejectedRows > 0}
+                            onClick={() => void commit()}
+                          >
+                            Confirmar importação
+                          </Button>
+                          {preview.rejectedRows > 0 && preview.validRows > 0 ? (
+                            <Button
+                              variant="secondary"
+                              disabled={loading}
+                              onClick={() => void commit(true)}
+                            >
+                              Importar somente válidas
+                            </Button>
+                          ) : null}
+                        </div>
                       </>
                     ) : (
                       <div className="grid min-h-56 place-items-center text-center text-slate-500">
-                        <p>Selecione uma planilha para ver a prévia e os erros antes de gravar.</p>
+                        {importReport ? (
+                          <div className="rounded-md border border-emerald-200 bg-emerald-50 p-4 text-emerald-800">
+                            <strong>Importação concluída.</strong>
+                            <p className="mt-1 text-sm">
+                              {importReport.importedRows} linha(s) importada(s)
+                              {importReport.rejectedRows
+                                ? ` e ${importReport.rejectedRows} rejeitada(s) preservadas no relatório.`
+                                : "."}
+                            </p>
+                          </div>
+                        ) : (
+                          <p>Selecione uma planilha para ver a prévia e os erros antes de gravar.</p>
+                        )}
                       </div>
                     )}
                   </CardContent>
@@ -346,10 +402,36 @@ export default function CatalogToolsPage() {
 function readBase64(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
-    reader.onerror = () => reject(reader.error);
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result.split(",")[1] ?? "" : "");
+    reader.onerror = () => reject(reader.error instanceof Error ? reader.error : new Error("Falha ao ler arquivo."));
     reader.readAsDataURL(file);
   });
+}
+function translatePreviewKey(key: string) {
+  const labels: Record<string, string> = {
+    name: "Nome",
+    sku: "SKU",
+    barcode: "Código",
+    unit: "Unidade",
+    costPrice: "Custo",
+    salePrice: "Preço",
+    minStock: "Estoque mínimo",
+    type: "Tipo",
+    document: "Documento",
+    phone: "Telefone",
+    whatsapp: "WhatsApp",
+    email: "E-mail",
+    city: "Cidade",
+    state: "UF",
+  };
+  return labels[key] ?? key;
+}
+function formatPreviewValue(value: unknown) {
+  if (value === undefined || value === null || value === "") return "-";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return JSON.stringify(value);
 }
 function Metric({
   label,

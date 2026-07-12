@@ -5,7 +5,7 @@ import Link from "next/link";
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? "https://api.useorien.com.br/api/v1";
 type Section =
-  "overview" | "tenants" | "billing" | "webhooks" | "support" | "staff" | "health" | "audit";
+  "overview" | "tenants" | "billing" | "webhooks" | "support" | "staff" | "health" | "errors" | "audit";
 const navigation: Array<[Section, string]> = [
   ["overview", "Visão geral"],
   ["tenants", "Tenants"],
@@ -14,6 +14,7 @@ const navigation: Array<[Section, string]> = [
   ["support", "Suporte"],
   ["staff", "Equipe interna"],
   ["health", "Saúde operacional"],
+  ["errors", "Erros recentes"],
   ["audit", "Auditoria"],
 ];
 
@@ -60,7 +61,7 @@ export default function Admin() {
 
   async function load() {
     try {
-      const [overview, tenants, billing, health, staff, webhooks, sessions, audits, mfaStatus] =
+      const [overview, tenants, billing, health, staff, webhooks, sessions, audits, mfaStatus, errors] =
         await Promise.all([
           call("/platform/overview"),
           call("/platform/tenants"),
@@ -71,6 +72,7 @@ export default function Admin() {
           call("/platform/support-sessions"),
           call("/platform/audits"),
           call("/platform/mfa/status"),
+          call("/platform/errors"),
         ]);
       setDashboard({
         overview,
@@ -82,6 +84,7 @@ export default function Admin() {
         sessions,
         audits,
         mfaStatus,
+        errors,
       });
       setError("");
     } catch (cause) {
@@ -465,6 +468,7 @@ export default function Admin() {
           />
         )}
         {active === "health" && <Health health={dashboard.health} />}
+        {active === "errors" && <Errors data={dashboard.errors.data} />}
         {active === "audit" && <Audit data={dashboard.audits.data} />}
       </main>
     </div>
@@ -1026,6 +1030,53 @@ function Health({ health }: any) {
           <p className="muted">Leitura atual da infraestrutura e dos processos da plataforma.</p>
         </article>
       ))}
+    </section>
+  );
+}
+function Errors({ data }: any) {
+  return (
+    <section className="panel">
+      <p className="eyebrow">OBSERVABILIDADE</p>
+      <h2>Erros recentes da API</h2>
+      <p className="muted">
+        Eventos correlacionados por requestId para investigar falhas de API, checkout e webhooks.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>RequestId</th>
+            <th>Rota</th>
+            <th>Status</th>
+            <th>Mensagem</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.length ? (
+            data.map((item: any) => (
+              <tr key={item.id}>
+                <td>{date(item.createdAt)}</td>
+                <td>
+                  <small>{item.requestId}</small>
+                </td>
+                <td>
+                  <small>
+                    {item.method} {item.path}
+                  </small>
+                </td>
+                <td>{item.statusCode}</td>
+                <td>{item.message}</td>
+              </tr>
+            ))
+          ) : (
+            <tr>
+              <td colSpan={5} className="empty">
+                Nenhum erro recente registrado.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
     </section>
   );
 }

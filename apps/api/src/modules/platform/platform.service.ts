@@ -339,7 +339,7 @@ export class PlatformService {
     return result.rows[0];
   }
   async health() {
-    const [failed, integrations, backups] = await Promise.all([
+    const [failed, integrations, backups, recentErrors] = await Promise.all([
       q(this.database, "SELECT count(*)::int total FROM webhook_events WHERE status<>'processed'"),
       q(
         this.database,
@@ -349,6 +349,10 @@ export class PlatformService {
         this.database,
         "SELECT count(*)::int total FROM sessions WHERE revoked_at IS NULL AND expires_at>now()",
       ),
+      q(
+        this.database,
+        "SELECT count(*)::int total FROM platform_error_events WHERE created_at>now()-interval '24 hours'",
+      ),
     ]);
     return {
       api: "operational",
@@ -357,7 +361,17 @@ export class PlatformService {
       failedWebhooks: failed.total,
       disabledIntegrations: integrations.total,
       activeSessions: backups.total,
+      recentApiErrors: recentErrors.total,
     };
+  }
+  async errors() {
+    const result = await this.database.pool.query(
+      `SELECT id,request_id AS "requestId",method,path,status_code AS "statusCode",error_code AS "errorCode",message,user_agent AS "userAgent",created_at AS "createdAt"
+       FROM platform_error_events
+       ORDER BY created_at DESC
+       LIMIT 100`,
+    );
+    return { data: result.rows };
   }
   async retryWebhook(actor: string, id: string) {
     const result = await this.database.pool.query(
