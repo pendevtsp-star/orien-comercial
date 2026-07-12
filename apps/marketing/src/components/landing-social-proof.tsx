@@ -26,8 +26,20 @@ export function LandingSocialProof() {
   useEffect(() => {
     void fetch(`${api}/public/landing`)
       .then((response) => (response.ok ? response.json() : null))
-      .then((data) => setSettings(data))
+      .then((data) => {
+        setSettings(data);
+        document.documentElement.dataset.orienShowCalculator = String(data?.showCalculator !== false);
+        document.documentElement.dataset.orienShowPlans = String(data?.showPlans !== false);
+        document.documentElement.dataset.orienShowSegments = String(data?.showSegments !== false);
+        document.documentElement.dataset.orienShowFaq = String(data?.showFaq !== false);
+      })
       .catch(() => setSettings(null));
+    return () => {
+      delete document.documentElement.dataset.orienShowCalculator;
+      delete document.documentElement.dataset.orienShowPlans;
+      delete document.documentElement.dataset.orienShowSegments;
+      delete document.documentElement.dataset.orienShowFaq;
+    };
   }, []);
 
   const whatsappHref = settings?.whatsappNumber
@@ -36,7 +48,7 @@ export function LandingSocialProof() {
   const testimonials = settings?.showTestimonials ? settings.testimonials ?? [] : [];
 
   return <>
-    {settings?.showTestimonials !== false && <section className="border-y border-[#d9e1ee] bg-[#f7f8fb]">
+    {settings?.showTestimonials !== false && <section id="testimonials" className="border-y border-[#d9e1ee] bg-[#f7f8fb]">
       <div className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
         <div className="mx-auto max-w-2xl text-center">
           <div className="flex justify-center gap-1 text-[#f5c34a]" aria-label="Avaliações de clientes">

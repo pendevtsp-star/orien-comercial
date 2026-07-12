@@ -369,7 +369,7 @@ export default function MarketingPage() {
         </div>
       </section>
 
-      <section className="border-y border-[#d9e1ee] bg-white">
+      <section id="calculator" className="border-y border-[#d9e1ee] bg-white">
         <div className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
           <div className="grid gap-10 lg:grid-cols-[.95fr_1.05fr]">
             <div>
@@ -428,7 +428,7 @@ export default function MarketingPage() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
+      <section id="plans" className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
         <div className="text-center">
           <p className="text-xs font-bold tracking-[.2em] text-[#2563eb]">PLANOS TRANSPARENTES</p>
           <h2 data-brand-display="true" className="mt-3 text-4xl md:text-5xl">
@@ -494,7 +494,7 @@ export default function MarketingPage() {
 
     <LandingSocialProof />
 
-    <section className="bg-[#0b1d3d] text-white">
+    <section id="segments" className="bg-[#0b1d3d] text-white">
         <div className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
           <div className="max-w-2xl">
             <p className="text-xs font-bold tracking-[.2em] text-[#f5c34a]">
