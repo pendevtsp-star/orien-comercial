@@ -4,6 +4,7 @@ import { BrandLogo, Button } from "@sgc/ui";
 import {
   BarChart3,
   BellRing,
+  BriefcaseBusiness,
   Layers3,
   FileBarChart,
   Gift,
@@ -29,6 +30,7 @@ import {
   Search,
   Star,
   Sun,
+  History,
   Truck,
   UsersRound,
   X,
@@ -49,6 +51,7 @@ type NavigationItem = {
 };
 const navigation: NavigationItem[] = [
   { href: "/dashboard", label: "Visão geral", icon: BarChart3, permissions: ["dashboard.read"] },
+  { href: "/store-central", label: "Central da Loja", icon: BriefcaseBusiness, permissions: ["dashboard.read"] },
   { href: "/branches", label: "Lojas", icon: Building2, permissions: ["branches.read"] },
   { href: "/products", label: "Produtos", icon: Boxes, permissions: ["products.read"] },
   { href: "/stock", label: "Estoque", icon: PackageCheck, permissions: ["stock.read"] },
@@ -59,6 +62,7 @@ const navigation: NavigationItem[] = [
   { href: "/customers", label: "Clientes", icon: UsersRound, permissions: ["customers.read"] },
   { href: "/loyalty", label: "Fidelidade", icon: Gift, permissions: ["customers.read"] },
   { href: "/catalog-tools", label: "Ferramentas", icon: Wrench, permissions: ["products.read"] },
+  { href: "/printers", label: "Impressoras", icon: MonitorCog, permissions: ["products.read"] },
   {
     href: "/financial",
     label: "Financeiro",
@@ -73,6 +77,7 @@ const navigation: NavigationItem[] = [
   },
   { href: "/alerts", label: "Alertas", icon: BellRing, permissions: ["stock.read"] },
   { href: "/tasks", label: "Tarefas", icon: ClipboardList, permissions: ["dashboard.read"] },
+  { href: "/audit", label: "Auditoria", icon: History, permissions: ["users.read"] },
   {
     href: "/operations",
     label: "Operações avançadas",
@@ -93,18 +98,18 @@ const navigation: NavigationItem[] = [
   { href: "/platform", label: "Gestão Orien", icon: MonitorCog, platformOnly: true },
 ];
 const navigationGroups = [
-  { id: "overview", label: "Visão geral", routes: ["/dashboard"] },
+  { id: "overview", label: "Visão geral", routes: ["/dashboard", "/store-central"] },
   { id: "operation", label: "Operação", routes: ["/sales", "/pos"] },
   {
     id: "catalog",
     label: "Catálogo e estoque",
-    routes: ["/branches", "/products", "/stock", "/suppliers", "/purchases", "/catalog-tools"],
+    routes: ["/branches", "/products", "/stock", "/suppliers", "/purchases", "/catalog-tools", "/printers"],
   },
   { id: "customers", label: "Clientes", routes: ["/customers", "/loyalty"] },
   {
     id: "management",
     label: "Gestão",
-    routes: ["/financial", "/reports", "/alerts", "/tasks", "/operations"],
+    routes: ["/financial", "/reports", "/alerts", "/tasks", "/operations", "/audit"],
   },
   {
     id: "administration",

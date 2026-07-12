@@ -4,7 +4,8 @@
 
 - [ ] Dominio, DNS e HTTPS validados externamente.
 - [x] Backup automatico executado e restauracao testada.
-- [x] Fluxos E2E de login, compra, estoque, PDV, venda e financeiro aprovados.
+- [ ] Fluxos E2E de login, compra, estoque, PDV, venda e financeiro aprovados em banco descartavel.
+  - Observacao: a suite `pnpm test:e2e` reseta o banco apontado por `DATABASE_MIGRATION_URL`/`DATABASE_URL`; nunca executar contra producao.
 - [x] Isolamento entre tenants e filiais aprovado.
 - [ ] Leitor de codigo de barras e impressora termica validados em hardware real.
 - [ ] Nenhum achado critico ou alto de seguranca aberto.

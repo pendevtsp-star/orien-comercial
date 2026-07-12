@@ -302,7 +302,7 @@ export default function PosPage() {
   }
 
   return (
-    <div className="grid gap-5">
+    <div className="grid gap-4">
       <PageHeader
         title="PDV rápido"
         description="Scanner sempre disponível, atalhos de pagamento e controle de abertura e fechamento do caixa."
@@ -356,9 +356,9 @@ export default function PosPage() {
           {error}
         </p>
       ) : null}
-      <div className="grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
         <Card className="min-w-0">
-          <CardContent className="grid gap-4">
+          <CardContent className="grid gap-3">
             <div className="flex flex-wrap items-end gap-3">
               <div className="min-w-[220px] flex-1">
                 <Select
@@ -432,7 +432,7 @@ export default function PosPage() {
                 </div>
               </div>
             )}
-            <div className="grid gap-2">
+            <div className="grid max-h-[42vh] gap-2 overflow-y-auto pr-1">
               {cart.length ? (
                 cart.map((item) => (
                   <div
@@ -495,7 +495,7 @@ export default function PosPage() {
                   </div>
                 ))
               ) : (
-                <div className="grid place-items-center gap-2 rounded-md border border-dashed border-[var(--brand-border)] py-16 text-center text-slate-500">
+                <div className="grid min-h-[12rem] place-items-center gap-2 rounded-md border border-dashed border-[var(--brand-border)] px-4 py-10 text-center text-slate-500">
                   <ScanBarcode size={28} />
                   <p>Abra o caixa, leia um código ou pesquise o primeiro produto.</p>
                 </div>
@@ -503,15 +503,15 @@ export default function PosPage() {
             </div>
           </CardContent>
         </Card>
-        <Card variant="brand" className="h-fit">
-          <CardContent className="grid gap-5">
+        <Card variant="brand" className="h-fit xl:sticky xl:top-24">
+          <CardContent className="grid gap-4">
             <div>
               <p className="text-xs uppercase tracking-[0.18em] text-white/70">Total da venda</p>
-              <p className="mt-2 text-4xl font-semibold text-white">
+              <p className="mt-2 text-5xl font-semibold text-white">
                 {total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
               </p>
             </div>
-            <div className="grid gap-2 sm:grid-cols-3">
+            <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3">
               <PaymentButton
                 active={paymentMethod === "cash"}
                 label="Dinheiro F4"
@@ -564,7 +564,7 @@ export default function PosPage() {
               </div>
             ) : null}
             <Button
-              className="w-full bg-[var(--brand-accent)] text-[var(--brand-primary)] hover:brightness-95"
+              className="min-h-12 w-full bg-[var(--brand-accent)] text-base text-[var(--brand-primary)] hover:brightness-95"
               disabled={!cash || !cart.length}
               onClick={() => void finishSale()}
             >
@@ -682,7 +682,7 @@ function PaymentButton({
   return (
     <button
       type="button"
-      className={`grid min-h-20 place-items-center gap-1 rounded-md border p-2 text-xs ${active ? "border-[var(--brand-accent)] bg-white text-[var(--brand-primary)]" : "border-white/15 bg-white/5 text-white"}`}
+      className={`grid min-h-14 place-items-center gap-1 rounded-md border p-2 text-xs ${active ? "border-[var(--brand-accent)] bg-white text-[var(--brand-primary)]" : "border-white/15 bg-white/5 text-white"}`}
       onClick={onClick}
     >
       {icon}

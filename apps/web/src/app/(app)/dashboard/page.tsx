@@ -60,6 +60,15 @@ interface OperationalStatus {
   nextAction: { label: string; href: string } | null;
 }
 
+const onboardingFallback = [
+  { key: "branch", label: "Cadastrar loja", done: false, href: "/branches" },
+  { key: "products", label: "Cadastrar produtos", done: false, href: "/products" },
+  { key: "customers", label: "Cadastrar clientes", done: false, href: "/customers" },
+  { key: "operator", label: "Convidar operador", done: false, href: "/team" },
+  { key: "stock", label: "Informar estoque inicial", done: false, href: "/stock" },
+  { key: "sale", label: "Realizar venda teste", done: false, href: "/pos" },
+];
+
 const cards = [
   { key: "branches", label: "Lojas ativas", icon: Building2, tone: "secondary" },
   { key: "products", label: "Produtos", icon: Boxes, tone: "primary" },
@@ -72,6 +81,7 @@ export default function DashboardPage() {
   const [status, setStatus] = useState<OperationalStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showSetupWizard, setShowSetupWizard] = useState(false);
   const today = new Date().toISOString().slice(0, 10);
   const [startDate, setStartDate] = useState(
     new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10),
@@ -86,7 +96,16 @@ export default function DashboardPage() {
       setSummary(
         await apiFetch<Summary>(`/dashboard/summary?startDate=${startDate}&endDate=${endDate}`),
       );
-      void apiFetch<OperationalStatus>("/dashboard/operational-status").then(setStatus);
+      void apiFetch<OperationalStatus>("/dashboard/operational-status")
+        .then(setStatus)
+        .catch(() => {
+          setStatus({
+            counts: { openCash: 0, criticalStock: 0, overdueReceivables: 0, pendingTasks: 0 },
+            checklist: onboardingFallback,
+            progressPercent: 0,
+            nextAction: onboardingFallback[0] ?? null,
+          });
+        });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao carregar dashboard.");
     } finally {
@@ -100,6 +119,12 @@ export default function DashboardPage() {
       "/branches?pageSize=100&isActive=true",
     ).then((result) => setBranches(result.data));
   }, []);
+
+  useEffect(() => {
+    if (!status || status.progressPercent >= 100) return;
+    const dismissed = window.localStorage.getItem("orien.setup-wizard.dismissed");
+    if (!dismissed) setShowSetupWizard(true);
+  }, [status]);
 
   async function saveGoal(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -122,6 +147,59 @@ export default function DashboardPage() {
 
   return (
     <div className="grid gap-6">
+      {showSetupWizard ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4">
+          <section className="w-full max-w-2xl rounded-2xl border border-[var(--brand-border)] bg-white p-6 shadow-2xl">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">
+                  Primeiro acesso
+                </p>
+                <h2 className="mt-2 text-2xl font-semibold text-[var(--brand-primary)]">
+                  Vamos deixar a operação pronta para vender.
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Complete os passos principais. A Orien libera o painel aos poucos, mas este
+                  roteiro evita loja sem produto, produto sem estoque ou venda sem operador.
+                </p>
+              </div>
+              <Badge>{status?.progressPercent ?? 0}% concluído</Badge>
+            </div>
+            <div className="mt-5 grid gap-2">
+              {(status?.checklist?.length ? status.checklist : onboardingFallback).map((item) => (
+                <Link
+                  key={item.key}
+                  href={item.href}
+                  className="flex items-center justify-between rounded-md border border-[var(--brand-border)] px-3 py-2 text-sm hover:bg-[var(--brand-surface)]"
+                  onClick={() => setShowSetupWizard(false)}
+                >
+                  <span className="font-medium text-[var(--brand-primary)]">{item.label}</span>
+                  <Badge>{item.done ? "feito" : "pendente"}</Badge>
+                </Link>
+              ))}
+            </div>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  window.localStorage.setItem("orien.setup-wizard.dismissed", "true");
+                  setShowSetupWizard(false);
+                }}
+              >
+                Continuar depois
+              </Button>
+              <Button
+                onClick={() => {
+                  const next = status?.nextAction ?? onboardingFallback.find((item) => !item.done);
+                  if (next) window.location.href = next.href;
+                }}
+              >
+                Começar próxima etapa
+              </Button>
+            </div>
+          </section>
+        </div>
+      ) : null}
       <PageHeader
         title="Dashboard"
         description="Indicadores iniciais do tenant e alertas de operacao."
@@ -272,7 +350,7 @@ export default function DashboardPage() {
               />
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
-              {(status?.checklist ?? []).map((item) => (
+              {(status?.checklist?.length ? status.checklist : onboardingFallback).map((item) => (
                 <Link
                   key={item.key}
                   href={item.href}
@@ -282,17 +360,23 @@ export default function DashboardPage() {
                       : "border-[var(--brand-border)] bg-white text-[var(--brand-primary)] hover:bg-[var(--brand-surface)]"
                   }`}
                 >
-                  <CheckCircle2 size={16} />
-                  {item.label}
+                  <CheckCircle2
+                    size={16}
+                    className={item.done ? "text-emerald-700" : "text-slate-400"}
+                  />
+                  <span className="min-w-0 flex-1">{item.label}</span>
+                  <span className="text-xs font-medium">
+                    {item.done ? "feito" : "pendente"}
+                  </span>
                 </Link>
               ))}
             </div>
-            {status?.nextAction ? (
+            {(status?.nextAction ?? onboardingFallback.find((item) => !item.done)) ? (
               <Link
-                href={status.nextAction.href}
+                href={(status?.nextAction ?? onboardingFallback.find((item) => !item.done))!.href}
                 className="inline-flex min-h-10 w-fit items-center rounded-md bg-[var(--brand-primary)] px-4 py-2 text-sm font-medium text-white"
               >
-                Próxima ação: {status.nextAction.label}
+                Próxima ação: {(status?.nextAction ?? onboardingFallback.find((item) => !item.done))!.label}
               </Link>
             ) : null}
           </CardContent>

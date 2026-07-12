@@ -44,6 +44,8 @@ export default function Admin() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
+  const [loginNeedsMfa, setLoginNeedsMfa] = useState(false);
+  const [loginMfaCode, setLoginMfaCode] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [mfa, setMfa] = useState<any>(null);
@@ -104,17 +106,31 @@ export default function Admin() {
   async function login(event: FormEvent) {
     event.preventDefault();
     try {
-      await call("/auth/login", {
-        method: "POST",
-        body: JSON.stringify({ email, password, rememberMe }),
-      });
+      if (loginNeedsMfa) {
+        await call("/platform/mfa/verify", {
+          method: "POST",
+          body: JSON.stringify({ code: loginMfaCode }),
+        });
+      } else {
+        await call("/auth/login", {
+          method: "POST",
+          body: JSON.stringify({ email, password, rememberMe }),
+        });
+      }
       await load();
+      setLoginNeedsMfa(false);
+      setLoginMfaCode("");
     } catch (cause) {
-      setError(
+      const message =
         cause instanceof Error
           ? cause.message
-          : "Não foi possível entrar. Verifique suas credenciais e tente novamente.",
-      );
+          : "Não foi possível entrar. Verifique suas credenciais e tente novamente.";
+      if (message.toLowerCase().includes("autenticador") || message.toLowerCase().includes("mfa")) {
+        setLoginNeedsMfa(true);
+        setError("Informe o código atual do aplicativo autenticador para concluir o acesso.");
+        return;
+      }
+      setError(message);
     }
   }
   async function act(action: () => Promise<unknown>, message: string) {
@@ -195,7 +211,35 @@ export default function Admin() {
                 <small>Use somente em um dispositivo pessoal.</small>
               </span>
             </label>
-            <button className="btn primary">Entrar no backoffice</button>
+            {loginNeedsMfa && (
+              <label>
+                Código do autenticador
+                <input
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  value={loginMfaCode}
+                  onChange={(event) => setLoginMfaCode(event.target.value)}
+                  placeholder="000000"
+                  required
+                />
+              </label>
+            )}
+            <button className="btn primary">
+              {loginNeedsMfa ? "Confirmar MFA e entrar" : "Entrar no backoffice"}
+            </button>
+            {loginNeedsMfa && (
+              <button
+                className="text-button"
+                type="button"
+                onClick={() => {
+                  setLoginNeedsMfa(false);
+                  setLoginMfaCode("");
+                  setError("");
+                }}
+              >
+                Voltar para e-mail e senha
+              </button>
+            )}
             {error && <p className="feedback error">{error}</p>}
           </form>
         </section>
