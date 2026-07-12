@@ -20,6 +20,8 @@ export default function Admin() {
   const [active, setActive] = useState<Section>("overview");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [mfa, setMfa] = useState<any>(null);
@@ -43,12 +45,12 @@ export default function Admin() {
   }
   useEffect(() => { void load(); }, []);
 
-  async function login(event: FormEvent) { event.preventDefault(); try { await call("/auth/login", { method: "POST", body: JSON.stringify({ email, password, rememberMe: true }) }); await load(); } catch (cause) { setError(cause instanceof Error ? cause.message : "Falha ao entrar."); } }
+  async function login(event: FormEvent) { event.preventDefault(); try { await call("/auth/login", { method: "POST", body: JSON.stringify({ email, password, rememberMe }) }); await load(); } catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível entrar. Verifique suas credenciais e tente novamente."); } }
   async function act(action: () => Promise<unknown>, message: string) { try { await action(); setNotice(message); await load(); } catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível concluir a operação."); } }
   async function openTenant(tenant: any) { setSelectedTenant(tenant); setActive("tenants"); try { const [detail, notesResult] = await Promise.all([call(`/platform/tenants/${tenant.id}`), call(`/platform/tenants/${tenant.id}/notes`)]); setTenantDetail(detail); setNotes(notesResult.data); } catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível carregar o tenant."); } }
   const current = useMemo(() => dashboard?.tenants.data.find((tenant: any) => tenant.id === selectedTenant?.id), [dashboard, selectedTenant]);
 
-  if (!dashboard) return <main className="login"><section className="login-card"><p className="eyebrow">ORIEN ADMIN</p><h1>Backoffice da plataforma</h1><p className="muted">Operação, suporte, cobrança e integridade do ecossistema Orien.</p><form onSubmit={login}><label>E-mail administrativo<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label>Senha<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label><button className="btn primary">Entrar no backoffice</button>{error && <p className="feedback error">{error}</p>}</form></section></main>;
+  if (!dashboard) return <main className="login"><section className="login-card"><p className="eyebrow">ORIEN ADMIN</p><h1>Backoffice da plataforma</h1><p className="muted">Operação, suporte, cobrança e integridade do ecossistema Orien.</p><form onSubmit={login}><label>E-mail administrativo<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required /></label><label>Senha<span className="password-field"><input type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /><button className="password-toggle" type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}>{showPassword ? "Ocultar" : "Mostrar"}</button></span></label><label className="check"><input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} /> <span><strong>Manter conectado</strong><small>Use somente em um dispositivo pessoal.</small></span></label><button className="btn primary">Entrar no backoffice</button>{error && <p className="feedback error">{error}</p>}</form></section></main>;
 
   return <div className="admin">
     <aside className="side"><div className="brand"><span className="brand-mark">O</span><div><b>Orien</b><small>Administração da plataforma</small></div></div><nav className="nav">{navigation.map(([id, label]) => <button key={id} className={active === id ? "active" : ""} onClick={() => setActive(id)}>{label}</button>)}</nav><div className="operator"><span className="dot" /> Plataforma protegida<br/><small>{dashboard.mfaStatus.mfa_enabled ? "MFA verificado" : "MFA pendente"}</small></div></aside>
