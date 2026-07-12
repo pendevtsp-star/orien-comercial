@@ -42,7 +42,7 @@ export default function MarketingPage() {
             <a href="#faq">FAQ</a>
             <a href="#planos">Planos</a>
           </nav>
-          <Button>Solicitar demo</Button>
+          <a href="/checkout" className="rounded-lg bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white">Começar agora</a>
         </div>
       </header>
 
@@ -58,7 +58,7 @@ export default function MarketingPage() {
               Centralize vendas, estoque, clientes, financeiro e operacao multiunidade em uma plataforma premium para empresas que estao crescendo com metodo.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <Button icon={<MoveUpRight size={16} />}>Agendar demonstracao</Button>
+              <a href="/checkout" className="inline-flex items-center gap-2 rounded-lg bg-[var(--brand-primary)] px-4 py-3 text-sm font-semibold text-white">Começar agora <MoveUpRight size={16} /></a>
               <Button variant="secondary">Falar no WhatsApp</Button>
             </div>
             <div className="mt-8 grid gap-3 text-sm text-slate-600 sm:grid-cols-3">
@@ -182,13 +182,11 @@ export default function MarketingPage() {
       <section id="planos" className="mx-auto max-w-7xl px-4 py-16 lg:px-8">
         <h2 data-brand-display="true" className="text-4xl font-semibold text-[var(--brand-primary)]">Planos preparados para crescer</h2>
         <div className="mt-8 grid gap-4 md:grid-cols-3">
-          {["Essencial", "Pro", "Enterprise"].map((plan) => (
+          {[["Essencial", "starter"], ["Pro", "pro"], ["Enterprise", "enterprise"]].map(([plan, slug]) => (
             <div key={plan} className="rounded-xl border border-[var(--brand-border)] bg-white p-5 shadow-sm">
               <h3 className="text-xl font-semibold text-[var(--brand-primary)]">{plan}</h3>
               <p className="mt-2 text-sm text-slate-500">Limites de usuarios, lojas, mensagens e modulos definidos no admin da plataforma.</p>
-              <Button className="mt-5 w-full" variant={plan === "Pro" ? "primary" : "secondary"}>
-                Solicitar
-              </Button>
+              <a href={`/checkout?plan=${slug}`} className={`mt-5 block rounded-lg px-4 py-3 text-center text-sm font-semibold ${plan === "Pro" ? "bg-[var(--brand-primary)] text-white" : "border border-[var(--brand-border)] text-[var(--brand-primary)]"}`}>Começar com {plan}</a>
             </div>
           ))}
         </div>

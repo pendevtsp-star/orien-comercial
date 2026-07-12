@@ -10,6 +10,6 @@ import { SessionStateService } from "./session-state.service";
   imports: [DatabaseModule],
   controllers: [AuthController],
   providers: [AuthService, PasswordService, SessionStateService],
-  exports: [AuthService, SessionStateService],
+  exports: [AuthService, PasswordService, SessionStateService],
 })
 export class AuthModule {}

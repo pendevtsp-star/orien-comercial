@@ -322,6 +322,14 @@ export const subscriptionCheckoutSchema = z.object({
   billingType: z.enum(["UNDEFINED", "BOLETO", "CREDIT_CARD", "PIX"]).default("PIX")
 });
 
+export const publicSubscriptionCheckoutSchema = subscriptionCheckoutSchema.extend({
+  companyName: z.string().trim().min(2).max(160),
+  document: z.string().trim().min(11).max(20),
+  ownerName: z.string().trim().min(2).max(160),
+  email: z.string().email().transform((value) => value.toLowerCase()),
+  password: z.string().min(12).max(256)
+});
+
 export const asaasWebhookSchema = z.object({
   id: z.string(),
   event: z.string(),
@@ -391,5 +399,6 @@ export type UserInviteInput = z.infer<typeof userInviteSchema>;
 export type MembershipUpdateInput = z.infer<typeof membershipUpdateSchema>;
 export type InviteAcceptInput = z.infer<typeof inviteAcceptSchema>;
 export type SubscriptionCheckoutInput = z.infer<typeof subscriptionCheckoutSchema>;
+export type PublicSubscriptionCheckoutInput = z.infer<typeof publicSubscriptionCheckoutSchema>;
 export type AsaasWebhookInput = z.infer<typeof asaasWebhookSchema>;
 export type TenantBrandingInput = z.infer<typeof tenantBrandingSchema>;

@@ -1,7 +1,8 @@
 import { Body, Controller, Get, Headers, Inject, Post, UseGuards } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
 import { ApiTags } from "@nestjs/swagger";
 import { permissions } from "@sgc/auth";
-import { asaasWebhookSchema, subscriptionCheckoutSchema } from "@sgc/types";
+import { asaasWebhookSchema, publicSubscriptionCheckoutSchema, subscriptionCheckoutSchema } from "@sgc/types";
 import { JwtAuthGuard } from "../../shared/auth.guard";
 import { CurrentTenant } from "../../shared/current-user.decorator";
 import { PermissionsGuard } from "../../shared/permissions.guard";
@@ -15,6 +16,12 @@ import { SubscriptionsService } from "./subscriptions.service";
 @Controller("subscriptions")
 export class SubscriptionsController {
   constructor(@Inject(SubscriptionsService) private readonly subscriptionsService: SubscriptionsService) {}
+
+  @Throttle({ default: { ttl: 60_000, limit: 3 } })
+  @Post("public/checkout")
+  publicCheckout(@Body(new ZodValidationPipe(publicSubscriptionCheckoutSchema)) body: never) {
+    return this.subscriptionsService.publicCheckout(body);
+  }
 
   @UseGuards(JwtAuthGuard, TenantContextGuard, PermissionsGuard)
   @RequirePermissions(permissions.subscriptions.read)

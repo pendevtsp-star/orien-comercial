@@ -1,9 +1,11 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import type { AppConfig } from "@sgc/config";
-import type { AsaasWebhookInput, SubscriptionCheckoutInput } from "@sgc/types";
+import type { AsaasWebhookInput, PublicSubscriptionCheckoutInput, SubscriptionCheckoutInput } from "@sgc/types";
 import type { PoolClient, QueryResult } from "pg";
+import { randomUUID } from "node:crypto";
 import { APP_CONFIG } from "../config/config.module";
 import { DatabaseService } from "../database/database.service";
+import { PasswordService } from "../auth/password.service";
 import type { TenantContext } from "../../shared/request-context";
 import { ensureFound } from "../../shared/resource-access";
 
@@ -11,8 +13,43 @@ import { ensureFound } from "../../shared/resource-access";
 export class SubscriptionsService {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
-    @Inject(APP_CONFIG) private readonly config: AppConfig
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Inject(PasswordService) private readonly passwordService: PasswordService
   ) {}
+
+  async publicCheckout(input: PublicSubscriptionCheckoutInput) {
+    const document = input.document.replace(/\D/g, "");
+    if (![11, 14].includes(document.length)) throw new BadRequestException("Informe um CPF ou CNPJ válido.");
+    const existingEmail = await this.database.pool.query("SELECT id FROM users WHERE lower(email)=lower($1) AND deleted_at IS NULL", [input.email]);
+    if (existingEmail.rowCount) throw new BadRequestException("Este e-mail já possui uma conta. Entre no painel para contratar outro plano.");
+    const plan = await this.database.pool.query<{ id: string }>("SELECT id FROM plans WHERE slug=$1 AND is_active=true", [input.planSlug]);
+    if (!plan.rows[0]) throw new BadRequestException("Plano indisponível.");
+
+    const client = await this.database.pool.connect();
+    let context: TenantContext;
+    try {
+      await client.query("BEGIN");
+      const slug = `${slugify(input.companyName).slice(0, 60) || "empresa"}-${randomUUID().slice(0, 8)}`;
+      const tenant = await client.query<{ id: string }>("INSERT INTO tenants (name,slug,status,plan_slug) VALUES ($1,$2,'trial',$3) RETURNING id", [input.companyName, slug, input.planSlug]);
+      const tenantId = tenant.rows[0]!.id;
+      await client.query("INSERT INTO legal_entities (tenant_id,name,document,document_type) VALUES ($1,$2,$3,$4)", [tenantId, input.companyName, document, document.length === 11 ? "cpf" : "cnpj"]);
+      await client.query("INSERT INTO branches (tenant_id,name,code,is_active) VALUES ($1,'Matriz','MATRIZ',true)", [tenantId]);
+      const role = await client.query<{ id: string }>("INSERT INTO roles (tenant_id,slug,name,is_system) VALUES ($1,'owner','Proprietário',true) RETURNING id", [tenantId]);
+      await client.query("INSERT INTO role_permissions (role_id,permission_id) SELECT $1,id FROM permissions ON CONFLICT DO NOTHING", [role.rows[0]!.id]);
+      const user = await client.query<{ id: string }>("INSERT INTO users (email,name,password_hash,is_email_verified) VALUES ($1,$2,$3,false) RETURNING id", [input.email, input.ownerName, await this.passwordService.hashPassword(input.password, this.config.PASSWORD_PEPPER)]);
+      const membership = await client.query<{ id: string }>("INSERT INTO memberships (tenant_id,user_id,role_id,status) VALUES ($1,$2,$3,'active') RETURNING id", [tenantId, user.rows[0]!.id, role.rows[0]!.id]);
+      await client.query("INSERT INTO tenant_settings (tenant_id,key,value) VALUES ($1,'branding',$2::jsonb)", [tenantId, JSON.stringify({ companyName: input.companyName, primaryColor: "#0B1D3D", accentColor: "#F5C34A" })]);
+      await client.query("COMMIT");
+      context = { tenantId, userId: user.rows[0]!.id, membershipId: membership.rows[0]!.id, roleSlug: "owner", branchId: null, permissions: [] };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+    const checkout = await this.checkout(context, input);
+    return { ...checkout, tenantId: context.tenantId, loginUrl: `${this.config.WEB_APP_URL}/login?email=${encodeURIComponent(input.email)}` };
+  }
 
   async current(context: TenantContext) {
     const [subscription, plans, invoices] = await Promise.all([
@@ -278,6 +315,15 @@ export function buildMockCheckoutUrl(apiUrl: string, tenantId: string, planSlug:
 
 export function buildHostedSubscriptionUrl(apiUrl: string, providerSubscriptionId: string) {
   return `${apiUrl.replace("/api/v3", "")}/subscription/${providerSubscriptionId}`;
+}
+
+function slugify(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 async function insertAuditLog(
