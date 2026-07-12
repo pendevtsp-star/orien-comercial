@@ -6,6 +6,112 @@ import { DatabaseService } from "../database/database.service";
 export class DashboardService {
   constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
 
+  async operationalStatus(context: TenantContext) {
+    const branchFilter = context.branchId ? "AND branch_id = $2" : "";
+    const branchOrGlobalFilter = context.branchId ? "AND (branch_id = $2 OR branch_id IS NULL)" : "";
+    const params = context.branchId ? [context.tenantId, context.branchId] : [context.tenantId];
+
+    const [
+      branches,
+      products,
+      customers,
+      operators,
+      stockBalances,
+      testSales,
+      openCash,
+      criticalStock,
+      overdueReceivables,
+      pendingTasks,
+    ] = await Promise.all([
+      this.database.tenantQuery<{ total: string }>(
+        context.tenantId,
+        `SELECT count(*)::text total FROM branches WHERE tenant_id=$1 AND deleted_at IS NULL ${context.branchId ? "AND id=$2" : ""}`,
+        params,
+      ),
+      this.database.tenantQuery<{ total: string }>(
+        context.tenantId,
+        `SELECT count(*)::text total FROM products WHERE tenant_id=$1 AND deleted_at IS NULL ${branchOrGlobalFilter}`,
+        params,
+      ),
+      this.database.tenantQuery<{ total: string }>(
+        context.tenantId,
+        `SELECT count(*)::text total FROM customers WHERE tenant_id=$1 AND deleted_at IS NULL ${branchOrGlobalFilter}`,
+        params,
+      ),
+      this.database.tenantQuery<{ total: string }>(
+        context.tenantId,
+        `SELECT count(*)::text total FROM memberships WHERE tenant_id=$1 AND status='active' AND deleted_at IS NULL ${branchOrGlobalFilter}`,
+        params,
+      ),
+      this.database.tenantQuery<{ total: string }>(
+        context.tenantId,
+        `SELECT count(*)::text total FROM stock_balances WHERE tenant_id=$1 AND quantity > 0 ${branchFilter}`,
+        params,
+      ),
+      this.database.tenantQuery<{ total: string }>(
+        context.tenantId,
+        `SELECT count(*)::text total FROM sales WHERE tenant_id=$1 AND status='sold' ${branchFilter}`,
+        params,
+      ),
+      this.database.tenantQuery<{ total: string }>(
+        context.tenantId,
+        `SELECT count(*)::text total FROM cash_register_sessions WHERE tenant_id=$1 AND status='open' ${branchFilter}`,
+        params,
+      ),
+      this.database.tenantQuery<{ total: string }>(
+        context.tenantId,
+        `
+        SELECT count(*)::text total
+        FROM products p
+        LEFT JOIN stock_balances sb ON sb.tenant_id=p.tenant_id AND sb.product_id=p.id ${context.branchId ? "AND sb.branch_id=$2" : ""}
+        WHERE p.tenant_id=$1 AND p.deleted_at IS NULL ${context.branchId ? "AND (p.branch_id=$2 OR p.branch_id IS NULL)" : ""}
+          AND COALESCE(sb.quantity,0) <= p.min_stock
+        `,
+        params,
+      ),
+      this.database.tenantQuery<{ total: string }>(
+        context.tenantId,
+        `SELECT count(*)::text total FROM accounts_receivable WHERE tenant_id=$1 AND status IN ('open','overdue') AND due_date < CURRENT_DATE ${branchFilter}`,
+        params,
+      ),
+      this.database.tenantQuery<{ total: string }>(
+        context.tenantId,
+        `SELECT count(*)::text total FROM operational_tasks WHERE tenant_id=$1 AND status IN ('open','in_progress') ${branchFilter}`,
+        params,
+      ),
+    ]);
+
+    const counts = {
+      branches: Number(branches.rows[0]?.total ?? 0),
+      products: Number(products.rows[0]?.total ?? 0),
+      customers: Number(customers.rows[0]?.total ?? 0),
+      operators: Number(operators.rows[0]?.total ?? 0),
+      stockBalances: Number(stockBalances.rows[0]?.total ?? 0),
+      testSales: Number(testSales.rows[0]?.total ?? 0),
+      openCash: Number(openCash.rows[0]?.total ?? 0),
+      criticalStock: Number(criticalStock.rows[0]?.total ?? 0),
+      overdueReceivables: Number(overdueReceivables.rows[0]?.total ?? 0),
+      pendingTasks: Number(pendingTasks.rows[0]?.total ?? 0),
+    };
+
+    const checklist = [
+      { key: "branch", label: "Cadastrar loja", done: counts.branches > 0, href: "/branches" },
+      { key: "products", label: "Cadastrar produtos", done: counts.products > 0, href: "/products" },
+      { key: "customers", label: "Cadastrar clientes", done: counts.customers > 0, href: "/customers" },
+      { key: "operator", label: "Convidar operador", done: counts.operators > 1, href: "/team" },
+      { key: "stock", label: "Informar estoque inicial", done: counts.stockBalances > 0, href: "/stock" },
+      { key: "sale", label: "Realizar venda teste", done: counts.testSales > 0, href: "/pos" },
+    ];
+
+    const completed = checklist.filter((item) => item.done).length;
+    return {
+      counts,
+      checklist,
+      progressPercent: Math.round((completed / checklist.length) * 100),
+      nextAction: checklist.find((item) => !item.done) ?? null,
+    };
+  }
+
   async setGoal(context: TenantContext, input: { branchId:string;periodStart:string;periodEnd:string;salesTarget:number }) {
     if (context.branchId && context.branchId !== input.branchId) throw new Error("Filial fora do escopo do usuario.");
     const result = await this.database.tenantQuery(context.tenantId, `INSERT INTO branch_goals (tenant_id,branch_id,period_start,period_end,sales_target) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (tenant_id,branch_id,period_start,period_end) DO UPDATE SET sales_target=EXCLUDED.sales_target,updated_at=now() RETURNING *`, [context.tenantId,input.branchId,input.periodStart,input.periodEnd,input.salesTarget]);

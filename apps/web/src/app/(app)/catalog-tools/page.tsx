@@ -4,7 +4,7 @@ import { Badge, Button, Card, CardContent, DataTable, PageHeader, Select, Tabs }
 import { Eye, FileSpreadsheet, Printer, Upload } from "lucide-react";
 import Link from "next/link";
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
-import { apiFetch, openApiDocument } from "../../../lib/api";
+import { apiFetch, downloadApiFile, openApiDocument } from "../../../lib/api";
 
 interface List<T> {
   data: T[];
@@ -261,6 +261,22 @@ export default function CatalogToolsPage() {
                         { label: "Clientes", value: "customers" },
                       ]}
                     />
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() =>
+                        void downloadApiFile(
+                          `/imports/template?entityType=${entityType}`,
+                          entityType === "products"
+                            ? "orien-modelo-produtos.xlsx"
+                            : "orien-modelo-clientes.xlsx",
+                        ).catch((err) =>
+                          setError(err instanceof Error ? err.message : "Falha ao baixar modelo."),
+                        )
+                      }
+                    >
+                      Baixar modelo
+                    </Button>
                     <label className="inline-flex min-h-10 max-w-full cursor-pointer flex-wrap items-center justify-center gap-2 rounded-md bg-[var(--brand-primary)] px-4 py-2 text-center text-sm font-medium text-white">
                       <Upload size={16} />
                       {loading ? "Analisando..." : "Selecionar .xlsx"}
@@ -278,6 +294,10 @@ export default function CatalogToolsPage() {
                   <CardContent className="grid gap-4">
                     {preview ? (
                       <>
+                        <div className="rounded-md border border-[var(--brand-border)] bg-[var(--brand-surface)] p-3 text-sm text-slate-600">
+                          Confira os números abaixo antes de confirmar. A gravação só acontece
+                          depois da validação, em uma importação transacional.
+                        </div>
                         <div className="grid gap-3 sm:grid-cols-3">
                           <Metric label="Linhas" value={preview.totalRows} />
                           <Metric label="Válidas" value={preview.validRows} />

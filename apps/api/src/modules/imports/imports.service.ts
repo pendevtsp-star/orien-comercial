@@ -8,6 +8,40 @@ import type { TenantContext } from "../../shared/request-context";
 export class ImportsService {
   constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
 
+  async template(entityType: "products" | "customers") {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet(entityType === "products" ? "Produtos" : "Clientes");
+    const columns =
+      entityType === "products"
+        ? [
+            ["nome", "Café Tradicional 500g"],
+            ["sku", "CAF-500"],
+            ["codigo_de_barras", "7891000000016"],
+            ["descricao", "Produto de exemplo"],
+            ["unidade", "un"],
+            ["custo", 12.5],
+            ["preco", 19.9],
+            ["estoque_minimo", 10],
+          ]
+        : [
+            ["nome", "Cliente Exemplo"],
+            ["tipo", "individual"],
+            ["documento", "000.000.000-00"],
+            ["telefone", "(11) 99999-9999"],
+            ["whatsapp", "(11) 99999-9999"],
+            ["email", "cliente@example.com"],
+            ["cidade", "São Paulo"],
+            ["estado", "SP"],
+          ];
+    sheet.addRow(columns.map(([header]) => header));
+    sheet.addRow(columns.map(([, value]) => value));
+    sheet.getRow(1).font = { bold: true };
+    sheet.columns.forEach((column) => {
+      column.width = 22;
+    });
+    return Buffer.from(await workbook.xlsx.writeBuffer());
+  }
+
   async preview(context: TenantContext, input: ImportPreviewInput) {
     let workbook: ExcelJS.Workbook;
     try {

@@ -15,6 +15,11 @@
 
 ## Aceite funcional
 
+- [ ] Checklist de onboarding conclui loja, produtos, clientes, operador, estoque e venda teste.
+- [ ] Status operacional por loja exibe caixa, estoque critico, recebiveis vencidos e tarefas.
+- [ ] Matriz visual de permissoes confere o acesso real de cada perfil.
+- [ ] Importacao assistida baixa modelo, valida arquivo, mostra erros e importa sem gravacao parcial.
+- [ ] Integracoes exibem ambiente, credencial protegida, ultimo teste e mensagem operacional.
 - [ ] Proprietario administra equipe e configuracoes.
 - [ ] Gerente opera apenas as filiais permitidas.
 - [ ] Vendedor cadastra cliente e conclui venda sem acesso financeiro indevido.

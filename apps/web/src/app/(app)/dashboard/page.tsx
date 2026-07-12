@@ -7,11 +7,13 @@ import {
   Banknote,
   Boxes,
   Building2,
+  CheckCircle2,
   CircleDollarSign,
   ShoppingCart,
   UsersRound,
   type LucideIcon,
 } from "lucide-react";
+import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../../../lib/api";
 
@@ -46,6 +48,18 @@ interface Summary {
   branchGoals: Array<{ branchId: string; name: string; target: string; sales: string }>;
 }
 
+interface OperationalStatus {
+  counts: {
+    openCash: number;
+    criticalStock: number;
+    overdueReceivables: number;
+    pendingTasks: number;
+  };
+  checklist: Array<{ key: string; label: string; done: boolean; href: string }>;
+  progressPercent: number;
+  nextAction: { label: string; href: string } | null;
+}
+
 const cards = [
   { key: "branches", label: "Lojas ativas", icon: Building2, tone: "secondary" },
   { key: "products", label: "Produtos", icon: Boxes, tone: "primary" },
@@ -55,6 +69,7 @@ const cards = [
 
 export default function DashboardPage() {
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [status, setStatus] = useState<OperationalStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const today = new Date().toISOString().slice(0, 10);
@@ -71,6 +86,7 @@ export default function DashboardPage() {
       setSummary(
         await apiFetch<Summary>(`/dashboard/summary?startDate=${startDate}&endDate=${endDate}`),
       );
+      void apiFetch<OperationalStatus>("/dashboard/operational-status").then(setStatus);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao carregar dashboard.");
     } finally {
@@ -227,6 +243,75 @@ export default function DashboardPage() {
                       })}
                 </p>
               </div>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+        <Card>
+          <CardContent className="grid gap-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">
+                  Onboarding guiado
+                </p>
+                <h2 className="mt-2 text-lg font-semibold text-[var(--brand-primary)]">
+                  Implantação da operação
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Checklist mínimo para deixar o tenant pronto para uma venda real.
+                </p>
+              </div>
+              <Badge>{status?.progressPercent ?? 0}% concluído</Badge>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-[var(--brand-surface)]">
+              <div
+                className="h-full rounded-full bg-[var(--brand-highlight)] transition-all"
+                style={{ width: `${status?.progressPercent ?? 0}%` }}
+              />
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {(status?.checklist ?? []).map((item) => (
+                <Link
+                  key={item.key}
+                  href={item.href}
+                  className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm ${
+                    item.done
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                      : "border-[var(--brand-border)] bg-white text-[var(--brand-primary)] hover:bg-[var(--brand-surface)]"
+                  }`}
+                >
+                  <CheckCircle2 size={16} />
+                  {item.label}
+                </Link>
+              ))}
+            </div>
+            {status?.nextAction ? (
+              <Link
+                href={status.nextAction.href}
+                className="inline-flex min-h-10 w-fit items-center rounded-md bg-[var(--brand-primary)] px-4 py-2 text-sm font-medium text-white"
+              >
+                Próxima ação: {status.nextAction.label}
+              </Link>
+            ) : null}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="grid gap-4">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">
+                Status operacional por loja
+              </p>
+              <h2 className="mt-2 text-lg font-semibold text-[var(--brand-primary)]">
+                Pendências que merecem atenção
+              </h2>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Metric label="Caixas abertos" value={status?.counts.openCash ?? 0} loading={loading} />
+              <Metric label="Estoque crítico" value={status?.counts.criticalStock ?? 0} loading={loading} />
+              <Metric label="Recebíveis vencidos" value={status?.counts.overdueReceivables ?? 0} loading={loading} />
+              <Metric label="Tarefas abertas" value={status?.counts.pendingTasks ?? 0} loading={loading} />
             </div>
           </CardContent>
         </Card>

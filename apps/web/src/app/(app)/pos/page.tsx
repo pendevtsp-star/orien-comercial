@@ -61,6 +61,7 @@ export default function PosPage() {
     Array<{ method: string; amount: number; status: "paid" }>
   >([]);
   const [pendingSync, setPendingSync] = useState(0);
+  const [isOnline, setIsOnline] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const scannerRef = useRef<HTMLInputElement>(null);
 
@@ -88,6 +89,7 @@ export default function PosPage() {
     } catch { setError("Não foi possível recuperar a última composição."); }
   }
   useEffect(() => {
+    setIsOnline(navigator.onLine);
     const queueKey = "orien.pos.pending-sales";
     const sync = async () => {
       const pending = JSON.parse(window.localStorage.getItem(queueKey) ?? "[]") as Array<{ payload: Record<string, unknown>; idempotencyKey: string }>;
@@ -104,8 +106,17 @@ export default function PosPage() {
       setPendingSync(remaining.length);
     };
     void sync();
-    window.addEventListener("online", sync);
-    return () => window.removeEventListener("online", sync);
+    const online = () => {
+      setIsOnline(true);
+      void sync();
+    };
+    const offline = () => setIsOnline(false);
+    window.addEventListener("online", online);
+    window.addEventListener("offline", offline);
+    return () => {
+      window.removeEventListener("online", online);
+      window.removeEventListener("offline", offline);
+    };
   }, []);
   useEffect(() => {
     const search = productSearch.trim();
@@ -324,6 +335,22 @@ export default function PosPage() {
           voltar.
         </p>
       ) : null}
+      <section className="grid gap-3 rounded-md border border-[var(--brand-border)] bg-white p-4 lg:grid-cols-[1fr_auto] lg:items-center">
+        <div className="grid gap-2 sm:grid-cols-4">
+          {[
+            cash ? "Caixa aberto" : "Abrir caixa",
+            cart.length ? `${cart.length} item(ns)` : "Adicionar produtos",
+            paymentParts.length ? "Pagamento dividido" : "Escolher pagamento",
+            isOnline ? "Online" : "Offline com fila",
+          ].map((step, index) => (
+            <div key={step} className="rounded-md bg-[var(--brand-surface)] px-3 py-2 text-sm">
+              <span className="mr-2 font-semibold text-[var(--brand-secondary)]">{index + 1}</span>
+              {step}
+            </div>
+          ))}
+        </div>
+        <Badge>{isOnline ? "Sincronização imediata" : "Venda será enviada depois"}</Badge>
+      </section>
       {error ? (
         <p className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
           {error}

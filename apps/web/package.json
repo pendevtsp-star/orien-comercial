@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "next build",
+    "build": "next build --webpack",
     "dev": "next dev -p 3000",
     "start": "next start -p 3000",
     "lint": "eslint src --ext .ts,.tsx",
@@ -13,9 +13,13 @@
   "dependencies": {
     "@sgc/ui": "workspace:*",
     "lucide-react": "^0.556.0",
+    "nanoid": "^5.1.16",
     "next": "16.2.10",
+    "picocolors": "^1.1.1",
     "react": "19.2.7",
-    "react-dom": "19.2.7"
+    "react-dom": "19.2.7",
+    "scheduler": "^0.27.0",
+    "source-map-js": "^1.2.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.17",

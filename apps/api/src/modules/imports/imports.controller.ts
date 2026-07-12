@@ -1,7 +1,8 @@
-import { Body, Controller, Inject, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Post, Query, Res, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { permissions } from "@sgc/auth";
 import { importCommitSchema, importPreviewSchema } from "@sgc/types";
+import type { Response } from "express";
 import { JwtAuthGuard } from "../../shared/auth.guard";
 import { CurrentTenant } from "../../shared/current-user.decorator";
 import { PermissionsGuard } from "../../shared/permissions.guard";
@@ -16,6 +17,15 @@ import { ImportsService } from "./imports.service";
 @Controller("imports")
 export class ImportsController {
   constructor(@Inject(ImportsService) private readonly service: ImportsService) {}
+  @RequirePermissions(permissions.products.create, permissions.customers.create)
+  @Get("template")
+  async template(@Query("entityType") entityType: "products" | "customers" = "products", @Res() response: Response) {
+    const buffer = await this.service.template(entityType === "customers" ? "customers" : "products");
+    response.setHeader("content-type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    response.setHeader("content-disposition", `attachment; filename="orien-modelo-${entityType === "customers" ? "clientes" : "produtos"}.xlsx"`);
+    response.send(buffer);
+  }
+
   @RequirePermissions(permissions.products.create, permissions.customers.create)
   @Post("preview") preview(@CurrentTenant() tenant: TenantContext, @Body(new ZodValidationPipe(importPreviewSchema)) body: never) { return this.service.preview(tenant, body); }
   @RequirePermissions(permissions.products.create, permissions.customers.create)

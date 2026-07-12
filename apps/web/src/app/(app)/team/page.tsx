@@ -50,7 +50,19 @@ interface RoleOption {
   roleId: string;
   roleName: string;
   roleSlug?: string;
+  permissions?: string[];
 }
+
+const permissionGroups = [
+  { label: "Lojas", permissions: ["branches.read", "branches.create", "branches.update", "branches.delete"] },
+  { label: "Produtos", permissions: ["products.read", "products.create", "products.update", "products.delete"] },
+  { label: "Clientes", permissions: ["customers.read", "customers.create", "customers.update", "customers.delete"] },
+  { label: "Estoque", permissions: ["stock.read", "stock.adjust", "stock.transfer", "stock.inventory", "stock.purchase", "stock.reports"] },
+  { label: "Vendas/PDV", permissions: ["sales.read", "sales.create", "sales.cancel", "sales.history"] },
+  { label: "Financeiro", permissions: ["financial.read", "financial.receive", "financial.pay", "financial.reconcile", "financial.categories.manage"] },
+  { label: "Equipe", permissions: ["users.read", "users.invite", "users.memberships.manage", "users.roles.manage"] },
+  { label: "Assinatura", permissions: ["subscriptions.read", "subscriptions.manage"] },
+] as const;
 
 export default function TeamPage() {
   const [activeTab, setActiveTab] = useState("members");
@@ -334,6 +346,64 @@ export default function TeamPage() {
                   onNext={() => setMemberPage((current) => current + 1)}
                 />
               </div>
+            )
+          },
+          {
+            value: "permissions",
+            label: "Permissões",
+            content: (
+              <Card>
+                <CardContent className="grid gap-4">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">
+                      Central de permissões
+                    </p>
+                    <h2 className="mt-2 text-lg font-semibold text-[var(--brand-primary)]">
+                      O que cada perfil pode acessar
+                    </h2>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Use esta leitura para confirmar se vendedor, caixa, estoque e financeiro só
+                      enxergam os módulos necessários para a função.
+                    </p>
+                  </div>
+                  <div className="overflow-x-auto rounded-md border border-[var(--brand-border)]">
+                    <table className="min-w-[900px] w-full text-sm">
+                      <thead className="bg-[var(--brand-surface)] text-left text-xs uppercase tracking-[0.14em] text-[var(--brand-secondary)]">
+                        <tr>
+                          <th className="px-4 py-3">Área</th>
+                          {roles.map((role) => (
+                            <th key={role.roleId} className="px-4 py-3">
+                              {role.roleName}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[var(--brand-border)]">
+                        {permissionGroups.map((group) => (
+                          <tr key={group.label}>
+                            <td className="px-4 py-3 font-medium text-[var(--brand-primary)]">
+                              {group.label}
+                            </td>
+                            {roles.map((role) => {
+                              const granted = group.permissions.filter((permission) =>
+                                role.permissions?.includes(permission),
+                              ).length;
+                              const full = granted === group.permissions.length;
+                              return (
+                                <td key={role.roleId} className="px-4 py-3">
+                                  <Badge className={full ? "border-emerald-200 bg-emerald-50 text-emerald-800" : granted ? "border-amber-200 bg-amber-50 text-amber-800" : ""}>
+                                    {granted ? `${granted}/${group.permissions.length}` : "Sem acesso"}
+                                  </Badge>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
             )
           },
           {

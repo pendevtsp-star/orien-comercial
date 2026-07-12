@@ -36,11 +36,20 @@ async function request<T>(path: string, init: RequestInit, allowRefresh: boolean
   headers.set("x-request-id", requestId);
   if (tenantId) headers.set("x-tenant-id", tenantId);
 
-  const response = await fetch(`${API_URL}${path}`, {
-    ...init,
-    credentials: "include",
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...init,
+      credentials: "include",
+      headers,
+    });
+  } catch {
+    throw new ApiError(
+      "Não foi possível conectar à API. Verifique sua internet e tente novamente.",
+      0,
+      requestId,
+    );
+  }
 
   if (response.status === 401 && allowRefresh && !path.startsWith("/auth/")) {
     const refreshed = await refreshSession();
@@ -159,6 +168,52 @@ async function loadApiDocument(
   popup.document.write(html.replace("<head>", `<head><base href="${apiOrigin}/" />`));
   popup.document.close();
   if (print) window.setTimeout(() => popup.print(), 350);
+}
+
+export async function downloadApiFile(path: string, filename: string, allowRefresh = true): Promise<void> {
+  await loadApiFile(path, filename, allowRefresh);
+}
+
+async function loadApiFile(path: string, filename: string, allowRefresh: boolean): Promise<void> {
+  const tenantId = getTenantId();
+  const headers = new Headers();
+  const requestId = createRequestId();
+  headers.set("x-request-id", requestId);
+  if (tenantId) headers.set("x-tenant-id", tenantId);
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, { credentials: "include", headers });
+  } catch {
+    throw new ApiError("Não foi possível conectar à API. Verifique a internet e tente novamente.", 0, requestId);
+  }
+
+  if (response.status === 401 && allowRefresh && (await refreshSession())) {
+    return loadApiFile(path, filename, false);
+  }
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as {
+      message?: string;
+      requestId?: string;
+      statusCode?: number;
+    } | null;
+    throw new ApiError(
+      payload?.message ?? "Falha ao baixar arquivo.",
+      payload?.statusCode ?? response.status,
+      payload?.requestId ?? response.headers.get("x-request-id") ?? requestId,
+    );
+  }
+
+  const blob = await response.blob();
+  const href = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = href;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(href);
 }
 
 function createRequestId() {

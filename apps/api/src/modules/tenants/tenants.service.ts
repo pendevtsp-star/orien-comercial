@@ -483,10 +483,17 @@ export class TenantsService {
     const result = await this.database.tenantQuery(
       context.tenantId,
       `
-      SELECT id AS "roleId", name AS "roleName", slug AS "roleSlug"
-      FROM roles
-      WHERE tenant_id = $1
-      ORDER BY name ASC
+      SELECT
+        r.id AS "roleId",
+        r.name AS "roleName",
+        r.slug AS "roleSlug",
+        COALESCE(array_agg(p.slug ORDER BY p.slug) FILTER (WHERE p.slug IS NOT NULL), '{}') AS permissions
+      FROM roles r
+      LEFT JOIN role_permissions rp ON rp.role_id = r.id
+      LEFT JOIN permissions p ON p.id = rp.permission_id
+      WHERE r.tenant_id = $1
+      GROUP BY r.id
+      ORDER BY r.name ASC
       `,
       [context.tenantId],
     );

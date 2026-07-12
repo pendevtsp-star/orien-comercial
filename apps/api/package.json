@@ -39,15 +39,22 @@
     "zod": "^4.2.1"
   },
   "devDependencies": {
+    "@types/body-parser": "^1.19.6",
     "@types/bwip-js": "^3.2.3",
     "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.5",
+    "@types/express-serve-static-core": "^5.1.2",
     "@types/jsonwebtoken": "^9.0.10",
+    "@types/ms": "^2.1.0",
     "@types/node": "^24.10.1",
     "@types/pg": "^8.15.6",
     "@types/qrcode": "^1.5.6",
+    "@types/serve-static": "^2.2.0",
+    "pg-protocol": "^1.15.0",
+    "pg-types": "^4.1.0",
     "supertest": "^7.1.4",
     "tsx": "^4.21.0",
+    "undici-types": "^8.7.0",
     "vitest": "^4.0.15"
   }
 }

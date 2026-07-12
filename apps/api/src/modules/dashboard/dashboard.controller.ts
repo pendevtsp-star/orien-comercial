@@ -23,6 +23,12 @@ export class DashboardController {
     return this.dashboardService.summary(tenant, query);
   }
 
+  @RequirePermissions(permissions.dashboard.read)
+  @Get("operational-status")
+  operationalStatus(@CurrentTenant() tenant: TenantContext) {
+    return this.dashboardService.operationalStatus(tenant);
+  }
+
   @RequirePermissions(permissions.branches.update)
   @Post("goals")
   goal(@CurrentTenant() tenant: TenantContext, @Body(new ZodValidationPipe(branchGoalSchema)) body: never) {
