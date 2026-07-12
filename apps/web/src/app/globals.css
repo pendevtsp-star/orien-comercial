@@ -281,6 +281,23 @@ h3,
   box-shadow: 0 10px 24px color-mix(in srgb, var(--brand-highlight) 28%, transparent);
 }
 
+.orien-nav-group-label {
+  width: 100%;
+  padding: 0.35rem 0.7rem;
+  border: 0;
+  background: transparent;
+  color: rgb(255 255 255 / 0.48);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.orien-nav-group-label:hover {
+  color: rgb(255 255 255 / 0.82);
+}
+
 [data-orien-tab="true"]:focus-visible {
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.24);
 }

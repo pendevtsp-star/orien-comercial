@@ -45,7 +45,7 @@ type NavigationItem = {
   platformOnly?: boolean;
 };
 const navigation: NavigationItem[] = [
-  { href: "/dashboard", label: "Dashboard", icon: BarChart3, permissions: ["dashboard.read"] },
+  { href: "/dashboard", label: "Visão geral", icon: BarChart3, permissions: ["dashboard.read"] },
   { href: "/branches", label: "Lojas", icon: Building2, permissions: ["branches.read"] },
   { href: "/products", label: "Produtos", icon: Boxes, permissions: ["products.read"] },
   { href: "/stock", label: "Estoque", icon: PackageCheck, permissions: ["stock.read"] },
@@ -71,7 +71,7 @@ const navigation: NavigationItem[] = [
   { href: "/alerts", label: "Alertas", icon: BellRing, permissions: ["stock.read"] },
   {
     href: "/operations",
-    label: "Operacoes avancadas",
+    label: "Operações avançadas",
     icon: Layers3,
     permissions: ["dashboard.read"],
   },
@@ -82,12 +82,40 @@ const navigation: NavigationItem[] = [
     icon: CreditCard,
     permissions: ["subscriptions.read"],
   },
-  { href: "/settings", label: "Configuracoes", icon: Settings, permissions: ["tenants.read"] },
+  { href: "/settings", label: "Configurações", icon: Settings, permissions: ["tenants.read"] },
   { href: "/integrations", label: "Integrações", icon: PlugZap, permissions: ["tenants.read"] },
-  { href: "/preferences", label: "Preferencias", icon: Palette },
+  { href: "/preferences", label: "Preferências", icon: Palette },
   { href: "/sessions", label: "Dispositivos", icon: ShieldCheck },
   { href: "/platform", label: "Gestão Orien", icon: MonitorCog, platformOnly: true },
 ];
+const navigationGroups = [
+  { id: "overview", label: "Visão geral", routes: ["/dashboard"] },
+  { id: "operation", label: "Operação", routes: ["/sales", "/pos"] },
+  {
+    id: "catalog",
+    label: "Catálogo e estoque",
+    routes: ["/branches", "/products", "/stock", "/suppliers", "/purchases", "/catalog-tools"],
+  },
+  { id: "customers", label: "Clientes", routes: ["/customers", "/loyalty"] },
+  {
+    id: "management",
+    label: "Gestão",
+    routes: ["/financial", "/reports", "/alerts", "/operations"],
+  },
+  {
+    id: "administration",
+    label: "Administração",
+    routes: [
+      "/team",
+      "/subscription",
+      "/settings",
+      "/integrations",
+      "/preferences",
+      "/sessions",
+      "/platform",
+    ],
+  },
+] as const;
 const appName = process.env.NEXT_PUBLIC_APP_NAME ?? "Orien";
 
 interface MeResponse {
@@ -128,6 +156,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [accountOpen, setAccountOpen] = useState(false);
   const [preferences, setPreferences] = useState<UserPreferences>(defaultPreferences);
   const [notificationCount, setNotificationCount] = useState(0);
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
+    overview: true,
+    operation: true,
+    catalog: false,
+    customers: false,
+    management: false,
+    administration: false,
+  });
 
   useEffect(() => {
     apiFetch<MeResponse>("/me")
@@ -191,15 +227,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           item.anyPermissions.some((permission) => granted.includes(permission))),
     );
   }, [currentMembership]);
-  const orderedNavigation = useMemo(
-    () =>
-      [...allowedNavigation].sort(
-        (a, b) =>
-          Number(preferences.favoriteRoutes.includes(b.href)) -
-          Number(preferences.favoriteRoutes.includes(a.href)),
-      ),
-    [allowedNavigation, preferences.favoriteRoutes],
-  );
+  const groupedNavigation = useMemo(() => {
+    const favoriteRoutes = new Set(preferences.favoriteRoutes);
+    const favoriteItems = allowedNavigation.filter((item) => favoriteRoutes.has(item.href));
+    const groups = navigationGroups
+      .map((group) => ({
+        ...group,
+        items: group.routes
+          .map((route) => allowedNavigation.find((item) => item.href === route))
+          .filter(
+            (item): item is NavigationItem => Boolean(item) && !favoriteRoutes.has(item.href),
+          ),
+      }))
+      .filter((group) => group.items.length > 0);
+    return { favoriteItems, groups };
+  }, [allowedNavigation, preferences.favoriteRoutes]);
   const compact = preferences.sidebarMode === "compact";
   const collapsed = preferences.sidebarMode === "collapsed";
   const roleName = roleLabel(currentMembership?.roleSlug);
@@ -238,8 +280,71 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!me || routeAllowed) return;
-    router.replace(orderedNavigation[0]?.href ?? "/preferences");
-  }, [me, orderedNavigation, routeAllowed, router]);
+    router.replace(
+      groupedNavigation.favoriteItems[0]?.href ??
+        groupedNavigation.groups[0]?.items[0]?.href ??
+        "/preferences",
+    );
+  }, [me, groupedNavigation, routeAllowed, router]);
+
+  function navigationLink(item: NavigationItem, compactMode: boolean, closeMobile = false) {
+    const Icon = item.icon;
+    const active = pathname === item.href;
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        title={compactMode ? item.label : undefined}
+        onClick={() => closeMobile && setMobileNavigationOpen(false)}
+        className={`orien-nav-item flex h-11 items-center rounded-md text-sm font-medium transition ${compactMode ? "justify-center px-0" : "gap-3 px-3"} ${active ? "orien-nav-item-active" : ""}`}
+      >
+        <Icon size={17} />
+        {!compactMode ? item.label : null}
+      </Link>
+    );
+  }
+
+  function navigationContent(compactMode: boolean, closeMobile = false) {
+    return (
+      <>
+        {groupedNavigation.favoriteItems.length ? (
+          <section className="grid gap-1">
+            {!compactMode ? <p className="orien-nav-group-label">Favoritos</p> : null}
+            {groupedNavigation.favoriteItems.map((item) =>
+              navigationLink(item, compactMode, closeMobile),
+            )}
+          </section>
+        ) : null}
+        {groupedNavigation.groups.map((group) => {
+          const containsActive = group.items.some((item) => item.href === pathname);
+          const open = compactMode || containsActive || openGroups[group.id];
+          return (
+            <section key={group.id} className="grid gap-1">
+              {!compactMode ? (
+                <button
+                  type="button"
+                  className="orien-nav-group-label flex items-center justify-between"
+                  aria-expanded={open}
+                  onClick={() =>
+                    setOpenGroups((current) => ({ ...current, [group.id]: !current[group.id] }))
+                  }
+                >
+                  {group.label}
+                  <ChevronDown
+                    className={open ? "transition-transform" : "-rotate-90 transition-transform"}
+                    size={14}
+                  />
+                </button>
+              ) : null}
+              {open
+                ? group.items.map((item) => navigationLink(item, compactMode, closeMobile))
+                : null}
+            </section>
+          );
+        })}
+      </>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[var(--brand-surface)]">
@@ -263,22 +368,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <X size={18} />
               </Button>
             </div>
-            <nav className="orien-sidebar-scroll grid gap-1 overflow-y-auto p-3">
-              {orderedNavigation.map((item) => {
-                const Icon = item.icon;
-                const active = pathname === item.href;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setMobileNavigationOpen(false)}
-                    className={`orien-nav-item flex h-11 items-center gap-3 rounded-md px-3 text-sm font-medium ${active ? "orien-nav-item-active" : ""}`}
-                  >
-                    <Icon size={17} />
-                    {item.label}
-                  </Link>
-                );
-              })}
+            <nav className="orien-sidebar-scroll grid content-start gap-4 overflow-y-auto p-3">
+              {navigationContent(false, true)}
             </nav>
           </aside>
         </div>
@@ -297,24 +388,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               ) : null}
             </div>
           </div>
-          <nav className="orien-sidebar-scroll grid max-h-[calc(100vh-5rem)] gap-1 overflow-y-auto p-3 pb-32">
-            {orderedNavigation.map((item) => {
-              const Icon = item.icon;
-              const active = pathname === item.href;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  title={compact ? item.label : undefined}
-                  className={`flex h-11 items-center rounded-md text-sm font-medium transition ${compact ? "justify-center px-0" : "gap-3 px-3"} ${
-                    active ? "orien-nav-item-active" : "orien-nav-item"
-                  }`}
-                >
-                  <Icon size={17} />
-                  {!compact ? item.label : null}
-                </Link>
-              );
-            })}
+          <nav className="orien-sidebar-scroll grid max-h-[calc(100vh-5rem)] content-start gap-4 overflow-y-auto p-3 pb-32">
+            {navigationContent(compact)}
           </nav>
           {!compact ? (
             <div className="absolute inset-x-3 bottom-3 rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-white/72">
