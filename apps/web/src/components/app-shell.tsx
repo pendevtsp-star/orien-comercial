@@ -27,6 +27,7 @@ import {
   ShieldCheck,
   ShoppingCart,
   Search,
+  Star,
   Sun,
   Truck,
   UsersRound,
@@ -193,6 +194,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [notificationCount, setNotificationCount] = useState(0);
   const [commandOpen, setCommandOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [editingFavorites, setEditingFavorites] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<
     Array<{ label: string; detail: string; href: string }>
@@ -378,6 +380,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     router.push("/login");
   }
 
+  async function toggleFavorite(href: string) {
+    const favoriteRoutes = preferences.favoriteRoutes.includes(href)
+      ? preferences.favoriteRoutes.filter((route) => route !== href)
+      : [...preferences.favoriteRoutes, href].slice(0, 8);
+    const next = { ...preferences, favoriteRoutes };
+    setPreferences(next);
+    applyPreferences(next);
+    await apiFetch("/preferences", { method: "PATCH", body: JSON.stringify(next) }).catch(() => {
+      setPreferences(preferences);
+      applyPreferences(preferences);
+    });
+  }
+
   useEffect(() => {
     if (!me || routeAllowed) return;
     router.replace(
@@ -391,16 +406,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const Icon = item.icon;
     const active = pathname === item.href;
     return (
+      <div key={item.href} className="relative flex items-center">
       <Link
-        key={item.href}
         href={item.href}
         title={compactMode ? item.label : undefined}
         onClick={() => closeMobile && setMobileNavigationOpen(false)}
-        className={`orien-nav-item flex h-11 items-center rounded-md text-sm font-medium transition ${compactMode ? "justify-center px-0" : "gap-3 px-3"} ${active ? "orien-nav-item-active" : ""}`}
+        className={`orien-nav-item flex h-11 min-w-0 flex-1 items-center rounded-md text-sm font-medium transition ${compactMode ? "justify-center px-0" : "gap-3 px-3"} ${active ? "orien-nav-item-active" : ""}`}
       >
         <Icon size={17} />
         {!compactMode ? item.label : null}
       </Link>
+      {editingFavorites && !compactMode ? <button type="button" aria-label={`${preferences.favoriteRoutes.includes(item.href) ? "Remover dos" : "Adicionar aos"} favoritos`} title={preferences.favoriteRoutes.includes(item.href) ? "Remover dos favoritos" : "Adicionar aos favoritos"} className="absolute right-2 grid h-7 w-7 place-items-center rounded-md text-white/75 hover:bg-white/10 hover:text-[var(--brand-accent)]" onClick={() => void toggleFavorite(item.href)}><Star size={15} fill={preferences.favoriteRoutes.includes(item.href) ? "currentColor" : "none"} /></button> : null}
+      </div>
     );
   }
 
@@ -409,7 +426,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <>
         {groupedNavigation.favoriteItems.length ? (
           <section className="grid gap-1">
-            {!compactMode ? <p className="orien-nav-group-label">Favoritos</p> : null}
+            {!compactMode ? <div className="flex items-center justify-between px-2"><p className="orien-nav-group-label p-0">Favoritos</p><button type="button" className="rounded px-1 text-[10px] font-medium text-white/70 hover:bg-white/10 hover:text-white" onClick={() => setEditingFavorites((value) => !value)}>{editingFavorites ? "Concluir" : "Editar"}</button></div> : null}
             {groupedNavigation.favoriteItems.map((item) =>
               navigationLink(item, compactMode, closeMobile),
             )}
@@ -421,6 +438,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           return (
             <section key={group.id} className="grid gap-1">
               {!compactMode ? (
+                <div className="flex items-center gap-1">
                 <button
                   type="button"
                   className="orien-nav-group-label flex items-center justify-between"
@@ -435,6 +453,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     size={14}
                   />
                 </button>
+                {editingFavorites || group.id === "overview" ? <button type="button" className="shrink-0 rounded px-1.5 py-1 text-[10px] font-medium text-white/70 hover:bg-white/10 hover:text-white" onClick={() => setEditingFavorites((value) => !value)} title={editingFavorites ? "Concluir edição de favoritos" : "Editar favoritos"}>{editingFavorites ? "Concluir" : "Editar"}</button> : null}
+                </div>
               ) : null}
               {open
                 ? group.items.map((item) => navigationLink(item, compactMode, closeMobile))
