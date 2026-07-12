@@ -124,7 +124,9 @@ export default function SalesPage() {
   useEffect(() => {
     const focus = searchParams.get("focus");
     if (!focus) return;
-    void toggleHistory(focus);
+    void Promise.all([apiFetch<SaleRow>(`/sales/${focus}`), apiFetch<SaleHistory>(`/sales/${focus}/history`)])
+      .then(([sale, detail]) => { setSales((current) => current.some((item) => item.id === sale.id) ? current : [sale, ...current]); setHistory((current) => ({ ...current, [sale.id]: detail })); })
+      .catch(() => setError("A venda selecionada não está disponível no seu escopo."));
   }, [searchParams]);
 
   useEffect(() => {

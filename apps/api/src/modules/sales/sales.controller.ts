@@ -48,4 +48,10 @@ export class SalesController {
     response.type("html");
     response.send(await this.salesService.document(tenant, id));
   }
+
+  @RequirePermissions(permissions.sales.read)
+  @Get(":id")
+  get(@CurrentTenant() tenant: TenantContext, @Param("id") id: string) {
+    return this.salesService.get(tenant, id);
+  }
 }

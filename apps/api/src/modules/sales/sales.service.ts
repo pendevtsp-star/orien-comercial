@@ -98,6 +98,17 @@ export class SalesService {
     return { data: rows.rows, pagination: { ...page, total: Number(count.rows[0]?.total ?? 0) } };
   }
 
+  async get(context: TenantContext, saleId: string) {
+    const result = await this.database.tenantQuery(
+      context.tenantId,
+      `SELECT s.id,s.branch_id AS "branchId",s.status,s.total_amount AS "totalAmount",s.notes,s.cancelled_at AS "cancelledAt",s.cancelled_reason AS "cancelledReason",s.created_at AS "createdAt",b.name AS "branchName",c.name AS "customerName",COALESCE(items.item_count,0)::int AS "itemCount",COALESCE(payments.paid_amount,0)::text AS "paidAmount",GREATEST(s.total_amount-COALESCE(payments.paid_amount,0),0)::text AS "openAmount" FROM sales s JOIN branches b ON b.id=s.branch_id LEFT JOIN customers c ON c.id=s.customer_id LEFT JOIN (SELECT sale_id,count(*)::int item_count FROM sale_items WHERE tenant_id=$1 GROUP BY sale_id) items ON items.sale_id=s.id LEFT JOIN (SELECT sale_id,sum(amount) FILTER(WHERE status='paid') paid_amount FROM sale_payments WHERE tenant_id=$1 GROUP BY sale_id) payments ON payments.sale_id=s.id WHERE s.tenant_id=$1 AND s.id=$2 AND s.deleted_at IS NULL`,
+      [context.tenantId, saleId],
+    );
+    const sale = ensureFound(result.rows[0], "Venda") as { branchId?: string };
+    if (sale.branchId) ensureBranchAccess(context, sale.branchId);
+    return sale;
+  }
+
   async create(context: TenantContext, input: SaleCreateInput, idempotencyKey?: string) {
     ensureBranchAccess(context, input.branchId);
 
