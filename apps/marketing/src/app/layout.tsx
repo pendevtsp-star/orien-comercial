@@ -7,7 +7,8 @@ const playfair = Playfair_Display({ subsets: ["latin"], variable: "--font-displa
 
 export const metadata: Metadata = {
   title: `${process.env.NEXT_PUBLIC_APP_NAME ?? "Orien"} | Gestao comercial para empresas modernas`,
-  description: "SaaS multitenant para vendas, estoque, clientes, financeiro e relacionamento."
+  description: "SaaS multitenant para vendas, estoque, clientes, financeiro e relacionamento.",
+  icons: { icon: "/icon.svg", shortcut: "/icon.svg" }
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

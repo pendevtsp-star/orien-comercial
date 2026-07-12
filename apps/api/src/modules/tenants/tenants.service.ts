@@ -33,6 +33,7 @@ interface MeUserRow {
   isEmailVerified: boolean;
   lastLoginAt: Date | null;
   mustChangePassword: boolean;
+  isPlatformAdmin?: boolean;
 }
 
 interface MembershipRow {
@@ -100,8 +101,9 @@ export class TenantsService {
       [userId],
     );
 
+    const user = userResult.rows[0];
     return {
-      user: userResult.rows[0],
+      user: user ? { ...user, isPlatformAdmin: user.email.toLowerCase() === this.config.PLATFORM_OWNER_EMAIL.toLowerCase() } : user,
       memberships: memberships.rows,
     };
   }

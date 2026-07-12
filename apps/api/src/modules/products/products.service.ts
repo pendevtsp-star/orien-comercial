@@ -63,12 +63,21 @@ export class ProductsService {
         p.cost_price AS "costPrice",
         p.promotional_price AS "promotionalPrice",
         p.min_stock AS "minStock",
+        image.object_key AS "imageUrl",
         p.is_active AS "isActive",
         p.branch_id AS "branchId",
         b.name AS "branchName",
         p.created_at AS "createdAt"
       FROM products p
       LEFT JOIN branches b ON b.id = p.branch_id AND b.tenant_id = p.tenant_id
+      LEFT JOIN LATERAL (
+        SELECT ma.object_key
+        FROM product_images pi
+        JOIN media_assets ma ON ma.id = pi.media_asset_id
+        WHERE pi.tenant_id = p.tenant_id AND pi.product_id = p.id
+        ORDER BY pi.sort_order ASC, pi.created_at ASC
+        LIMIT 1
+      ) image ON true
       WHERE ${filters.join(" AND ")}
       ORDER BY ${sort.field} ${sort.direction}, p.name ASC
       LIMIT $${params.length - 1} OFFSET $${params.length}
@@ -87,7 +96,14 @@ export class ProductsService {
     );
     const product = ensureFound(result.rows[0], "Produto");
     ensureBranchAccess(context, product.branch_id as string | null);
-    return product;
+    const images = await this.database.tenantQuery(
+      context.tenantId,
+      `SELECT pi.id, ma.object_key AS "imageUrl", ma.original_name AS "originalName"
+       FROM product_images pi JOIN media_assets ma ON ma.id=pi.media_asset_id
+       WHERE pi.tenant_id=$1 AND pi.product_id=$2 ORDER BY pi.sort_order, pi.created_at`,
+      [context.tenantId, id],
+    );
+    return { ...product, images: images.rows };
   }
 
   async create(context: TenantContext, input: ProductCreateInput) {
@@ -121,6 +137,7 @@ export class ProductsService {
     );
 
     const created = result.rows[0];
+    if (created && input.imageUrl) await this.setPrimaryImage(context, created.id as string, input.imageUrl);
     if (created)
       await this.database.tenantQuery(
         context.tenantId,
@@ -186,6 +203,7 @@ export class ProductsService {
     );
 
     const updated = ensureFound(result.rows[0], "Produto");
+    if (input.imageUrl !== undefined) await this.setPrimaryImage(context, id, input.imageUrl);
     await this.database.tenantQuery(
       context.tenantId,
       `INSERT INTO audit_logs (tenant_id,actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,$2,'product.updated','product',$3,$4)`,
@@ -216,6 +234,21 @@ export class ProductsService {
       ],
     );
     return updated;
+  }
+
+  private async setPrimaryImage(context: TenantContext, productId: string, imageUrl: string) {
+    await this.database.tenantTransaction(context.tenantId, async (client) => {
+      await client.query("DELETE FROM product_images WHERE tenant_id=$1 AND product_id=$2", [context.tenantId, productId]);
+      const asset = await client.query<{ id: string }>(
+        `INSERT INTO media_assets (tenant_id,storage_provider,bucket,object_key,original_name,mime_type,size_bytes)
+         VALUES ($1,'external-url','product-images',$2,'Imagem do produto','image/*',0) RETURNING id`,
+        [context.tenantId, imageUrl],
+      );
+      await client.query(
+        "INSERT INTO product_images (tenant_id,product_id,media_asset_id,sort_order) VALUES ($1,$2,$3,0)",
+        [context.tenantId, productId, asset.rows[0]!.id],
+      );
+    });
   }
 
   async remove(context: TenantContext, id: string) {

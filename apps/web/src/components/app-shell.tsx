@@ -5,6 +5,7 @@ import {
   BarChart3,
   BellRing,
   Layers3,
+  FileBarChart,
   Boxes,
   Building2,
   CircleDollarSign,
@@ -18,6 +19,7 @@ import {
   Palette,
   Settings,
   Wrench,
+  MonitorCog,
   ScanBarcode,
   ShieldCheck,
   ShoppingCart,
@@ -32,7 +34,8 @@ import { useEffect, useMemo, useState } from "react";
 import { apiFetch, getTenantId, setTenantId } from "../lib/api";
 import { applyPreferences, defaultPreferences, type UserPreferences } from "../lib/preferences";
 
-const navigation = [
+type NavigationItem = { href: string; label: string; icon: typeof BarChart3; permissions?: string[]; anyPermissions?: string[]; platformOnly?: boolean };
+const navigation: NavigationItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: BarChart3, permissions: ["dashboard.read"] },
   { href: "/branches", label: "Lojas", icon: Building2, permissions: ["branches.read"] },
   { href: "/products", label: "Produtos", icon: Boxes, permissions: ["products.read"] },
@@ -44,6 +47,7 @@ const navigation = [
   { href: "/customers", label: "Clientes", icon: UsersRound, permissions: ["customers.read"] },
   { href: "/catalog-tools", label: "Ferramentas", icon: Wrench, permissions: ["products.read"] },
   { href: "/financial", label: "Financeiro", icon: CircleDollarSign, permissions: ["financial.read"] },
+  { href: "/reports", label: "Relatórios", icon: FileBarChart, anyPermissions: ["dashboard.read", "sales.read", "financial.read", "stock.reports"] },
   { href: "/alerts", label: "Alertas", icon: BellRing, permissions: ["stock.read"] },
   { href: "/operations", label: "Operacoes avancadas", icon: Layers3, permissions: ["dashboard.read"] },
   { href: "/team", label: "Equipe", icon: ShieldCheck, permissions: ["users.read"] },
@@ -51,11 +55,12 @@ const navigation = [
   { href: "/settings", label: "Configuracoes", icon: Settings, permissions: ["tenants.read"] },
   { href: "/preferences", label: "Preferencias", icon: Palette },
   { href: "/sessions", label: "Dispositivos", icon: ShieldCheck },
+  { href: "/platform", label: "Gestão Orien", icon: MonitorCog, platformOnly: true },
 ];
 const appName = process.env.NEXT_PUBLIC_APP_NAME ?? "Orien";
 
 interface MeResponse {
-  user: { name: string; email: string; mustChangePassword?: boolean };
+  user: { name: string; email: string; mustChangePassword?: boolean; isPlatformAdmin?: boolean };
   memberships: Array<{
     tenantId: string;
     tenantName: string;
@@ -141,9 +146,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [me]);
   const allowedNavigation = useMemo(() => {
     const granted = currentMembership?.permissions ?? [];
-    return navigation.filter((item) =>
-      !item.permissions || item.permissions.every((permission) => granted.includes(permission)),
-    );
+    return navigation.filter((item) => (!item.platformOnly || me?.user.isPlatformAdmin) && (!item.permissions || item.permissions.every((permission) => granted.includes(permission))) && (!item.anyPermissions || item.anyPermissions.some((permission) => granted.includes(permission))));
   }, [currentMembership]);
   const orderedNavigation = useMemo(
     () =>
@@ -161,8 +164,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const grantedPermissions = currentMembership?.permissions ?? [];
   const routeAllowed =
     !routeItem ||
-    !routeItem.permissions ||
-    routeItem.permissions.every((permission) => grantedPermissions.includes(permission));
+    ((!routeItem.platformOnly || me?.user.isPlatformAdmin) && (!routeItem.permissions || routeItem.permissions.every((permission) => grantedPermissions.includes(permission))) && (!routeItem.anyPermissions || routeItem.anyPermissions.some((permission) => grantedPermissions.includes(permission))));
   const initials = (me?.user.name ?? "Orien")
     .split(" ")
     .slice(0, 2)

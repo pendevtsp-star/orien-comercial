@@ -20,6 +20,8 @@ import { StockModule } from "../modules/stock/stock.module";
 import { SubscriptionsModule } from "../modules/subscriptions/subscriptions.module";
 import { SuppliersModule } from "../modules/suppliers/suppliers.module";
 import { TenantsModule } from "../modules/tenants/tenants.module";
+import { ReportsModule } from "../modules/reports/reports.module";
+import { PlatformModule } from "../modules/platform/platform.module";
 
 @Module({
   imports: [
@@ -49,6 +51,8 @@ import { TenantsModule } from "../modules/tenants/tenants.module";
     ImportsModule,
     SubscriptionsModule,
     DashboardModule,
+    ReportsModule,
+    PlatformModule,
   ],
 })
 export class AppModule {}

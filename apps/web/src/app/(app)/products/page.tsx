@@ -12,13 +12,14 @@ interface ProductRow {
   salePrice: string;
   unit: string;
   isActive: boolean;
+  imageUrl?: string;
 }
 
 export default function ProductsPage() {
   return (
     <ResourcePage<ProductRow>
       title="Produtos"
-      description="Cadastro comercial com preço, SKU, código de barras e controle mínimo de estoque."
+      description="Cadastro comercial com imagem, preço, SKU, código de barras e controle mínimo de estoque."
       endpoint="/products"
       searchPlaceholder="Buscar por produto, SKU ou código de barras"
       heroBadge="Catalogo comercial"
@@ -52,6 +53,7 @@ export default function ProductsPage() {
         { name: "name", label: "Nome", required: true },
         { name: "sku", label: "SKU" },
         { name: "barcode", label: "Código de barras (leitor USB/Bluetooth)" },
+        { name: "imageUrl", label: "URL da imagem do produto", type: "url" },
         { name: "salePrice", label: "Preco de venda", type: "number", required: true },
         { name: "costPrice", label: "Custo", type: "number" },
         { name: "minStock", label: "Estoque minimo", type: "number" }
@@ -67,7 +69,7 @@ export default function ProductsPage() {
         isActive: true
       })}
       columns={[
-        { key: "name", header: "Nome", render: (row) => row.name },
+        { key: "name", header: "Produto", render: (row) => <span className="flex min-w-40 items-center gap-3">{row.imageUrl ? <img src={row.imageUrl} alt="" className="h-9 w-9 rounded-md border border-slate-200 object-cover" /> : <span className="grid h-9 w-9 place-items-center rounded-md bg-slate-100 text-xs text-slate-500">--</span>}{row.name}</span> },
         { key: "sku", header: "SKU", render: (row) => row.sku ?? "-" },
         { key: "barcode", header: "Código de barras", render: (row) => row.barcode ?? "-" },
         {
