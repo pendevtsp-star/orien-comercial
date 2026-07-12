@@ -350,6 +350,9 @@ export const tenantBrandingSchema = z.object({
   footerNote: z.string().trim().max(240).optional()
 });
 
+export const integrationSettingsSchema = z.object({ provider: z.enum(["asaas_business", "smtp", "whatsapp_meta", "fiscal"]), mode: z.enum(["sandbox", "homologation", "production"]).default("sandbox"), status: z.enum(["disabled", "configured"]).default("configured"), settings: z.record(z.string(), z.string().max(500)).default({}) });
+export const integrationCredentialSchema = z.object({ secret: z.string().min(8).max(4000) });
+
 export type LoginInput = z.infer<typeof loginSchema>;
 export type PaginationQuery = z.infer<typeof paginationQuerySchema>;
 export type ResourceListQuery = z.infer<typeof resourceListQuerySchema>;

@@ -22,6 +22,7 @@ import { SuppliersModule } from "../modules/suppliers/suppliers.module";
 import { TenantsModule } from "../modules/tenants/tenants.module";
 import { ReportsModule } from "../modules/reports/reports.module";
 import { PlatformModule } from "../modules/platform/platform.module";
+import { IntegrationsModule } from "../modules/integrations/integrations.module";
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { PlatformModule } from "../modules/platform/platform.module";
     DashboardModule,
     ReportsModule,
     PlatformModule,
+    IntegrationsModule,
   ],
 })
 export class AppModule {}
