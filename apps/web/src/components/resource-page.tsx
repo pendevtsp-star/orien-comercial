@@ -87,6 +87,13 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
     setSubmitting(true);
     const form = new FormData(event.currentTarget);
     const payload = transform ? transform(form) : Object.fromEntries(form.entries());
+    const imageFile = form.get("imageFile");
+    if (imageFile instanceof File && imageFile.size) {
+      if (!imageFile.type.match(/^image\/(png|jpeg|webp)$/) || imageFile.size > 5 * 1024 * 1024) {
+        setError("Selecione uma imagem PNG, JPEG ou WebP de até 5 MB."); setSubmitting(false); return;
+      }
+      payload.imageData = await fileAsDataUrl(imageFile);
+    }
 
     try {
       if (editingRow) {
@@ -353,6 +360,10 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
       </section>
     </div>
   );
+}
+
+function fileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(file); });
 }
 
 function fieldValue<T extends { id: string }>(row: T, key: string) {

@@ -13,6 +13,7 @@ const envSchema = z.object({
   PASSWORD_PEPPER: z.string().min(16),
   PLATFORM_OWNER_EMAIL: z.string().email().default("admin@example.com"),
   PLATFORM_OWNER_PASSWORD: z.string().min(12).default("ChangeMe123!DoNotUseInProduction"),
+  UPLOAD_DIR: z.string().default("/app/uploads"),
   NEXT_PUBLIC_API_URL: z.string().url().optional(),
   NEXT_PUBLIC_APP_NAME: z.string().default("Orien"),
   WEB_APP_URL: z.string().url().default("http://localhost:3000"),

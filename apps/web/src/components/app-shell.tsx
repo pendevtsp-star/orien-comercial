@@ -144,6 +144,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       null
     );
   }, [me]);
+  useEffect(() => { document.title = currentMembership?.tenantName ? `Orien | ${currentMembership.tenantName}` : "Orien | Gestão inteligente"; }, [currentMembership?.tenantName]);
   const allowedNavigation = useMemo(() => {
     const granted = currentMembership?.permissions ?? [];
     return navigation.filter((item) => (!item.platformOnly || me?.user.isPlatformAdmin) && (!item.permissions || item.permissions.every((permission) => granted.includes(permission))) && (!item.anyPermissions || item.anyPermissions.some((permission) => granted.includes(permission))));

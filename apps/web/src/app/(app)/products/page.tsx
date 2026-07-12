@@ -53,7 +53,7 @@ export default function ProductsPage() {
         { name: "name", label: "Nome", required: true },
         { name: "sku", label: "SKU" },
         { name: "barcode", label: "Código de barras (leitor USB/Bluetooth)" },
-        { name: "imageUrl", label: "URL da imagem do produto", type: "url" },
+        { name: "imageFile", label: "Imagem do produto (PNG, JPEG ou WebP, até 5 MB)", type: "file" },
         { name: "salePrice", label: "Preco de venda", type: "number", required: true },
         { name: "costPrice", label: "Custo", type: "number" },
         { name: "minStock", label: "Estoque minimo", type: "number" }

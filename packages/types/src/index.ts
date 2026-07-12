@@ -109,6 +109,7 @@ export const productCreateSchema = z.object({
   promotionalPrice: z.coerce.number().min(0).optional(),
   minStock: z.coerce.number().min(0).default(0),
   imageUrl: z.string().url().max(2048).optional(),
+  imageData: z.string().max(7_000_000).optional(),
   isActive: z.boolean().default(true)
 });
 

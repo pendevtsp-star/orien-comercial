@@ -1,4 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
+import type { AppConfig } from "@sgc/config";
+import { randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import type { ProductCreateInput, ProductUpdateInput, ResourceListQuery } from "@sgc/types";
 import {
   ensureBranchAccess,
@@ -8,11 +12,12 @@ import {
 } from "../../shared/resource-access";
 import type { TenantContext } from "../../shared/request-context";
 import { DatabaseService } from "../database/database.service";
+import { APP_CONFIG } from "../config/config.module";
 import bwipjs from "bwip-js";
 
 @Injectable()
 export class ProductsService {
-  constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
+  constructor(@Inject(DatabaseService) private readonly database: DatabaseService, @Inject(APP_CONFIG) private readonly config: AppConfig) {}
 
   async list(context: TenantContext, query: ResourceListQuery) {
     const page = pagination(query);
@@ -137,7 +142,7 @@ export class ProductsService {
     );
 
     const created = result.rows[0];
-    if (created && input.imageUrl) await this.setPrimaryImage(context, created.id as string, input.imageUrl);
+    if (created && (input.imageData || input.imageUrl)) await this.setPrimaryImage(context, created.id as string, input.imageData ?? input.imageUrl!);
     if (created)
       await this.database.tenantQuery(
         context.tenantId,
@@ -203,7 +208,7 @@ export class ProductsService {
     );
 
     const updated = ensureFound(result.rows[0], "Produto") as Record<string, unknown>;
-    if (input.imageUrl !== undefined) await this.setPrimaryImage(context, id, input.imageUrl);
+    if (input.imageData !== undefined || input.imageUrl !== undefined) await this.setPrimaryImage(context, id, input.imageData ?? input.imageUrl!);
     await this.database.tenantQuery(
       context.tenantId,
       `INSERT INTO audit_logs (tenant_id,actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,$2,'product.updated','product',$3,$4)`,
@@ -236,7 +241,8 @@ export class ProductsService {
     return updated;
   }
 
-  private async setPrimaryImage(context: TenantContext, productId: string, imageUrl: string) {
+  private async setPrimaryImage(context: TenantContext, productId: string, source: string) {
+    const imageUrl = source.startsWith("data:image/") ? await this.persistUpload(context.tenantId, source) : source;
     await this.database.tenantTransaction(context.tenantId, async (client) => {
       await client.query("DELETE FROM product_images WHERE tenant_id=$1 AND product_id=$2", [context.tenantId, productId]);
       const asset = await client.query<{ id: string }>(
@@ -249,6 +255,19 @@ export class ProductsService {
         [context.tenantId, productId, asset.rows[0]!.id],
       );
     });
+  }
+
+  private async persistUpload(tenantId: string, dataUrl: string) {
+    const match = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+    if (!match) throw new Error("Arquivo de imagem inválido. Use PNG, JPEG ou WebP.");
+    const content = Buffer.from(match[2]!, "base64");
+    if (!content.length || content.length > 5 * 1024 * 1024) throw new Error("A imagem deve ter no máximo 5 MB.");
+    const extension = match[1] === "jpeg" ? "jpg" : match[1]!;
+    const folder = resolve(this.config.UPLOAD_DIR, "products", tenantId);
+    await mkdir(folder, { recursive: true });
+    const filename = `${randomUUID()}.${extension}`;
+    await writeFile(join(folder, filename), content);
+    return `/uploads/products/${tenantId}/${filename}`;
   }
 
   async remove(context: TenantContext, id: string) {
