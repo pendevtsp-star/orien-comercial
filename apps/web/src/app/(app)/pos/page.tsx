@@ -90,14 +90,12 @@ export default function PosPage() {
   useEffect(() => {
     const queueKey = "orien.pos.pending-sales";
     const sync = async () => {
-      const pending = JSON.parse(window.localStorage.getItem(queueKey) ?? "[]") as Array<
-        Record<string, unknown>
-      >;
+      const pending = JSON.parse(window.localStorage.getItem(queueKey) ?? "[]") as Array<{ payload: Record<string, unknown>; idempotencyKey: string }>;
       if (!pending.length || !navigator.onLine) return setPendingSync(pending.length);
       const remaining: Array<Record<string, unknown>> = [];
       for (const sale of pending) {
         try {
-          await apiFetch("/sales", { method: "POST", body: JSON.stringify(sale) });
+          await apiFetch("/sales", { method: "POST", headers: { "idempotency-key": sale.idempotencyKey }, body: JSON.stringify(sale.payload) });
         } catch {
           remaining.push(sale);
         }
@@ -278,13 +276,11 @@ export default function PosPage() {
       window.localStorage.setItem("orien.pos.last-cart", JSON.stringify({ items: cart, branchId }));
       if (!navigator.onLine) {
         const queueKey = "orien.pos.pending-sales";
-        const pending = JSON.parse(window.localStorage.getItem(queueKey) ?? "[]") as Array<
-          Record<string, unknown>
-        >;
-        pending.push(payload);
+        const pending = JSON.parse(window.localStorage.getItem(queueKey) ?? "[]") as Array<{ payload: Record<string, unknown>; idempotencyKey: string }>;
+        pending.push({ payload, idempotencyKey: createIdempotencyKey() });
         window.localStorage.setItem(queueKey, JSON.stringify(pending));
         setPendingSync(pending.length);
-      } else await apiFetch("/sales", { method: "POST", body: JSON.stringify(payload) });
+      } else await apiFetch("/sales", { method: "POST", headers: { "idempotency-key": createIdempotencyKey() }, body: JSON.stringify(payload) });
       setCart([]);
       setPaymentParts([]);
       setError(null);
@@ -642,6 +638,8 @@ export default function PosPage() {
     </div>
   );
 }
+
+function createIdempotencyKey() { return `pos_${crypto.randomUUID().replaceAll("-", "")}`; }
 
 function PaymentButton({
   active,

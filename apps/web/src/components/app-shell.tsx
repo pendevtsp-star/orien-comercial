@@ -71,6 +71,7 @@ const navigation: NavigationItem[] = [
     anyPermissions: ["dashboard.read", "sales.read", "financial.read", "stock.reports"],
   },
   { href: "/alerts", label: "Alertas", icon: BellRing, permissions: ["stock.read"] },
+  { href: "/tasks", label: "Tarefas", icon: ClipboardList, permissions: ["dashboard.read"] },
   {
     href: "/operations",
     label: "Operações avançadas",
@@ -102,7 +103,7 @@ const navigationGroups = [
   {
     id: "management",
     label: "Gestão",
-    routes: ["/financial", "/reports", "/alerts", "/operations"],
+    routes: ["/financial", "/reports", "/alerts", "/tasks", "/operations"],
   },
   {
     id: "administration",
@@ -280,22 +281,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           ...products.data.map((item) => ({
             label: item.name,
             detail: `Produto${item.sku ? ` · ${item.sku}` : ""}`,
-            href: "/products",
+            href: `/products?focus=${item.id}`,
           })),
           ...customers.data.map((item) => ({
             label: item.name,
             detail: `Cliente${item.document ? ` · ${item.document}` : ""}`,
-            href: "/customers",
+            href: `/customers?focus=${item.id}`,
           })),
           ...sales.data.map((item) => ({
             label: item.customerName ?? "Venda sem cliente",
             detail: `Venda · R$ ${Number(item.totalAmount ?? 0).toLocaleString("pt-BR")}`,
-            href: "/sales",
+            href: `/sales?focus=${item.id}`,
           })),
           ...purchases.data.map((item) => ({
             label: item.supplierName ?? "Compra",
             detail: `Pedido · ${item.status ?? ""}`,
-            href: "/purchases",
+            href: `/purchases?focus=${item.id}`,
           })),
         ]),
       );

@@ -33,6 +33,8 @@ const widgets: Array<[string, string]> = [
   ["performance", "Performance comercial"],
   ["period", "Comparativo do periodo"],
   ["goals", "Metas"],
+  ["role-focus", "Meu foco por perfil"],
+  ["health", "Saúde operacional"],
 ];
 export default function PreferencesPage() {
   const [prefs, setPrefs] = useState<UserPreferences>(defaultPreferences);

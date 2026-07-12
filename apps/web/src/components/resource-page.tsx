@@ -3,6 +3,7 @@
 import { Badge, Button, Card, CardContent, ConfirmDialog, DataTable, EmptyState, Input, PageHeader, Select } from "@sgc/ui";
 import { ChevronLeft, ChevronRight, FolderSearch, Pencil, Plus, RefreshCw, Trash2, type LucideIcon } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { apiFetch } from "../lib/api";
 
 interface ApiList<T> {
@@ -41,6 +42,7 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
   sortOptions,
   rowActions,
 }: ResourcePageProps<T>) {
+  const searchParams = useSearchParams();
   const [rows, setRows] = useState<T[]>([]);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -83,6 +85,14 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
   useEffect(() => {
     void load();
   }, [endpoint, query]);
+
+  useEffect(() => {
+    const focus = searchParams.get("focus");
+    if (!focus) return;
+    void apiFetch<T>(`${endpoint}/${focus}`)
+      .then((row) => setEditingRow(row))
+      .catch(() => setError("O registro selecionado não está disponível no seu escopo."));
+  }, [endpoint, searchParams]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

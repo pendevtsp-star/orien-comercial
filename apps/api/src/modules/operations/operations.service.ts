@@ -540,6 +540,21 @@ export class OperationsService {
         c.branchId ? [c.tenantId, c.userId ?? null, c.branchId] : [c.tenantId, c.userId ?? null],
       );
       await x.query(
+        `INSERT INTO operational_tasks(tenant_id,branch_id,title,description,type,priority,created_by_user_id,due_at)
+         SELECT $1,sb.branch_id,'Repor estoque: '||p.name,'Saldo abaixo do estoque mínimo.','stock_replenishment','high',$2,now()+interval '1 day'
+         FROM stock_balances sb JOIN products p ON p.id=sb.product_id
+         WHERE sb.tenant_id=$1 AND sb.quantity<=p.min_stock ${c.branchId ? "AND sb.branch_id=$3" : ""}
+         AND NOT EXISTS(SELECT 1 FROM operational_tasks t WHERE t.tenant_id=$1 AND t.type='stock_replenishment' AND t.title='Repor estoque: '||p.name AND t.status IN('open','in_progress'))`,
+        c.branchId ? [c.tenantId, c.userId ?? null, c.branchId] : [c.tenantId, c.userId ?? null],
+      );
+      await x.query(
+        `INSERT INTO operational_tasks(tenant_id,branch_id,title,description,type,priority,created_by_user_id,due_at)
+         SELECT $1,ar.branch_id,'Cobrar recebível vencido','Recebível vencido de R$ '||ar.amount||'.','overdue_receivable','high',$2,now()+interval '1 day'
+         FROM accounts_receivable ar WHERE ar.tenant_id=$1 AND ar.status='open' AND ar.due_date<CURRENT_DATE ${c.branchId ? "AND ar.branch_id=$3" : ""}
+         AND NOT EXISTS(SELECT 1 FROM operational_tasks t WHERE t.tenant_id=$1 AND t.type='overdue_receivable' AND t.title='Cobrar recebível vencido' AND t.status IN('open','in_progress'))`,
+        c.branchId ? [c.tenantId, c.userId ?? null, c.branchId] : [c.tenantId, c.userId ?? null],
+      );
+      await x.query(
         `INSERT INTO internal_notifications(tenant_id,user_id,branch_id,type,title,message,severity,entity_type,entity_id)
          SELECT $1,$2,cr.branch_id,'cash_divergence','Divergência de caixa','Um fechamento de caixa aguarda aprovação gerencial.','warning','cash_register',cr.id
          FROM cash_register_sessions cr WHERE cr.tenant_id=$1 AND cr.status='closed' AND cr.approval_status='pending' ${c.branchId ? "AND cr.branch_id=$3" : ""}`,

@@ -26,7 +26,7 @@ export const defaultPreferences: UserPreferences = {
   quietHoursStart: null,
   quietHoursEnd: null,
   favoriteRoutes: [],
-  dashboardWidgets: ["executive", "financial", "indicators", "performance", "period", "goals"],
+  dashboardWidgets: ["executive", "financial", "indicators", "performance", "period", "goals", "role-focus", "health"],
 };
 export function applyPreferences(preferences: UserPreferences) {
   if (typeof document === "undefined") return;

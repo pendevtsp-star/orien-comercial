@@ -188,6 +188,8 @@
 :root:not([data-dashboard-widgets~="goals"]) [data-dashboard-widget="goals"] {
   display: none !important;
 }
+:root:not([data-dashboard-widgets~="role-focus"]) [data-dashboard-widget="role-focus"],
+:root:not([data-dashboard-widgets~="health"]) [data-dashboard-widget="health"] { display: none !important; }
 
 html,
 body {

@@ -20,7 +20,7 @@ const schema = z.object({
   quietHoursEnd: z.string().nullable().optional(),
   favoriteRoutes: z.array(z.string().startsWith("/")).max(8),
   dashboardWidgets: z.array(
-    z.enum(["executive", "financial", "indicators", "performance", "period", "goals"]),
+    z.enum(["executive", "financial", "indicators", "performance", "period", "goals", "role-focus", "health"]),
   ),
 });
 @ApiTags("preferences")

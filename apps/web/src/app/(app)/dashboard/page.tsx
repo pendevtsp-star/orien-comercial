@@ -42,6 +42,8 @@ interface Summary {
     stockoutRisk: number;
     purchaseSuggestions: Array<{ name: string; quantity: string; minStock: string; suggestedQuantity: string }>;
   };
+  salesHistory: Array<{ date: string; total: string }>;
+  branchGoals: Array<{ branchId: string; name: string; target: string; sales: string }>;
 }
 
 const cards = [
@@ -305,7 +307,7 @@ export default function DashboardPage() {
         </Card>
       </section>
       <section className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-        <Card>
+        <Card data-dashboard-widget="role-focus">
           <CardContent className="grid gap-4">
             <div>
               <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Seu foco hoje</p>
@@ -317,7 +319,7 @@ export default function DashboardPage() {
             {summary?.roleFocus === "owner" || summary?.roleFocus === "admin" ? <Metric label="Margem bruta no período" value={summary.health.grossMargin} money loading={loading} /> : null}
           </CardContent>
         </Card>
-        <Card>
+        <Card data-dashboard-widget="health">
           <CardContent className="grid gap-4">
             <div><p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Saúde operacional</p><h2 className="mt-2 text-lg font-semibold text-[var(--brand-primary)]">Risco e sugestão de compra</h2></div>
             <div className="grid gap-3 sm:grid-cols-3">
@@ -330,6 +332,10 @@ export default function DashboardPage() {
             </div>
           </CardContent>
         </Card>
+      </section>
+      <section data-dashboard-widget="performance" className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+        <Card><CardContent><div><p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Histórico do período</p><h2 className="mt-2 text-lg font-semibold text-[var(--brand-primary)]">Vendas dia a dia</h2></div><div className="mt-5 flex h-40 items-end gap-1.5">{(summary?.salesHistory ?? []).map((point) => { const max=Math.max(1,...(summary?.salesHistory ?? []).map((item)=>Number(item.total))); const height=Math.max(4,(Number(point.total)/max)*100); return <div key={point.date} title={`${new Date(`${point.date}T00:00:00`).toLocaleDateString("pt-BR")}: ${Number(point.total).toLocaleString("pt-BR",{style:"currency",currency:"BRL"})}`} className="group flex min-w-0 flex-1 flex-col justify-end"><div className="rounded-t bg-[var(--brand-highlight)] transition group-hover:bg-[var(--brand-accent)]" style={{height:`${height}%`}}/><span className="mt-2 truncate text-center text-[10px] text-slate-500">{point.date.slice(8)}</span></div>})}</div></CardContent></Card>
+        <Card><CardContent><p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Metas por loja</p><h2 className="mt-2 text-lg font-semibold text-[var(--brand-primary)]">Acompanhamento das filiais</h2><div className="mt-4 grid gap-3">{(summary?.branchGoals ?? []).map((goal)=>{const percent=Number(goal.target)>0?Math.min(100,(Number(goal.sales)/Number(goal.target))*100):0;return <div key={goal.branchId}><div className="flex justify-between gap-2 text-sm"><span className="truncate">{goal.name}</span><span>{Number(goal.sales).toLocaleString("pt-BR",{style:"currency",currency:"BRL"})}</span></div><div className="mt-1 h-2 overflow-hidden rounded-full bg-[var(--brand-surface)]"><div className="h-full rounded-full bg-[var(--brand-highlight)]" style={{width:`${percent}%`}}/></div><p className="mt-1 text-xs text-slate-500">Meta {Number(goal.target).toLocaleString("pt-BR",{style:"currency",currency:"BRL"})}</p></div>})}</div></CardContent></Card>
       </section>
       <section data-dashboard-widget="period" className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card>

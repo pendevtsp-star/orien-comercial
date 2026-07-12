@@ -22,7 +22,7 @@ export class DashboardService {
     const branchFilter = context.branchId ? "AND (branch_id = $2 OR branch_id IS NULL)" : "";
     const branchParams = context.branchId ? [context.tenantId, context.branchId] : [context.tenantId];
 
-    const [branches, products, customers, lowStock, receivable, payable, salesToday, salesMonth, averageTicket, periodSales, previousSales, forecast, goal, health, suggestions, commissions] =
+    const [branches, products, customers, lowStock, receivable, payable, salesToday, salesMonth, averageTicket, periodSales, previousSales, forecast, goal, health, suggestions, commissions, salesHistory, branchGoals] =
       await Promise.all([
         this.database.tenantQuery<{ total: string }>(
         context.tenantId,
@@ -111,6 +111,8 @@ export class DashboardService {
           ORDER BY (p.min_stock-COALESCE(sb.quantity,0)) DESC LIMIT 5
         `, branchParams)
         ,this.database.tenantQuery<{ total:string }>(context.tenantId,`SELECT COALESCE(sum(amount),0)::text total FROM seller_commissions WHERE tenant_id=$1 AND user_id=$2 AND created_at::date BETWEEN $3 AND $4`,[context.tenantId,context.userId ?? "00000000-0000-0000-0000-000000000000",startDate,endDate])
+        ,this.database.tenantQuery<{ date:string; total:string }>(context.tenantId,`SELECT d::date::text date,COALESCE(sum(s.total_amount),0)::text total FROM generate_series($2::date,$3::date,interval '1 day') d LEFT JOIN sales s ON s.tenant_id=$1 AND s.status='sold' AND s.created_at::date=d::date ${context.branchId?"AND s.branch_id=$4":""} GROUP BY d ORDER BY d`,context.branchId?[context.tenantId,startDate,endDate,context.branchId]:[context.tenantId,startDate,endDate])
+        ,this.database.tenantQuery<{ branchId:string; name:string; target:string; sales:string }>(context.tenantId,`SELECT b.id AS "branchId",b.name,COALESCE((SELECT sum(g.sales_target) FROM branch_goals g WHERE g.tenant_id=$1 AND g.branch_id=b.id AND g.period_start<=$3 AND g.period_end>=$2),0)::text target,COALESCE((SELECT sum(s.total_amount) FROM sales s WHERE s.tenant_id=$1 AND s.branch_id=b.id AND s.status='sold' AND s.created_at::date BETWEEN $2 AND $3),0)::text sales FROM branches b WHERE b.tenant_id=$1 AND b.deleted_at IS NULL ${context.branchId?"AND b.id=$4":""} ORDER BY b.name`,context.branchId?[context.tenantId,startDate,endDate,context.branchId]:[context.tenantId,startDate,endDate])
       ]);
 
     return {
@@ -140,7 +142,9 @@ export class DashboardService {
         overdueReceivables: Number(health.rows[0]?.overdue ?? 0),
         stockoutRisk: Number(lowStock.rows[0]?.total ?? 0),
         purchaseSuggestions: suggestions.rows,
-      }
+      },
+      salesHistory: salesHistory.rows,
+      branchGoals: branchGoals.rows,
     };
   }
 }

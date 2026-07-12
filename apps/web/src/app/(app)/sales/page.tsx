@@ -3,6 +3,7 @@
 import { Badge, Button, Card, CardContent, DataTable, EmptyState, Input, PageHeader, Select } from "@sgc/ui";
 import { Ban, CircleDollarSign, Package2, Plus, RefreshCw, ShoppingCart, Wallet, type LucideIcon } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { apiFetch, openApiDocument } from "../../../lib/api";
 import { PaginationFooter } from "../../../components/pagination-footer";
 
@@ -61,6 +62,7 @@ interface SaleHistory {
 }
 
 export default function SalesPage() {
+  const searchParams = useSearchParams();
   const [sales, setSales] = useState<SaleRow[]>([]);
   const [branches, setBranches] = useState<BranchRow[]>([]);
   const [products, setProducts] = useState<ProductRow[]>([]);
@@ -118,6 +120,12 @@ export default function SalesPage() {
   useEffect(() => {
     void load();
   }, [page, search, statusFilter]);
+
+  useEffect(() => {
+    const focus = searchParams.get("focus");
+    if (!focus) return;
+    void toggleHistory(focus);
+  }, [searchParams]);
 
   useEffect(() => {
     function handleShortcut(event: KeyboardEvent) {

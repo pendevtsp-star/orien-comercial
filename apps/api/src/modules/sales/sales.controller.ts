@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Param, Post, Query, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Inject, Param, Post, Query, Res, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { permissions } from "@sgc/auth";
 import { saleCancelSchema, saleCreateSchema, salesListQuerySchema } from "@sgc/types";
@@ -26,8 +26,8 @@ export class SalesController {
 
   @RequirePermissions(permissions.sales.create)
   @Post()
-  create(@CurrentTenant() tenant: TenantContext, @Body(new ZodValidationPipe(saleCreateSchema)) body: never) {
-    return this.salesService.create(tenant, body);
+  create(@CurrentTenant() tenant: TenantContext, @Headers("idempotency-key") idempotencyKey: string | undefined, @Body(new ZodValidationPipe(saleCreateSchema)) body: never) {
+    return this.salesService.create(tenant, body, idempotencyKey);
   }
 
   @RequirePermissions(permissions.sales.cancel)

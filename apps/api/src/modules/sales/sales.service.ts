@@ -98,10 +98,29 @@ export class SalesService {
     return { data: rows.rows, pagination: { ...page, total: Number(count.rows[0]?.total ?? 0) } };
   }
 
-  async create(context: TenantContext, input: SaleCreateInput) {
+  async create(context: TenantContext, input: SaleCreateInput, idempotencyKey?: string) {
     ensureBranchAccess(context, input.branchId);
 
+    if (idempotencyKey && !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey)) {
+      throw new BadRequestException("Chave de idempotência inválida.");
+    }
+
     return this.database.tenantTransaction(context.tenantId, async (client) => {
+      if (idempotencyKey) {
+        const key = await client.query<{ response: unknown }>(
+          `INSERT INTO idempotency_keys(tenant_id,scope,key) VALUES($1,'sales.create',$2)
+           ON CONFLICT(tenant_id,scope,key) DO NOTHING RETURNING response`,
+          [context.tenantId, idempotencyKey],
+        );
+        if (!key.rowCount) {
+          const existing = await client.query<{ response: unknown }>(
+            "SELECT response FROM idempotency_keys WHERE tenant_id=$1 AND scope='sales.create' AND key=$2 FOR UPDATE",
+            [context.tenantId, idempotencyKey],
+          );
+          if (existing.rows[0]?.response) return existing.rows[0].response as { id: string; totalAmount: number; paidAmount: number; openAmount: number };
+          throw new BadRequestException("Venda em processamento. Aguarde alguns segundos e tente novamente.");
+        }
+      }
       await assertBranch(client, context.tenantId, input.branchId);
       if (input.customerId) await assertCustomer(client, context.tenantId, input.customerId);
       if (input.cashRegisterSessionId) {
@@ -288,7 +307,9 @@ export class SalesService {
         },
       });
 
-      return { id: saleId, totalAmount, paidAmount, openAmount };
+      const response = { id: saleId, totalAmount, paidAmount, openAmount };
+      if (idempotencyKey) await client.query("UPDATE idempotency_keys SET response=$3::jsonb,completed_at=now() WHERE tenant_id=$1 AND scope='sales.create' AND key=$2", [context.tenantId, idempotencyKey, JSON.stringify(response)]);
+      return response;
     });
   }
 
