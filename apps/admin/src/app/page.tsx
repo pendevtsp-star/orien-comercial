@@ -259,11 +259,29 @@ export default function Admin() {
           >
             Landing page
           </Link>
+          <Link
+            style={{
+              color: "#b8c6db",
+              borderRadius: 8,
+              padding: "11px 12px",
+              textDecoration: "none",
+              fontSize: 14,
+            }}
+            href="/testimonials"
+          >
+            Depoimentos
+          </Link>
         </nav>
         <div className="operator">
           <span className="dot" /> Plataforma protegida
           <br />
-          <small>{dashboard.mfaStatus.mfa_enabled ? "MFA ativo" : dashboard.mfaStatus.mfa_configured ? "MFA aguardando confirmação" : "MFA pendente"}</small>
+          <small>
+            {dashboard.mfaStatus.mfa_enabled
+              ? "MFA ativo"
+              : dashboard.mfaStatus.mfa_configured
+                ? "MFA aguardando confirmação"
+                : "MFA pendente"}
+          </small>
         </div>
       </aside>
       <main className="main">
@@ -290,7 +308,11 @@ export default function Admin() {
                 )
               }
             >
-              {dashboard.mfaStatus.mfa_enabled ? "MFA ativo" : dashboard.mfaStatus.mfa_configured ? "Concluir MFA" : "Configurar MFA"}
+              {dashboard.mfaStatus.mfa_enabled
+                ? "MFA ativo"
+                : dashboard.mfaStatus.mfa_configured
+                  ? "Concluir MFA"
+                  : "Configurar MFA"}
             </button>
             <button
               className="btn danger"
@@ -324,16 +346,22 @@ export default function Admin() {
           <section className="mfa">
             <div>
               <p className="eyebrow">SEGURANÇA DA CONTA</p>
-              <h2>{mfa.alreadyConfigured ? "Confirmar autenticador" : "Configurar autenticador"}</h2>
+              <h2>
+                {mfa.alreadyConfigured ? "Confirmar autenticador" : "Configurar autenticador"}
+              </h2>
               <p className="muted">
-                {mfa.alreadyConfigured ? "Use o código atual do seu aplicativo autenticador para concluir a ativação." : "Escaneie o QR Code com Google Authenticator, 1Password ou similar. Guarde os códigos de recuperação em local seguro."}
+                {mfa.alreadyConfigured
+                  ? "Use o código atual do seu aplicativo autenticador para concluir a ativação."
+                  : "Escaneie o QR Code com Google Authenticator, 1Password ou similar. Guarde os códigos de recuperação em local seguro."}
               </p>
               <code>{mfa.secret}</code>
-              {mfa.recoveryCodes.length > 0 && <div className="recovery">
-                {mfa.recoveryCodes.map((value: string) => (
-                  <span key={value}>{value}</span>
-                ))}
-              </div>}
+              {mfa.recoveryCodes.length > 0 && (
+                <div className="recovery">
+                  {mfa.recoveryCodes.map((value: string) => (
+                    <span key={value}>{value}</span>
+                  ))}
+                </div>
+              )}
             </div>
             <img src={mfa.qrCodeDataUrl} alt="QR Code para configurar MFA" />
             <div className="mfa-confirm">

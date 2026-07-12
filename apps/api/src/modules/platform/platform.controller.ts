@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -181,6 +182,27 @@ export class PlatformController {
   @Delete("coupons/:id") async deleteCoupon(@CurrentUser() u: AuthUser, @Param("id") id: string) {
     await this.ok(u);
     return this.p.deleteCoupon(u.userId, id);
+  }
+  @Get("testimonials") async testimonials(@CurrentUser() u: AuthUser) {
+    await this.ok(u);
+    return this.p.testimonialRequests();
+  }
+  @Post("testimonials") async createTestimonial(
+    @CurrentUser() u: AuthUser,
+    @Body() b: { tenantId?: string; recipientEmail?: string },
+  ) {
+    await this.ok(u);
+    return this.p.createTestimonialRequest(u.userId, b);
+  }
+  @Patch("testimonials/:id") async decideTestimonial(
+    @CurrentUser() u: AuthUser,
+    @Param("id") id: string,
+    @Body() b: { action: "approve" | "reject" | "revoke" },
+  ) {
+    await this.ok(u);
+    if (!["approve", "reject", "revoke"].includes(b.action))
+      throw new BadRequestException("Ação inválida.");
+    return this.p.decideTestimonial(u.userId, id, b.action);
   }
   @Get("landing") async landing(@CurrentUser() u: AuthUser) {
     await this.ok(u);

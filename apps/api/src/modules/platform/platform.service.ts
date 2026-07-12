@@ -45,7 +45,9 @@ export class PlatformService {
     }>("SELECT mfa_enabled,mfa_secret_encrypted FROM platform_admins WHERE user_id=$1", [userId]);
     const alreadyConfigured = Boolean(existing.rows[0]?.mfa_secret_encrypted);
     if (existing.rows[0]?.mfa_enabled) {
-      throw new BadRequestException("O MFA já está ativo. Use o fluxo de redefinição somente em caso de perda do autenticador.");
+      throw new BadRequestException(
+        "O MFA já está ativo. Use o fluxo de redefinição somente em caso de perda do autenticador.",
+      );
     }
     const secret = alreadyConfigured
       ? this.decrypt(existing.rows[0]!.mfa_secret_encrypted!)
@@ -136,9 +138,17 @@ export class PlatformService {
       "SELECT mfa_enabled,mfa_required,mfa_secret_encrypted IS NOT NULL AS mfa_configured,jsonb_array_length(recovery_code_hashes)::int recovery_codes FROM platform_admins WHERE user_id=$1",
       [userId],
     );
-    const status = result.rows[0] ?? { mfa_enabled: false, mfa_required: true, mfa_configured: false, recovery_codes: 0 };
+    const status = result.rows[0] ?? {
+      mfa_enabled: false,
+      mfa_required: true,
+      mfa_configured: false,
+      recovery_codes: 0,
+    };
     if (!sessionId) return { ...status, sessionVerified: false };
-    const session = await this.database.pool.query<{ verified: boolean }>("SELECT mfa_verified_at IS NOT NULL AS verified FROM sessions WHERE id=$1 AND user_id=$2", [sessionId, userId]);
+    const session = await this.database.pool.query<{ verified: boolean }>(
+      "SELECT mfa_verified_at IS NOT NULL AS verified FROM sessions WHERE id=$1 AND user_id=$2",
+      [sessionId, userId],
+    );
     return { ...status, sessionVerified: Boolean(session.rows[0]?.verified) };
   }
   async resetMfa(actor: string, userId: string) {
@@ -512,6 +522,170 @@ export class PlatformService {
     });
     return { ok: true };
   }
+  async testimonialRequests() {
+    const result = await this.database.pool.query(
+      `SELECT r.id,r.token,r.tenant_id AS "tenantId",t.name AS "tenantName",r.recipient_email AS "recipientEmail",r.status,
+        r.name,r.company,r.role,r.quote,r.image_url AS "imageUrl",r.consent_publication AS "consentPublication",
+        r.submitted_at AS "submittedAt",r.approved_at AS "approvedAt",r.expires_at AS "expiresAt",r.created_at AS "createdAt"
+       FROM platform_testimonial_requests r
+       LEFT JOIN tenants t ON t.id=r.tenant_id
+       ORDER BY r.created_at DESC
+       LIMIT 100`,
+    );
+    return {
+      data: result.rows.map((row) => ({ ...row, publicUrl: this.testimonialUrl(row.token) })),
+    };
+  }
+  async createTestimonialRequest(
+    actor: string,
+    input: { tenantId?: string; recipientEmail?: string },
+  ) {
+    const tenantId = input.tenantId || null;
+    const recipientEmail = input.recipientEmail?.trim().toLowerCase() || null;
+    if (tenantId) {
+      const tenant = await this.database.pool.query<{ id: string }>(
+        "SELECT id FROM tenants WHERE id=$1 AND deleted_at IS NULL",
+        [tenantId],
+      );
+      if (!tenant.rows[0]) throw new BadRequestException("Tenant não encontrado.");
+    }
+    if (recipientEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail))
+      throw new BadRequestException("Informe um e-mail válido ou deixe o campo vazio.");
+    const token = randomBytes(24).toString("base64url");
+    const result = await this.database.pool.query<{ id: string; token: string; expiresAt: string }>(
+      `INSERT INTO platform_testimonial_requests (tenant_id,token,recipient_email)
+       VALUES ($1,$2,$3)
+       RETURNING id,token,expires_at AS "expiresAt"`,
+      [tenantId, token, recipientEmail],
+    );
+    const request = result.rows[0]!;
+    await this.audit(
+      actor,
+      "platform.testimonial.requested",
+      "platform_testimonial_request",
+      request.id,
+      {
+        tenantId,
+        recipientEmail,
+      },
+    );
+    return { ...request, publicUrl: this.testimonialUrl(request.token) };
+  }
+  async testimonialForPublic(token: string) {
+    const result = await this.database.pool.query<{
+      company: string | null;
+      status: string;
+      expiresAt: string;
+    }>(
+      `SELECT COALESCE(t.name,r.company) AS company,r.status,r.expires_at AS "expiresAt"
+       FROM platform_testimonial_requests r LEFT JOIN tenants t ON t.id=r.tenant_id
+       WHERE r.token=$1`,
+      [token],
+    );
+    const request = result.rows[0];
+    if (
+      !request ||
+      ["rejected", "revoked"].includes(request.status) ||
+      new Date(request.expiresAt) < new Date()
+    )
+      throw new BadRequestException("Este convite não está mais disponível.");
+    return {
+      company: request.company ?? "",
+      submitted: request.status === "submitted" || request.status === "approved",
+    };
+  }
+  async submitPublicTestimonial(
+    token: string,
+    input: {
+      name?: string;
+      company?: string;
+      role?: string;
+      quote?: string;
+      imageUrl?: string;
+      consentPublication?: boolean;
+    },
+  ) {
+    const name = stringSetting(input.name, "", 120);
+    const quote = stringSetting(input.quote, "", 700);
+    const company = stringSetting(input.company, "", 160);
+    const role = stringSetting(input.role, "", 120);
+    const imageUrl = stringSetting(input.imageUrl, "", 500);
+    if (name.length < 2) throw new BadRequestException("Informe seu nome.");
+    if (quote.length < 20)
+      throw new BadRequestException("Escreva um relato com ao menos 20 caracteres.");
+    if (imageUrl && !/^https:\/\//i.test(imageUrl))
+      throw new BadRequestException("A imagem deve usar uma URL HTTPS.");
+    if (!input.consentPublication)
+      throw new BadRequestException("Confirme a autorização para publicação do depoimento.");
+    const result = await this.database.pool.query<{ id: string }>(
+      `UPDATE platform_testimonial_requests
+       SET name=$2,company=$3,role=$4,quote=$5,image_url=$6,consent_publication=true,status='submitted',submitted_at=now(),updated_at=now()
+       WHERE token=$1 AND status IN ('pending','submitted') AND expires_at>now()
+       RETURNING id`,
+      [token, name, company || null, role || null, quote, imageUrl || null],
+    );
+    if (!result.rows[0]) throw new BadRequestException("Este convite não está mais disponível.");
+    return { ok: true };
+  }
+  async decideTestimonial(actor: string, id: string, action: "approve" | "reject" | "revoke") {
+    const request = await this.database.pool.query<{
+      id: string;
+      status: string;
+      name: string | null;
+      company: string | null;
+      role: string | null;
+      quote: string | null;
+      imageUrl: string | null;
+      consent: boolean;
+    }>(
+      `SELECT id,status,name,company,role,quote,image_url AS "imageUrl",consent_publication AS consent
+       FROM platform_testimonial_requests WHERE id=$1`,
+      [id],
+    );
+    const row = request.rows[0];
+    if (!row) throw new BadRequestException("Solicitação não encontrada.");
+    if (
+      action === "approve" &&
+      (!row.consent || !row.name || !row.quote || row.status !== "submitted")
+    )
+      throw new BadRequestException(
+        "Aprovação disponível somente para depoimentos enviados com autorização.",
+      );
+    const status = action === "approve" ? "approved" : action === "reject" ? "rejected" : "revoked";
+    await this.database.pool.query(
+      `UPDATE platform_testimonial_requests SET status=$2,approved_at=CASE WHEN $2='approved' THEN now() ELSE NULL END,
+       approved_by_user_id=CASE WHEN $2='approved' THEN $3 ELSE NULL END,updated_at=now() WHERE id=$1`,
+      [id, status, actor],
+    );
+    const landing = await this.landingSettings();
+    const current = normalizeTestimonials(landing.testimonials).filter(
+      (item) => item.testimonialRequestId !== id,
+    );
+    if (action === "approve")
+      current.unshift({
+        testimonialRequestId: id,
+        name: row.name!,
+        company: row.company ?? "",
+        role: row.role ?? "",
+        quote: row.quote!,
+        imageUrl: row.imageUrl ?? "",
+      });
+    await this.database.pool.query(
+      "UPDATE platform_landing_settings SET value=$1::jsonb,updated_at=now() WHERE id=true",
+      [JSON.stringify({ ...landing, testimonials: current.slice(0, 8) })],
+    );
+    await this.audit(
+      actor,
+      `platform.testimonial.${status}`,
+      "platform_testimonial_request",
+      id,
+      {},
+    );
+    return { ok: true, status };
+  }
+  private testimonialUrl(token: string) {
+    return `${this.config.MARKETING_APP_URL}/avaliar/${encodeURIComponent(token)}`;
+  }
   async landingSettings() {
     const result = await this.database.pool.query<{ value: Record<string, unknown> }>(
       "SELECT value FROM platform_landing_settings WHERE id=true",
@@ -645,7 +819,7 @@ function stringSetting(value: unknown, fallback: string, maxLength: number) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : fallback;
 }
 
-function normalizeTestimonials(value: unknown) {
+function normalizeTestimonials(value: unknown): Array<Record<string, string>> {
   if (!Array.isArray(value)) return [];
   return value.slice(0, 8).flatMap((item) => {
     if (!item || typeof item !== "object") return [];
@@ -653,12 +827,17 @@ function normalizeTestimonials(value: unknown) {
     const quote = stringSetting(record.quote, "", 700);
     const name = stringSetting(record.name, "", 100);
     if (!quote || !name) return [];
-    return [{
-      quote,
-      name,
-      company: stringSetting(record.company, "", 120),
-      role: stringSetting(record.role, "", 100),
-      imageUrl: stringSetting(record.imageUrl, "", 500),
-    }];
+    return [
+      {
+        ...(stringSetting(record.testimonialRequestId, "", 80)
+          ? { testimonialRequestId: stringSetting(record.testimonialRequestId, "", 80) }
+          : {}),
+        quote,
+        name,
+        company: stringSetting(record.company, "", 120),
+        role: stringSetting(record.role, "", 100),
+        imageUrl: stringSetting(record.imageUrl, "", 500),
+      },
+    ];
   });
 }
