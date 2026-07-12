@@ -25,7 +25,6 @@ export class SubscriptionsService {
     const plan = await this.database.pool.query<{ id: string; name: string; price_cents: number }>("SELECT id,name,price_cents FROM plans WHERE slug=$1 AND is_active=true", [input.planSlug]);
     if (!plan.rows[0]) throw new BadRequestException("Plano indisponível.");
     const selectedPlan = plan.rows[0];
-    const coupon = await this.resolveCoupon(input.couponCode, input.planSlug, selectedPlan.price_cents);
 
     const client = await this.database.pool.connect();
     let context: TenantContext;
