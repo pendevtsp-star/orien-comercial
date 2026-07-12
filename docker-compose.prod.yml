@@ -100,6 +100,21 @@ services:
       - "${HOST_BIND_ADDRESS:-127.0.0.1}:${MARKETING_HOST_PORT:-3101}:3001"
     mem_limit: 256m
 
+  admin:
+    build:
+      context: .
+      dockerfile: apps/admin/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:${ADMIN_HOST_PORT:-3102}:3002"
+    depends_on:
+      api:
+        condition: service_healthy
+    mem_limit: 256m
+
   seed:
     build:
       context: .

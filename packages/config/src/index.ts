@@ -18,6 +18,7 @@ const envSchema = z.object({
   NEXT_PUBLIC_API_URL: z.string().url().optional(),
   NEXT_PUBLIC_APP_NAME: z.string().default("Orien"),
   WEB_APP_URL: z.string().url().default("http://localhost:3000"),
+  ADMIN_APP_URL: z.string().url().default("http://localhost:3002"),
   ASAAS_ENV: z.enum(["sandbox", "production"]).default("sandbox"),
   ASAAS_API_URL: z.string().url().default("https://sandbox.asaas.com/api/v3"),
   ASAAS_API_KEY: z.string().optional(),

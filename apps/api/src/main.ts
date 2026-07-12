@@ -49,8 +49,8 @@ async function bootstrap() {
   app.enableCors({
     origin:
       config.NODE_ENV === "production"
-        ? [config.WEB_APP_URL]
-        : [config.WEB_APP_URL, "http://localhost:3000", "http://localhost:3001"],
+        ? [config.WEB_APP_URL, config.ADMIN_APP_URL]
+        : [config.WEB_APP_URL, config.ADMIN_APP_URL, "http://localhost:3000", "http://localhost:3001", "http://localhost:3002"],
     credentials: true,
   });
   app.getHttpAdapter().get("/health", async (_request: Request, response: Response) => {
