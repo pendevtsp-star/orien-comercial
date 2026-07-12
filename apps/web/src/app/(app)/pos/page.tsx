@@ -60,6 +60,7 @@ export default function PosPage() {
   const [paymentParts, setPaymentParts] = useState<
     Array<{ method: string; amount: number; status: "paid" }>
   >([]);
+  const [pendingSync, setPendingSync] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const scannerRef = useRef<HTMLInputElement>(null);
 
@@ -74,6 +75,28 @@ export default function PosPage() {
         setBranchId((current) => current || b.data[0]?.id || "");
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Falha ao abrir o PDV."));
+  }, []);
+  useEffect(() => {
+    const queueKey = "orien.pos.pending-sales";
+    const sync = async () => {
+      const pending = JSON.parse(window.localStorage.getItem(queueKey) ?? "[]") as Array<
+        Record<string, unknown>
+      >;
+      if (!pending.length || !navigator.onLine) return setPendingSync(pending.length);
+      const remaining: Array<Record<string, unknown>> = [];
+      for (const sale of pending) {
+        try {
+          await apiFetch("/sales", { method: "POST", body: JSON.stringify(sale) });
+        } catch {
+          remaining.push(sale);
+        }
+      }
+      window.localStorage.setItem(queueKey, JSON.stringify(remaining));
+      setPendingSync(remaining.length);
+    };
+    void sync();
+    window.addEventListener("online", sync);
+    return () => window.removeEventListener("online", sync);
   }, []);
   useEffect(() => {
     const search = productSearch.trim();
@@ -235,15 +258,21 @@ export default function PosPage() {
       return;
     }
     try {
-      await apiFetch("/sales", {
-        method: "POST",
-        body: JSON.stringify({
-          branchId,
-          cashRegisterSessionId: cash.id,
-          items: cart.map(({ name: _name, ...item }) => item),
-          payments,
-        }),
-      });
+      const payload = {
+        branchId,
+        cashRegisterSessionId: cash.id,
+        items: cart.map(({ name: _name, ...item }) => item),
+        payments,
+      };
+      if (!navigator.onLine) {
+        const queueKey = "orien.pos.pending-sales";
+        const pending = JSON.parse(window.localStorage.getItem(queueKey) ?? "[]") as Array<
+          Record<string, unknown>
+        >;
+        pending.push(payload);
+        window.localStorage.setItem(queueKey, JSON.stringify(pending));
+        setPendingSync(pending.length);
+      } else await apiFetch("/sales", { method: "POST", body: JSON.stringify(payload) });
       setCart([]);
       setPaymentParts([]);
       setError(null);
@@ -280,6 +309,12 @@ export default function PosPage() {
           </div>
         }
       />
+      {pendingSync ? (
+        <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          {pendingSync} venda(s) aguardando sincronização. Elas serão enviadas quando a conexão
+          voltar.
+        </p>
+      ) : null}
       {error ? (
         <p className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
           {error}

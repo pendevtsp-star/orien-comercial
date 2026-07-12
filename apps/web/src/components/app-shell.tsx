@@ -13,6 +13,7 @@ import {
   ClipboardList,
   CreditCard,
   ChevronDown,
+  CircleHelp,
   LogOut,
   Menu,
   Moon,
@@ -25,6 +26,7 @@ import {
   ScanBarcode,
   ShieldCheck,
   ShoppingCart,
+  Search,
   Sun,
   Truck,
   UsersRound,
@@ -148,6 +150,38 @@ function roleLabel(slug?: string | null) {
   );
 }
 
+function helpForPath(pathname: string) {
+  if (pathname === "/pos")
+    return {
+      title: "PDV rápido",
+      text: "Use F2 para focar o leitor. Você também pode digitar o nome, SKU ou código do produto para adicioná-lo manualmente.",
+      tip: "F4 seleciona dinheiro, F6 Pix e F8 cartão.",
+    };
+  if (pathname === "/purchases")
+    return {
+      title: "Compras",
+      text: "Crie o pedido, aprove-o e registre recebimentos parciais quando a entrega chegar.",
+      tip: "O recebimento atualiza estoque e custo do produto.",
+    };
+  if (pathname === "/stock")
+    return {
+      title: "Estoque",
+      text: "Acompanhe saldo, transferências, inventários e entradas por compra.",
+      tip: "Priorize itens abaixo do mínimo e produtos sem giro.",
+    };
+  if (pathname === "/financial")
+    return {
+      title: "Financeiro",
+      text: "Registre contas, baixas e conciliações para manter o caixa previsto confiável.",
+      tip: "Use filtros por situação antes de fazer ações em lote.",
+    };
+  return {
+    title: "Atalho da Orien",
+    text: "Use a busca global para encontrar registros e navegue pelos grupos do menu conforme seu fluxo de trabalho.",
+    tip: "Ctrl/Cmd + K abre a busca de qualquer tela.",
+  };
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -156,6 +190,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [accountOpen, setAccountOpen] = useState(false);
   const [preferences, setPreferences] = useState<UserPreferences>(defaultPreferences);
   const [notificationCount, setNotificationCount] = useState(0);
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<
+    Array<{ label: string; detail: string; href: string }>
+  >([]);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     overview: true,
     operation: true,
@@ -202,6 +242,66 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     window.addEventListener("sgc:session-expired", redirectToLogin);
     return () => window.removeEventListener("sgc:session-expired", redirectToLogin);
   }, [router]);
+
+  useEffect(() => {
+    const shortcut = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setCommandOpen(true);
+      }
+      if (event.key === "Escape") setCommandOpen(false);
+    };
+    window.addEventListener("keydown", shortcut);
+    return () => window.removeEventListener("keydown", shortcut);
+  }, []);
+
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (query.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void Promise.all([
+        apiFetch<{ data: Array<{ id: string; name: string; sku?: string }> }>(
+          `/products?pageSize=5&search=${encodeURIComponent(query)}`,
+        ).catch(() => ({ data: [] })),
+        apiFetch<{ data: Array<{ id: string; name: string; document?: string }> }>(
+          `/customers?pageSize=5&search=${encodeURIComponent(query)}`,
+        ).catch(() => ({ data: [] })),
+        apiFetch<{ data: Array<{ id: string; customerName?: string; totalAmount?: string }> }>(
+          `/sales?pageSize=5&search=${encodeURIComponent(query)}`,
+        ).catch(() => ({ data: [] })),
+        apiFetch<{ data: Array<{ id: string; supplierName?: string; status?: string }> }>(
+          `/purchases?pageSize=5&search=${encodeURIComponent(query)}`,
+        ).catch(() => ({ data: [] })),
+      ]).then(([products, customers, sales, purchases]) =>
+        setSearchResults([
+          ...products.data.map((item) => ({
+            label: item.name,
+            detail: `Produto${item.sku ? ` · ${item.sku}` : ""}`,
+            href: "/products",
+          })),
+          ...customers.data.map((item) => ({
+            label: item.name,
+            detail: `Cliente${item.document ? ` · ${item.document}` : ""}`,
+            href: "/customers",
+          })),
+          ...sales.data.map((item) => ({
+            label: item.customerName ?? "Venda sem cliente",
+            detail: `Venda · R$ ${Number(item.totalAmount ?? 0).toLocaleString("pt-BR")}`,
+            href: "/sales",
+          })),
+          ...purchases.data.map((item) => ({
+            label: item.supplierName ?? "Compra",
+            detail: `Pedido · ${item.status ?? ""}`,
+            href: "/purchases",
+          })),
+        ]),
+      );
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
 
   const currentMembership = useMemo(() => {
     const tenantId = getTenantId();
@@ -444,6 +544,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
           <div className="relative flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              className="hidden h-10 items-center gap-2 rounded-md border border-[var(--brand-border)] bg-white px-3 text-sm text-slate-500 lg:flex"
+              onClick={() => setCommandOpen(true)}
+              aria-label="Busca global"
+            >
+              <Search size={16} /> Buscar{" "}
+              <kbd className="rounded border px-1 text-[10px]">Ctrl K</kbd>
+            </button>
+            <button
+              type="button"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-[var(--brand-border)] bg-white text-[var(--brand-primary)]"
+              aria-label="Ajuda desta tela"
+              onClick={() => setHelpOpen((value) => !value)}
+            >
+              <CircleHelp size={17} />
+            </button>
             <Link
               href="/operations"
               className="relative inline-flex h-10 w-10 items-center justify-center rounded-md border border-[var(--brand-border)] bg-white text-[var(--brand-primary)]"
@@ -518,6 +635,68 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             ) : null}
           </div>
         </header>
+        {helpOpen ? (
+          <aside className="fixed bottom-5 right-5 z-40 w-[min(92vw,360px)] rounded-xl border border-[var(--brand-border)] bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold tracking-[.14em] text-[var(--brand-secondary)]">
+                  AJUDA CONTEXTUAL
+                </p>
+                <h2 className="mt-1 font-semibold text-[var(--brand-primary)]">
+                  {helpForPath(pathname).title}
+                </h2>
+              </div>
+              <button onClick={() => setHelpOpen(false)} aria-label="Fechar ajuda">
+                ×
+              </button>
+            </div>
+            <p className="mt-3 text-sm leading-6 text-slate-600">{helpForPath(pathname).text}</p>
+            <p className="mt-3 rounded-md bg-[var(--brand-surface)] p-3 text-xs text-slate-600">
+              {helpForPath(pathname).tip}
+            </p>
+          </aside>
+        ) : null}
+        {commandOpen ? (
+          <div
+            className="fixed inset-0 z-50 grid place-items-start bg-slate-950/45 p-4 pt-[12vh]"
+            onMouseDown={() => setCommandOpen(false)}
+          >
+            <div
+              className="w-full max-w-xl overflow-hidden rounded-xl border border-[var(--brand-border)] bg-white shadow-2xl"
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-center gap-3 border-b border-[var(--brand-border)] px-4">
+                <Search size={18} />
+                <input
+                  autoFocus
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Buscar produto, cliente, venda ou pedido"
+                  className="h-14 flex-1 border-0 bg-transparent outline-none"
+                />
+              </div>
+              <div className="max-h-80 overflow-auto p-2">
+                {searchQuery.trim().length < 2 ? (
+                  <p className="p-4 text-sm text-slate-500">Digite ao menos dois caracteres.</p>
+                ) : searchResults.length ? (
+                  searchResults.map((result, index) => (
+                    <Link
+                      key={`${result.href}-${index}`}
+                      href={result.href}
+                      onClick={() => setCommandOpen(false)}
+                      className="grid rounded-md px-3 py-2.5 hover:bg-[var(--brand-surface)]"
+                    >
+                      <strong className="text-sm">{result.label}</strong>
+                      <span className="text-xs text-slate-500">{result.detail}</span>
+                    </Link>
+                  ))
+                ) : (
+                  <p className="p-4 text-sm text-slate-500">Nenhum resultado encontrado.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : null}
         <main className="mx-auto w-full min-w-0 max-w-[1600px] overflow-x-clip px-3 py-5 sm:px-4 lg:px-6 xl:px-8">
           {!me ? (
             <div className="py-16 text-center text-sm text-slate-500">Carregando acesso...</div>

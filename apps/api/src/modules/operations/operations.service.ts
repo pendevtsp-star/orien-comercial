@@ -532,6 +532,19 @@ export class OperationsService {
         `INSERT INTO internal_notifications(tenant_id,user_id,branch_id,type,title,message,severity,entity_type,entity_id) SELECT $1,$2,ar.branch_id,'overdue','Conta vencida','Recebivel de R$ '||ar.amount||' esta vencido.','danger','receivable',ar.id FROM accounts_receivable ar WHERE ar.tenant_id=$1 AND ar.status='open' AND ar.due_date<CURRENT_DATE ${c.branchId ? "AND ar.branch_id=$3" : ""}`,
         c.branchId ? [c.tenantId, c.userId ?? null, c.branchId] : [c.tenantId, c.userId ?? null],
       );
+      await x.query(
+        `INSERT INTO internal_notifications(tenant_id,user_id,branch_id,type,title,message,severity,entity_type,entity_id)
+         SELECT $1,$2,po.branch_id,'purchase_pending','Compra pendente','Pedido para '||s.name||' aguarda aprovação ou recebimento.','info','purchase_order',po.id
+         FROM purchase_orders po JOIN suppliers s ON s.id=po.supplier_id
+         WHERE po.tenant_id=$1 AND po.status IN ('draft','approved','partial') ${c.branchId ? "AND po.branch_id=$3" : ""}`,
+        c.branchId ? [c.tenantId, c.userId ?? null, c.branchId] : [c.tenantId, c.userId ?? null],
+      );
+      await x.query(
+        `INSERT INTO internal_notifications(tenant_id,user_id,branch_id,type,title,message,severity,entity_type,entity_id)
+         SELECT $1,$2,cr.branch_id,'cash_divergence','Divergência de caixa','Um fechamento de caixa aguarda aprovação gerencial.','warning','cash_register',cr.id
+         FROM cash_register_sessions cr WHERE cr.tenant_id=$1 AND cr.status='closed' AND cr.approval_status='pending' ${c.branchId ? "AND cr.branch_id=$3" : ""}`,
+        c.branchId ? [c.tenantId, c.userId ?? null, c.branchId] : [c.tenantId, c.userId ?? null],
+      );
     });
     return this.notifications(c);
   }
