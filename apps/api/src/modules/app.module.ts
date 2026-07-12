@@ -24,6 +24,7 @@ import { ReportsModule } from "../modules/reports/reports.module";
 import { PlatformModule } from "../modules/platform/platform.module";
 import { IntegrationsModule } from "../modules/integrations/integrations.module";
 import { LoyaltyModule } from "../modules/loyalty/loyalty.module";
+import { TrialLifecycleModule } from "../modules/trials/trial-lifecycle.module";
 
 @Module({
   imports: [
@@ -57,6 +58,7 @@ import { LoyaltyModule } from "../modules/loyalty/loyalty.module";
     PlatformModule,
     IntegrationsModule,
     LoyaltyModule,
+    TrialLifecycleModule,
   ],
 })
 export class AppModule {}
