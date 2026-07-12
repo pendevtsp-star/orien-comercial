@@ -11,6 +11,7 @@ import type {
   InviteListQuery,
   MembershipListQuery,
   MembershipUpdateInput,
+  PrintingSettingsInput,
   TenantBrandingInput,
   UserInviteInput,
 } from "@sgc/types";
@@ -193,6 +194,73 @@ export class TenantsService {
     });
 
     return result;
+  }
+
+  async getPrintingSettings(context: TenantContext, branchId?: string) {
+    const targetBranchId = branchId ?? context.branchId ?? null;
+    if (targetBranchId) {
+      assertUuid(targetBranchId, "Filial");
+      ensureBranchAccess(context, targetBranchId);
+      await this.database.tenantQuery(
+        context.tenantId,
+        "SELECT id FROM branches WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL",
+        [context.tenantId, targetBranchId],
+      ).then((result) => ensureFound(result.rows[0], "Filial"));
+      const result = await this.database.tenantQuery<{ value: Partial<PrintingSettingsInput> | null }>(
+        context.tenantId,
+        "SELECT value FROM branch_settings WHERE tenant_id=$1 AND branch_id=$2 AND key='printing' AND deleted_at IS NULL LIMIT 1",
+        [context.tenantId, targetBranchId],
+      );
+      return resolvePrintingSettings({ branchId: targetBranchId, ...(result.rows[0]?.value ?? {}) });
+    }
+
+    const result = await this.database.tenantQuery<{ value: Partial<PrintingSettingsInput> | null }>(
+      context.tenantId,
+      "SELECT value FROM tenant_settings WHERE tenant_id=$1 AND key='printing' AND deleted_at IS NULL LIMIT 1",
+      [context.tenantId],
+    );
+    return resolvePrintingSettings(result.rows[0]?.value ?? {});
+  }
+
+  async updatePrintingSettings(context: TenantContext, input: PrintingSettingsInput) {
+    const settings = resolvePrintingSettings(input);
+    const targetBranchId = input.branchId ?? context.branchId ?? null;
+    if (targetBranchId) {
+      ensureBranchAccess(context, targetBranchId);
+      await this.database.tenantTransaction(context.tenantId, async (client) => {
+        await assertBranch(client, context.tenantId, targetBranchId);
+        await client.query(
+          `
+          INSERT INTO branch_settings (tenant_id, branch_id, key, value)
+          VALUES ($1, $2, 'printing', $3::jsonb)
+          ON CONFLICT (branch_id, key) DO UPDATE
+          SET value = EXCLUDED.value, updated_at = now(), deleted_at = NULL
+          `,
+          [context.tenantId, targetBranchId, JSON.stringify({ ...settings, branchId: targetBranchId })],
+        );
+        await insertAuditLog(client, {
+          tenantId: context.tenantId,
+          actorUserId: currentActor(context),
+          action: "branch.printing.updated",
+          entityType: "branch_settings",
+          entityId: targetBranchId,
+          metadata: settings,
+        });
+      });
+      return this.getPrintingSettings(context, targetBranchId);
+    }
+
+    await this.database.tenantQuery(
+      context.tenantId,
+      `
+      INSERT INTO tenant_settings (tenant_id, key, value)
+      VALUES ($1, 'printing', $2::jsonb)
+      ON CONFLICT (tenant_id, key) DO UPDATE
+      SET value = EXCLUDED.value, updated_at = now(), deleted_at = NULL
+      `,
+      [context.tenantId, JSON.stringify(settings)],
+    );
+    return this.getPrintingSettings(context);
   }
 
   private async persistBrandingLogo(tenantId: string, dataUrl: string) {
@@ -446,7 +514,27 @@ export class TenantsService {
 
     if (query.search) {
       params.push(`%${query.search}%`);
-      filters.push(`(a.action ILIKE $${params.length} OR a.entity_type ILIKE $${params.length})`);
+      filters.push(`(a.action ILIKE $${params.length} OR a.entity_type ILIKE $${params.length} OR a.entity_id::text ILIKE $${params.length})`);
+    }
+    if (query.entityType) {
+      params.push(query.entityType);
+      filters.push(`a.entity_type = $${params.length}`);
+    }
+    if (query.entityId) {
+      params.push(query.entityId);
+      filters.push(`a.entity_id = $${params.length}`);
+    }
+    if (query.actorUserId) {
+      params.push(query.actorUserId);
+      filters.push(`a.actor_user_id = $${params.length}`);
+    }
+    if (query.startDate) {
+      params.push(query.startDate);
+      filters.push(`a.created_at::date >= $${params.length}::date`);
+    }
+    if (query.endDate) {
+      params.push(query.endDate);
+      filters.push(`a.created_at::date <= $${params.length}::date`);
     }
 
     const count = await this.database.tenantQuery<{ total: string }>(
@@ -507,6 +595,24 @@ function hashToken(token: string) {
 
 function currentActor(context: TenantContext) {
   return context.userId ?? null;
+}
+
+function assertUuid(value: string, label: string) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
+    throw new BadRequestException(`${label} inválida.`);
+  }
+}
+
+function resolvePrintingSettings(input: Partial<PrintingSettingsInput>): PrintingSettingsInput {
+  return {
+    branchId: input.branchId,
+    labelSize: input.labelSize ?? "50x30",
+    dpi: input.dpi ?? "203",
+    receiptMode: input.receiptMode ?? "browser",
+    receiptCopies: Number(input.receiptCopies ?? 1),
+    defaultPrinterName: input.defaultPrinterName ?? "",
+    silentPrint: Boolean(input.silentPrint),
+  };
 }
 
 async function assertRole(client: PoolClient, tenantId: string, roleId: string) {

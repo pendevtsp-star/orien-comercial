@@ -52,6 +52,13 @@ export const inviteListQuerySchema = paginationQuerySchema.extend({
 export const auditLogListQuerySchema = paginationQuerySchema.extend({
   sortBy: z.enum(["createdAt", "action", "entityType"]).optional(),
   sortDirection: z.enum(["asc", "desc"]).default("desc"),
+  entityType: z.string().trim().min(1).max(120).optional(),
+  entityId: uuidSchema.optional(),
+  actorUserId: uuidSchema.optional(),
+  startDate: z.string().date().optional(),
+  endDate: z.string().date().optional(),
+}).refine((value) => !value.startDate || !value.endDate || value.endDate >= value.startDate, {
+  message: "endDate must be after startDate",
 });
 
 export const dashboardQuerySchema = z
@@ -73,6 +80,11 @@ export const branchGoalSchema = z
   .refine((value) => value.periodEnd >= value.periodStart, {
     message: "periodEnd must be after periodStart",
   });
+
+export const onboardingStateSchema = z.object({
+  dismissed: z.boolean().optional(),
+  completedKeys: z.array(z.string().trim().min(1).max(80)).max(40).optional(),
+});
 
 export const loginSchema = z.object({
   email: z
@@ -416,6 +428,16 @@ export const tenantBrandingSchema = z.object({
   footerNote: z.string().trim().max(240).optional(),
 });
 
+export const printingSettingsSchema = z.object({
+  branchId: uuidSchema.optional(),
+  labelSize: z.enum(["50x30", "60x40", "80x40"]).default("50x30"),
+  dpi: z.enum(["203", "300"]).default("203"),
+  receiptMode: z.enum(["browser", "thermal", "none"]).default("browser"),
+  receiptCopies: z.coerce.number().int().min(1).max(5).default(1),
+  defaultPrinterName: z.string().trim().max(120).optional(),
+  silentPrint: z.boolean().default(false),
+});
+
 export const integrationSettingsSchema = z.object({
   provider: z.enum(["asaas_business", "smtp", "whatsapp_meta", "fiscal"]),
   mode: z.enum(["sandbox", "homologation", "production"]).default("sandbox"),
@@ -434,6 +456,7 @@ export type FinancialListQuery = z.infer<typeof financialListQuerySchema>;
 export type MembershipListQuery = z.infer<typeof membershipListQuerySchema>;
 export type InviteListQuery = z.infer<typeof inviteListQuerySchema>;
 export type AuditLogListQuery = z.infer<typeof auditLogListQuerySchema>;
+export type OnboardingStateInput = z.infer<typeof onboardingStateSchema>;
 export type BranchCreateInput = z.infer<typeof branchCreateSchema>;
 export type BranchUpdateInput = z.infer<typeof branchUpdateSchema>;
 export type ProductCreateInput = z.infer<typeof productCreateSchema>;
@@ -465,3 +488,4 @@ export type SubscriptionCheckoutInput = z.infer<typeof subscriptionCheckoutSchem
 export type PublicSubscriptionCheckoutInput = z.infer<typeof publicSubscriptionCheckoutSchema>;
 export type AsaasWebhookInput = z.infer<typeof asaasWebhookSchema>;
 export type TenantBrandingInput = z.infer<typeof tenantBrandingSchema>;
+export type PrintingSettingsInput = z.infer<typeof printingSettingsSchema>;

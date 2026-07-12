@@ -55,12 +55,15 @@ interface OperationalStatus {
     overdueReceivables: number;
     pendingTasks: number;
   };
-  checklist: Array<{ key: string; label: string; done: boolean; href: string }>;
+  checklist: Array<{ key: string; label: string; done: boolean; autoDone?: boolean; href: string }>;
   progressPercent: number;
   nextAction: { label: string; href: string } | null;
+  onboarding?: { dismissed: boolean; completedKeys: string[] };
 }
 
-const onboardingFallback = [
+type ChecklistItem = { key: string; label: string; done: boolean; autoDone?: boolean; href: string };
+
+const onboardingFallback: ChecklistItem[] = [
   { key: "branch", label: "Cadastrar loja", done: false, href: "/branches" },
   { key: "products", label: "Cadastrar produtos", done: false, href: "/products" },
   { key: "customers", label: "Cadastrar clientes", done: false, href: "/customers" },
@@ -122,9 +125,17 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!status || status.progressPercent >= 100) return;
-    const dismissed = window.localStorage.getItem("orien.setup-wizard.dismissed");
-    if (!dismissed) setShowSetupWizard(true);
+    if (!status.onboarding?.dismissed) setShowSetupWizard(true);
   }, [status]);
+
+  async function saveOnboarding(input: { dismissed?: boolean; completedKeys?: string[] }) {
+    const result = await apiFetch<OperationalStatus>("/dashboard/onboarding", {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    });
+    setStatus(result);
+    return result;
+  }
 
   async function saveGoal(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -167,23 +178,42 @@ export default function DashboardPage() {
             </div>
             <div className="mt-5 grid gap-2">
               {(status?.checklist?.length ? status.checklist : onboardingFallback).map((item) => (
-                <Link
+                <div
                   key={item.key}
-                  href={item.href}
-                  className="flex items-center justify-between rounded-md border border-[var(--brand-border)] px-3 py-2 text-sm hover:bg-[var(--brand-surface)]"
-                  onClick={() => setShowSetupWizard(false)}
+                  className="flex flex-col gap-3 rounded-md border border-[var(--brand-border)] px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between"
                 >
-                  <span className="font-medium text-[var(--brand-primary)]">{item.label}</span>
-                  <Badge>{item.done ? "feito" : "pendente"}</Badge>
-                </Link>
+                  <div className="min-w-0">
+                    <span className="font-medium text-[var(--brand-primary)]">{item.label}</span>
+                    <p className="text-xs text-slate-500">
+                      {item.autoDone ? "Concluído pelos dados do tenant." : item.done ? "Marcado como concluído." : "Pendente para operação real."}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge>{item.done ? "feito" : "pendente"}</Badge>
+                    {!item.done ? (
+                      <Button
+                        variant="ghost"
+                        onClick={() => void saveOnboarding({ completedKeys: [item.key] })}
+                      >
+                        Marcar feito
+                      </Button>
+                    ) : null}
+                    <Link
+                      href={item.href}
+                      className="inline-flex min-h-9 items-center rounded-md border border-[var(--brand-border)] px-3 text-xs font-medium text-[var(--brand-primary)]"
+                      onClick={() => setShowSetupWizard(false)}
+                    >
+                      Abrir
+                    </Link>
+                  </div>
+                </div>
               ))}
             </div>
             <div className="mt-5 flex flex-wrap justify-end gap-2">
               <Button
                 variant="secondary"
                 onClick={() => {
-                  window.localStorage.setItem("orien.setup-wizard.dismissed", "true");
-                  setShowSetupWizard(false);
+                  void saveOnboarding({ dismissed: true }).then(() => setShowSetupWizard(false));
                 }}
               >
                 Continuar depois

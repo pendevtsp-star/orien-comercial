@@ -1,8 +1,9 @@
 "use client";
 
-import { Badge, Button, Card, CardContent, PageHeader, Select } from "@sgc/ui";
-import { CheckCircle2, MonitorCog, Printer, ScanBarcode, Usb } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Badge, Button, Card, CardContent, Input, PageHeader, Select } from "@sgc/ui";
+import { CheckCircle2, Printer, ScanBarcode, Usb } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { apiFetch } from "../../../lib/api";
 
 const sizes = [
   { label: "50 x 30 mm", value: "50x30" },
@@ -11,11 +12,81 @@ const sizes = [
 ];
 
 export default function PrintersPage() {
+  const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
+  const [branchId, setBranchId] = useState("");
   const [size, setSize] = useState("50x30");
   const [dpi, setDpi] = useState("203");
   const [mode, setMode] = useState("browser");
+  const [copies, setCopies] = useState(1);
+  const [printerName, setPrinterName] = useState("");
+  const [silentPrint, setSilentPrint] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
 
   const printUrl = useMemo(() => `/catalog-tools?labelSize=${size}&dpi=${dpi}`, [size, dpi]);
+
+  useEffect(() => {
+    void apiFetch<{ data: Array<{ id: string; name: string }> }>("/branches?pageSize=100&isActive=true")
+      .then((result) => {
+        setBranches(result.data);
+        const firstBranch = result.data[0]?.id ?? "";
+        if (firstBranch) setBranchId(firstBranch);
+      })
+      .catch((cause) => setError(cause instanceof Error ? cause.message : "Não foi possível carregar lojas."));
+  }, []);
+
+  useEffect(() => {
+    if (!branchId) return;
+    void loadSettings(branchId);
+  }, [branchId]);
+
+  async function loadSettings(nextBranchId: string) {
+    try {
+      const settings = await apiFetch<{
+        labelSize: string;
+        dpi: string;
+        receiptMode: string;
+        receiptCopies: number;
+        defaultPrinterName?: string;
+        silentPrint: boolean;
+      }>(`/printing-settings?branchId=${nextBranchId}`);
+      setSize(settings.labelSize);
+      setDpi(settings.dpi);
+      setMode(settings.receiptMode);
+      setCopies(settings.receiptCopies);
+      setPrinterName(settings.defaultPrinterName ?? "");
+      setSilentPrint(settings.silentPrint);
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível carregar a configuração.");
+    }
+  }
+
+  async function saveSettings() {
+    setSaving(true);
+    setMessage("");
+    setError("");
+    try {
+      await apiFetch("/printing-settings", {
+        method: "PATCH",
+        body: JSON.stringify({
+          branchId,
+          labelSize: size,
+          dpi,
+          receiptMode: mode,
+          receiptCopies: copies,
+          defaultPrinterName: printerName,
+          silentPrint,
+        }),
+      });
+      setMessage("Configuração de impressão salva para esta loja.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível salvar a configuração.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="grid gap-6">
@@ -58,12 +129,28 @@ export default function PrintersPage() {
           <CardContent className="grid gap-4">
             <div>
               <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">
-                Perfil de impressão
+                Perfil de impressão por loja
               </p>
               <h2 className="mt-2 text-lg font-semibold text-[var(--brand-primary)]">
-                Padrão recomendado
+                Padrão salvo para etiquetas e comprovantes
               </h2>
             </div>
+            {message ? (
+              <p className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
+                {message}
+              </p>
+            ) : null}
+            {error ? (
+              <p className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                {error}
+              </p>
+            ) : null}
+            <Select
+              label="Loja"
+              value={branchId}
+              onChange={(event) => setBranchId(event.target.value)}
+              options={branches.map((branch) => ({ label: branch.name, value: branch.id }))}
+            />
             <div className="grid gap-3 sm:grid-cols-3">
               <Select
                 label="Etiqueta"
@@ -81,25 +168,57 @@ export default function PrintersPage() {
                 ]}
               />
               <Select
-                label="Modo"
+                label="Comprovante"
                 value={mode}
                 onChange={(event) => setMode(event.target.value)}
                 options={[
                   { label: "Navegador", value: "browser" },
-                  { label: "Driver nativo", value: "native" },
+                  { label: "Térmica", value: "thermal" },
+                  { label: "Não imprimir", value: "none" },
                 ]}
               />
             </div>
+            <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
+              <Input
+                label="Nome da impressora padrão"
+                placeholder="Ex.: Elgin i9, Zebra GC420t"
+                value={printerName}
+                onChange={(event) => setPrinterName(event.target.value)}
+              />
+              <Input
+                label="Vias"
+                type="number"
+                min={1}
+                max={5}
+                value={copies}
+                onChange={(event) => setCopies(Number(event.target.value || 1))}
+              />
+            </div>
+            <label className="flex items-start gap-2 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                checked={silentPrint}
+                onChange={(event) => setSilentPrint(event.target.checked)}
+              />
+              <span>
+                Preparar para impressão silenciosa quando o agente local estiver disponível.
+              </span>
+            </label>
             <div className="rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface)] p-4 text-sm text-slate-600">
               Use escala 100%, margens ausentes e orientação automática. Se a etiqueta sair cortada,
               ajuste primeiro o tamanho no driver da impressora e só depois no Orien.
             </div>
-            <a
-              href={printUrl}
-              className="inline-flex min-h-10 w-fit items-center justify-center rounded-md bg-[var(--brand-primary)] px-4 py-2 text-sm font-medium text-white"
-            >
-              Abrir emissão de etiquetas
-            </a>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => void saveSettings()} disabled={saving || !branchId}>
+                {saving ? "Salvando..." : "Salvar configuração"}
+              </Button>
+              <a
+                href={printUrl}
+                className="inline-flex min-h-10 w-fit items-center justify-center rounded-md border border-[var(--brand-border)] px-4 py-2 text-sm font-medium text-[var(--brand-primary)]"
+              >
+                Abrir emissão de etiquetas
+              </a>
+            </div>
           </CardContent>
         </Card>
       </section>

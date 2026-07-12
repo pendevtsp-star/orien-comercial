@@ -6,6 +6,7 @@ import {
   inviteListQuerySchema,
   membershipListQuerySchema,
   membershipUpdateSchema,
+  printingSettingsSchema,
   tenantBrandingSchema,
   userInviteSchema
 } from "@sgc/types";
@@ -48,6 +49,23 @@ export class TenantsController {
   @Patch("tenants/current/branding")
   updateBranding(@CurrentTenant() tenant: TenantContext, @Body(new ZodValidationPipe(tenantBrandingSchema)) body: never) {
     return this.tenantsService.updateBranding(tenant, body);
+  }
+
+  @UseGuards(JwtAuthGuard, TenantContextGuard, PermissionsGuard)
+  @RequirePermissions(permissions.branches.read)
+  @Get("printing-settings")
+  printingSettings(@CurrentTenant() tenant: TenantContext, @Query("branchId") branchId?: string) {
+    return this.tenantsService.getPrintingSettings(tenant, branchId);
+  }
+
+  @UseGuards(JwtAuthGuard, TenantContextGuard, PermissionsGuard)
+  @RequirePermissions(permissions.branches.update)
+  @Patch("printing-settings")
+  updatePrintingSettings(
+    @CurrentTenant() tenant: TenantContext,
+    @Body(new ZodValidationPipe(printingSettingsSchema)) body: never
+  ) {
+    return this.tenantsService.updatePrintingSettings(tenant, body);
   }
 
   @UseGuards(JwtAuthGuard, TenantContextGuard, PermissionsGuard)

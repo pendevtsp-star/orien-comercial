@@ -1,4 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
+import type { OnboardingStateInput } from "@sgc/types";
 import type { TenantContext } from "../../shared/request-context";
 import { DatabaseService } from "../database/database.service";
 
@@ -22,6 +23,7 @@ export class DashboardService {
       criticalStock,
       overdueReceivables,
       pendingTasks,
+      onboarding,
     ] = await Promise.all([
       this.database.tenantQuery<{ total: string }>(
         context.tenantId,
@@ -79,6 +81,11 @@ export class DashboardService {
         `SELECT count(*)::text total FROM operational_tasks WHERE tenant_id=$1 AND status IN ('open','in_progress') ${branchFilter}`,
         params,
       ),
+      this.database.tenantQuery<{ value: { dismissed?: boolean; completedKeys?: string[] } | null }>(
+        context.tenantId,
+        "SELECT value FROM tenant_settings WHERE tenant_id=$1 AND key='onboarding' AND deleted_at IS NULL LIMIT 1",
+        [context.tenantId],
+      ),
     ]);
 
     const counts = {
@@ -94,14 +101,16 @@ export class DashboardService {
       pendingTasks: Number(pendingTasks.rows[0]?.total ?? 0),
     };
 
+    const persisted = onboarding.rows[0]?.value ?? {};
+    const completedKeys = new Set(persisted.completedKeys ?? []);
     const checklist = [
-      { key: "branch", label: "Cadastrar loja", done: counts.branches > 0, href: "/branches" },
-      { key: "products", label: "Cadastrar produtos", done: counts.products > 0, href: "/products" },
-      { key: "customers", label: "Cadastrar clientes", done: counts.customers > 0, href: "/customers" },
-      { key: "operator", label: "Convidar operador", done: counts.operators > 1, href: "/team" },
-      { key: "stock", label: "Informar estoque inicial", done: counts.stockBalances > 0, href: "/stock" },
-      { key: "sale", label: "Realizar venda teste", done: counts.testSales > 0, href: "/pos" },
-    ];
+      { key: "branch", label: "Cadastrar loja", autoDone: counts.branches > 0, href: "/branches" },
+      { key: "products", label: "Cadastrar produtos", autoDone: counts.products > 0, href: "/products" },
+      { key: "customers", label: "Cadastrar clientes", autoDone: counts.customers > 0, href: "/customers" },
+      { key: "operator", label: "Convidar operador", autoDone: counts.operators > 1, href: "/team" },
+      { key: "stock", label: "Informar estoque inicial", autoDone: counts.stockBalances > 0, href: "/stock" },
+      { key: "sale", label: "Realizar venda teste", autoDone: counts.testSales > 0, href: "/pos" },
+    ].map((item) => ({ ...item, done: item.autoDone || completedKeys.has(item.key) }));
 
     const completed = checklist.filter((item) => item.done).length;
     return {
@@ -109,7 +118,35 @@ export class DashboardService {
       checklist,
       progressPercent: Math.round((completed / checklist.length) * 100),
       nextAction: checklist.find((item) => !item.done) ?? null,
+      onboarding: {
+        dismissed: Boolean(persisted.dismissed),
+        completedKeys: Array.from(new Set([...completedKeys, ...checklist.filter((item) => item.autoDone).map((item) => item.key)])),
+      },
     };
+  }
+
+  async updateOnboarding(context: TenantContext, input: OnboardingStateInput) {
+    const current = await this.database.tenantQuery<{ value: { dismissed?: boolean; completedKeys?: string[] } | null }>(
+      context.tenantId,
+      "SELECT value FROM tenant_settings WHERE tenant_id=$1 AND key='onboarding' AND deleted_at IS NULL LIMIT 1",
+      [context.tenantId],
+    );
+    const value = {
+      dismissed: input.dismissed ?? Boolean(current.rows[0]?.value?.dismissed),
+      completedKeys: Array.from(new Set([...(current.rows[0]?.value?.completedKeys ?? []), ...(input.completedKeys ?? [])])),
+      updatedAt: new Date().toISOString(),
+    };
+    await this.database.tenantQuery(
+      context.tenantId,
+      `
+      INSERT INTO tenant_settings (tenant_id, key, value)
+      VALUES ($1, 'onboarding', $2::jsonb)
+      ON CONFLICT (tenant_id, key) DO UPDATE
+      SET value = EXCLUDED.value, updated_at = now(), deleted_at = NULL
+      `,
+      [context.tenantId, JSON.stringify(value)],
+    );
+    return this.operationalStatus(context);
   }
 
   async setGoal(context: TenantContext, input: { branchId:string;periodStart:string;periodEnd:string;salesTarget:number }) {

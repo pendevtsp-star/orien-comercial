@@ -2,7 +2,7 @@
 
 import { Badge, Button, Card, CardContent, DataTable, EmptyState, Input, PageHeader, Select } from "@sgc/ui";
 import { History, RefreshCw, Search } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { PaginationFooter } from "../../../components/pagination-footer";
 import { apiFetch } from "../../../lib/api";
 
@@ -63,13 +63,21 @@ export default function AuditPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [entity, setEntity] = useState("all");
+  const [entityId, setEntityId] = useState("");
+  const [actorUserId, setActorUserId] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [error, setError] = useState("");
 
   async function load() {
     try {
       const query = new URLSearchParams({ page: String(page), pageSize: "15" });
       if (search) query.set("search", search);
-      if (entity !== "all") query.set("search", entity);
+      if (entity !== "all") query.set("entityType", entity);
+      if (entityId) query.set("entityId", entityId);
+      if (actorUserId) query.set("actorUserId", actorUserId);
+      if (startDate) query.set("startDate", startDate);
+      if (endDate) query.set("endDate", endDate);
       const result = await apiFetch<ListResponse<AuditRow>>(`/audit-logs?${query.toString()}`);
       setRows(result.data);
       setPagination(result.pagination ?? { page, pageSize: 15, total: result.data.length });
@@ -81,16 +89,7 @@ export default function AuditPage() {
 
   useEffect(() => {
     void load();
-  }, [page, search, entity]);
-
-  const entities = useMemo(
-    () =>
-      Array.from(new Set(rows.map((row) => row.entityType))).map((value) => ({
-        label: entityLabels[value] ?? value,
-        value,
-      })),
-    [rows],
-  );
+  }, [page, search, entity, entityId, actorUserId, startDate, endDate]);
 
   return (
     <div className="grid gap-6">
@@ -113,7 +112,7 @@ export default function AuditPage() {
           <div className="grid gap-3 md:grid-cols-[1fr_220px]">
             <Input
               aria-label="Buscar auditoria"
-              placeholder="Buscar por ação, entidade ou tipo de evento"
+              placeholder="Buscar por ação, entidade ou ID"
               value={search}
               onChange={(event) => {
                 setSearch(event.target.value);
@@ -127,8 +126,79 @@ export default function AuditPage() {
                 setEntity(event.target.value);
                 setPage(1);
               }}
-              options={[{ label: "Todos os tipos", value: "all" }, ...entities]}
+              options={[
+                { label: "Todos os tipos", value: "all" },
+                { label: "Venda", value: "sale" },
+                { label: "Produto", value: "product" },
+                { label: "Cliente", value: "customer" },
+                { label: "Estoque", value: "stock_movement" },
+                { label: "Compra", value: "purchase_order" },
+                { label: "Caixa", value: "cash_register" },
+                { label: "Usuário", value: "membership" },
+                { label: "Configuração", value: "tenant_settings" },
+              ]}
             />
+          </div>
+          <div className="grid gap-3 md:grid-cols-4">
+            <Input
+              label="ID da venda/produto"
+              placeholder="Cole o ID auditado"
+              value={entityId}
+              onChange={(event) => {
+                setEntityId(event.target.value.trim());
+                setPage(1);
+              }}
+            />
+            <Input
+              label="ID do usuário"
+              placeholder="Autor da ação"
+              value={actorUserId}
+              onChange={(event) => {
+                setActorUserId(event.target.value.trim());
+                setPage(1);
+              }}
+            />
+            <Input
+              label="Início"
+              type="date"
+              value={startDate}
+              onChange={(event) => {
+                setStartDate(event.target.value);
+                setPage(1);
+              }}
+            />
+            <Input
+              label="Fim"
+              type="date"
+              value={endDate}
+              onChange={(event) => {
+                setEndDate(event.target.value);
+                setPage(1);
+              }}
+            />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              icon={<Search size={16} />}
+              onClick={() => void load()}
+            >
+              Filtrar auditoria
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setSearch("");
+                setEntity("all");
+                setEntityId("");
+                setActorUserId("");
+                setStartDate("");
+                setEndDate("");
+                setPage(1);
+              }}
+            >
+              Limpar filtros
+            </Button>
           </div>
           <DataTable
             rows={rows}
@@ -202,5 +272,6 @@ function formatValue(value: unknown) {
   if (typeof value === "number") return value.toLocaleString("pt-BR");
   if (typeof value === "boolean") return value ? "sim" : "não";
   if (typeof value === "object") return JSON.stringify(value);
+  if (typeof value === "string") return value;
   return String(value);
 }

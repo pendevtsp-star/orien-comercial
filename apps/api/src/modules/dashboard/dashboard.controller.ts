@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { permissions } from "@sgc/auth";
 import { JwtAuthGuard } from "../../shared/auth.guard";
@@ -6,7 +6,7 @@ import { CurrentTenant } from "../../shared/current-user.decorator";
 import { PermissionsGuard } from "../../shared/permissions.guard";
 import { RequirePermissions } from "../../shared/require-permissions.decorator";
 import type { TenantContext } from "../../shared/request-context";
-import { branchGoalSchema, dashboardQuerySchema } from "@sgc/types";
+import { branchGoalSchema, dashboardQuerySchema, onboardingStateSchema } from "@sgc/types";
 import { ZodValidationPipe } from "../../shared/zod-validation.pipe";
 import { TenantContextGuard } from "../../shared/tenant-context.guard";
 import { DashboardService } from "./dashboard.service";
@@ -27,6 +27,12 @@ export class DashboardController {
   @Get("operational-status")
   operationalStatus(@CurrentTenant() tenant: TenantContext) {
     return this.dashboardService.operationalStatus(tenant);
+  }
+
+  @RequirePermissions(permissions.dashboard.read)
+  @Patch("onboarding")
+  onboarding(@CurrentTenant() tenant: TenantContext, @Body(new ZodValidationPipe(onboardingStateSchema)) body: never) {
+    return this.dashboardService.updateOnboarding(tenant, body);
   }
 
   @RequirePermissions(permissions.branches.update)
