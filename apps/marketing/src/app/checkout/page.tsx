@@ -41,6 +41,10 @@ export default function CheckoutPage() {
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.message ?? "Não foi possível iniciar sua contratação.");
+      if (result.trialStarted && result.loginUrl) {
+        window.location.assign(result.loginUrl);
+        return;
+      }
       if (!result.checkoutUrl) throw new Error("A cobrança foi criada, mas o checkout não foi retornado.");
       window.location.assign(result.checkoutUrl);
     } catch (cause) {

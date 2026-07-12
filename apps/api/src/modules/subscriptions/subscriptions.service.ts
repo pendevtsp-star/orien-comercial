@@ -29,6 +29,7 @@ export class SubscriptionsService {
 
     const client = await this.database.pool.connect();
     let context: TenantContext;
+    const trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     try {
       await client.query("BEGIN");
       const slug = `${slugify(input.companyName).slice(0, 60) || "empresa"}-${randomUUID().slice(0, 8)}`;
@@ -41,6 +42,7 @@ export class SubscriptionsService {
       const user = await client.query<{ id: string }>("INSERT INTO users (email,name,password_hash,is_email_verified) VALUES ($1,$2,$3,false) RETURNING id", [input.email, input.ownerName, await this.passwordService.hashPassword(input.password, this.config.PASSWORD_PEPPER)]);
       const membership = await client.query<{ id: string }>("INSERT INTO memberships (tenant_id,user_id,role_id,status) VALUES ($1,$2,$3,'active') RETURNING id", [tenantId, user.rows[0]!.id, role.rows[0]!.id]);
       await client.query("INSERT INTO tenant_settings (tenant_id,key,value) VALUES ($1,'branding',$2::jsonb)", [tenantId, JSON.stringify({ companyName: input.companyName, primaryColor: "#0B1D3D", accentColor: "#F5C34A" })]);
+      await client.query("INSERT INTO subscriptions (tenant_id,plan_id,provider,status,trial_ends_at,current_period_ends_at) VALUES ($1,$2,'manual','trial',$3,$3)", [tenantId, selectedPlan.id, trialEndsAt]);
       await client.query("COMMIT");
       context = { tenantId, userId: user.rows[0]!.id, membershipId: membership.rows[0]!.id, roleSlug: "owner", branchId: null, permissions: [] };
     } catch (error) {
@@ -49,6 +51,7 @@ export class SubscriptionsService {
     } finally {
       client.release();
     }
+    return { provider: "manual", status: "trial", trialStarted: true, trialEndsAt: trialEndsAt.toISOString(), tenantId: context.tenantId, loginUrl: `${this.config.WEB_APP_URL}/login?email=${encodeURIComponent(input.email)}&trial=1` };
     const amountCents = selectedPlan.price_cents - coupon.discountCents;
     if (amountCents < 100) throw new BadRequestException("O cupom deixa o valor da assinatura abaixo do mínimo permitido.");
     let checkoutUrl = buildMockCheckoutUrl(this.config.ASAAS_API_URL, context.tenantId, input.planSlug);
