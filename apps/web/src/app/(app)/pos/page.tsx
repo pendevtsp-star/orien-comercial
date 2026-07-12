@@ -53,6 +53,8 @@ export default function PosPage() {
   const [cashHistory, setCashHistory] = useState<CashHistory[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [scanner, setScanner] = useState("");
+  const [productSearch, setProductSearch] = useState("");
+  const [productSuggestions, setProductSuggestions] = useState<Product[]>([]);
   const [paymentMethod, setPaymentMethod] = useState("pix");
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentParts, setPaymentParts] = useState<
@@ -73,6 +75,21 @@ export default function PosPage() {
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Falha ao abrir o PDV."));
   }, []);
+  useEffect(() => {
+    const search = productSearch.trim();
+    if (search.length < 2) {
+      setProductSuggestions([]);
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      void apiFetch<ListResponse<Product>>(
+        `/products?pageSize=8&isActive=true&search=${encodeURIComponent(search)}`,
+      )
+        .then((result) => setProductSuggestions(result.data))
+        .catch(() => setProductSuggestions([]));
+    }, 180);
+    return () => window.clearTimeout(timeout);
+  }, [productSearch]);
   useEffect(() => {
     if (!branchId) return;
     void Promise.all([
@@ -112,6 +129,12 @@ export default function PosPage() {
       setError(`Produto não encontrado para ${code}.`);
       return;
     }
+    await addProduct(product);
+    setScanner("");
+    scannerRef.current?.focus();
+  }
+
+  async function addProduct(product: Product) {
     const currentQuantity = cart.find((item) => item.productId === product.id)?.quantity ?? 0;
     let resolvedPrice = Number(product.salePrice);
     try {
@@ -140,9 +163,9 @@ export default function PosPage() {
             },
           ],
     );
-    setScanner("");
+    setProductSearch("");
+    setProductSuggestions([]);
     setError(null);
-    scannerRef.current?.focus();
   }
 
   async function openCash(event: FormEvent<HTMLFormElement>) {
@@ -291,19 +314,52 @@ export default function PosPage() {
                 <Button type="submit">Abrir caixa</Button>
               </form>
             ) : (
-              <Input
-                ref={scannerRef}
-                label="Leitor de código de barras · F2"
-                value={scanner}
-                placeholder="Leia o código e pressione Enter"
-                onChange={(event) => setScanner(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    void scan();
-                  }
-                }}
-              />
+              <div className="grid gap-3">
+                <Input
+                  ref={scannerRef}
+                  label="Leitor de código de barras · F2"
+                  value={scanner}
+                  placeholder="Leia o código e pressione Enter"
+                  onChange={(event) => setScanner(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void scan();
+                    }
+                  }}
+                />
+                <div className="relative">
+                  <Input
+                    label="Adicionar produto manualmente"
+                    value={productSearch}
+                    placeholder="Digite nome, SKU ou código"
+                    onChange={(event) => setProductSearch(event.target.value)}
+                  />
+                  {productSuggestions.length ? (
+                    <div className="absolute z-20 mt-1 grid w-full overflow-hidden rounded-md border border-[var(--brand-border)] bg-white shadow-xl">
+                      {productSuggestions.map((product) => (
+                        <button
+                          key={product.id}
+                          type="button"
+                          className="grid gap-0.5 border-b border-[var(--brand-border)] px-3 py-2.5 text-left text-sm last:border-b-0 hover:bg-[var(--brand-surface)]"
+                          onClick={() => void addProduct(product)}
+                        >
+                          <strong>{product.name}</strong>
+                          <span className="text-xs text-slate-500">
+                            {[product.sku, product.barcode].filter(Boolean).join(" · ") ||
+                              "Sem código"}{" "}
+                            ·{" "}
+                            {Number(product.salePrice).toLocaleString("pt-BR", {
+                              style: "currency",
+                              currency: "BRL",
+                            })}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
             )}
             <div className="grid gap-2">
               {cart.length ? (
@@ -370,7 +426,7 @@ export default function PosPage() {
               ) : (
                 <div className="grid place-items-center gap-2 rounded-md border border-dashed border-[var(--brand-border)] py-16 text-center text-slate-500">
                   <ScanBarcode size={28} />
-                  <p>Abra o caixa e leia o primeiro produto.</p>
+                  <p>Abra o caixa, leia um código ou pesquise o primeiro produto.</p>
                 </div>
               )}
             </div>

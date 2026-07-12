@@ -14,7 +14,9 @@ import type {
   TenantBrandingInput,
   UserInviteInput,
 } from "@sgc/types";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import type { PoolClient } from "pg";
 import { DatabaseService } from "../database/database.service";
 import type { TenantContext } from "../../shared/request-context";
@@ -103,7 +105,13 @@ export class TenantsService {
 
     const user = userResult.rows[0];
     return {
-      user: user ? { ...user, isPlatformAdmin: user.email.toLowerCase() === this.config.PLATFORM_OWNER_EMAIL.toLowerCase() } : user,
+      user: user
+        ? {
+            ...user,
+            isPlatformAdmin:
+              user.email.toLowerCase() === this.config.PLATFORM_OWNER_EMAIL.toLowerCase(),
+          }
+        : user,
       memberships: memberships.rows,
     };
   }
@@ -153,7 +161,11 @@ export class TenantsService {
 
   async updateBranding(context: TenantContext, input: TenantBrandingInput) {
     const result = await this.database.tenantTransaction(context.tenantId, async (client) => {
-      const branding = resolveBranding(input);
+      const { logoData, ...brandingInput } = input;
+      const logoUrl = logoData
+        ? await this.persistBrandingLogo(context.tenantId, logoData)
+        : brandingInput.logoUrl;
+      const branding = resolveBranding({ ...brandingInput, logoUrl });
       await client.query(
         `
         INSERT INTO tenant_settings (tenant_id, key, value)
@@ -173,6 +185,7 @@ export class TenantsService {
           companyName: branding.companyName,
           primaryColor: branding.primaryColor,
           accentColor: branding.accentColor,
+          hasLogo: Boolean(branding.logoUrl),
         },
       });
 
@@ -180,6 +193,21 @@ export class TenantsService {
     });
 
     return result;
+  }
+
+  private async persistBrandingLogo(tenantId: string, dataUrl: string) {
+    const match = /^data:image\/(png|jpeg|webp|svg\+xml);base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+    if (!match)
+      throw new BadRequestException("Arquivo de logo inválido. Use PNG, JPEG, WebP ou SVG.");
+    const content = Buffer.from(match[2]!, "base64");
+    if (!content.length || content.length > 2 * 1024 * 1024)
+      throw new BadRequestException("O logo deve ter no máximo 2 MB.");
+    const extension = match[1] === "jpeg" ? "jpg" : match[1] === "svg+xml" ? "svg" : match[1]!;
+    const folder = resolve(this.config.UPLOAD_DIR, "branding", tenantId);
+    await mkdir(folder, { recursive: true });
+    const filename = `${randomUUID()}.${extension}`;
+    await writeFile(join(folder, filename), content);
+    return `/uploads/branding/${tenantId}/${filename}`;
   }
 
   async listMembers(context: TenantContext, query: MembershipListQuery) {

@@ -36,7 +36,14 @@ import { useEffect, useMemo, useState } from "react";
 import { apiFetch, getTenantId, setTenantId } from "../lib/api";
 import { applyPreferences, defaultPreferences, type UserPreferences } from "../lib/preferences";
 
-type NavigationItem = { href: string; label: string; icon: typeof BarChart3; permissions?: string[]; anyPermissions?: string[]; platformOnly?: boolean };
+type NavigationItem = {
+  href: string;
+  label: string;
+  icon: typeof BarChart3;
+  permissions?: string[];
+  anyPermissions?: string[];
+  platformOnly?: boolean;
+};
 const navigation: NavigationItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: BarChart3, permissions: ["dashboard.read"] },
   { href: "/branches", label: "Lojas", icon: Building2, permissions: ["branches.read"] },
@@ -49,12 +56,32 @@ const navigation: NavigationItem[] = [
   { href: "/customers", label: "Clientes", icon: UsersRound, permissions: ["customers.read"] },
   { href: "/loyalty", label: "Fidelidade", icon: Gift, permissions: ["customers.read"] },
   { href: "/catalog-tools", label: "Ferramentas", icon: Wrench, permissions: ["products.read"] },
-  { href: "/financial", label: "Financeiro", icon: CircleDollarSign, permissions: ["financial.read"] },
-  { href: "/reports", label: "Relatórios", icon: FileBarChart, anyPermissions: ["dashboard.read", "sales.read", "financial.read", "stock.reports"] },
+  {
+    href: "/financial",
+    label: "Financeiro",
+    icon: CircleDollarSign,
+    permissions: ["financial.read"],
+  },
+  {
+    href: "/reports",
+    label: "Relatórios",
+    icon: FileBarChart,
+    anyPermissions: ["dashboard.read", "sales.read", "financial.read", "stock.reports"],
+  },
   { href: "/alerts", label: "Alertas", icon: BellRing, permissions: ["stock.read"] },
-  { href: "/operations", label: "Operacoes avancadas", icon: Layers3, permissions: ["dashboard.read"] },
+  {
+    href: "/operations",
+    label: "Operacoes avancadas",
+    icon: Layers3,
+    permissions: ["dashboard.read"],
+  },
   { href: "/team", label: "Equipe", icon: ShieldCheck, permissions: ["users.read"] },
-  { href: "/subscription", label: "Assinatura", icon: CreditCard, permissions: ["subscriptions.read"] },
+  {
+    href: "/subscription",
+    label: "Assinatura",
+    icon: CreditCard,
+    permissions: ["subscriptions.read"],
+  },
   { href: "/settings", label: "Configuracoes", icon: Settings, permissions: ["tenants.read"] },
   { href: "/integrations", label: "Integrações", icon: PlugZap, permissions: ["tenants.read"] },
   { href: "/preferences", label: "Preferencias", icon: Palette },
@@ -148,10 +175,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       null
     );
   }, [me]);
-  useEffect(() => { document.title = currentMembership?.tenantName ? `Orien | ${currentMembership.tenantName}` : "Orien | Gestão inteligente"; }, [currentMembership?.tenantName]);
+  useEffect(() => {
+    document.title = currentMembership?.tenantName
+      ? `Orien | ${currentMembership.tenantName}`
+      : "Orien | Gestão inteligente";
+  }, [currentMembership?.tenantName]);
   const allowedNavigation = useMemo(() => {
     const granted = currentMembership?.permissions ?? [];
-    return navigation.filter((item) => (!item.platformOnly || me?.user.isPlatformAdmin) && (!item.permissions || item.permissions.every((permission) => granted.includes(permission))) && (!item.anyPermissions || item.anyPermissions.some((permission) => granted.includes(permission))));
+    return navigation.filter(
+      (item) =>
+        (!item.platformOnly || me?.user.isPlatformAdmin) &&
+        (!item.permissions ||
+          item.permissions.every((permission) => granted.includes(permission))) &&
+        (!item.anyPermissions ||
+          item.anyPermissions.some((permission) => granted.includes(permission))),
+    );
   }, [currentMembership]);
   const orderedNavigation = useMemo(
     () =>
@@ -169,7 +207,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const grantedPermissions = currentMembership?.permissions ?? [];
   const routeAllowed =
     !routeItem ||
-    ((!routeItem.platformOnly || me?.user.isPlatformAdmin) && (!routeItem.permissions || routeItem.permissions.every((permission) => grantedPermissions.includes(permission))) && (!routeItem.anyPermissions || routeItem.anyPermissions.some((permission) => grantedPermissions.includes(permission))));
+    ((!routeItem.platformOnly || me?.user.isPlatformAdmin) &&
+      (!routeItem.permissions ||
+        routeItem.permissions.every((permission) => grantedPermissions.includes(permission))) &&
+      (!routeItem.anyPermissions ||
+        routeItem.anyPermissions.some((permission) => grantedPermissions.includes(permission))));
   const initials = (me?.user.name ?? "Orien")
     .split(" ")
     .slice(0, 2)
@@ -230,7 +272,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     key={item.href}
                     href={item.href}
                     onClick={() => setMobileNavigationOpen(false)}
-                    className={`flex h-11 items-center gap-3 rounded-md px-3 text-sm font-medium ${active ? "bg-[linear-gradient(135deg,#133A7C,#2563EB)] text-white" : "text-white/80 hover:bg-white/10"}`}
+                    className={`orien-nav-item flex h-11 items-center gap-3 rounded-md px-3 text-sm font-medium ${active ? "orien-nav-item-active" : ""}`}
                   >
                     <Icon size={17} />
                     {item.label}
@@ -265,9 +307,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   href={item.href}
                   title={compact ? item.label : undefined}
                   className={`flex h-11 items-center rounded-md text-sm font-medium transition ${compact ? "justify-center px-0" : "gap-3 px-3"} ${
-                    active
-                      ? "bg-[linear-gradient(135deg,#133A7C,#2563EB)] text-white shadow-[0_10px_24px_rgba(37,99,235,0.28)]"
-                      : "text-white/74 hover:bg-white/8 hover:text-white"
+                    active ? "orien-nav-item-active" : "orien-nav-item"
                   }`}
                 >
                   <Icon size={17} />
@@ -409,7 +449,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           ) : routeAllowed ? (
             children
           ) : (
-            <div className="py-16 text-center text-sm text-slate-500">Redirecionando para uma area autorizada...</div>
+            <div className="py-16 text-center text-sm text-slate-500">
+              Redirecionando para uma area autorizada...
+            </div>
           )}
         </main>
         <footer className="px-3 pb-4 text-center text-[11px] text-slate-500 sm:px-4 lg:px-6">

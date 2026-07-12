@@ -97,7 +97,11 @@ async function refreshSession() {
   return refreshPromise;
 }
 
-export async function openApiDocument(path: string, allowRefresh = true): Promise<void> {
+export async function openApiDocument(
+  path: string,
+  print = false,
+  allowRefresh = true,
+): Promise<void> {
   const popup = window.open("", "_blank");
   if (!popup) {
     throw new Error("O navegador bloqueou a janela. Permita pop-ups para visualizar o documento.");
@@ -108,14 +112,19 @@ export async function openApiDocument(path: string, allowRefresh = true): Promis
   );
 
   try {
-    await loadApiDocument(path, popup, allowRefresh);
+    await loadApiDocument(path, popup, print, allowRefresh);
   } catch (error) {
     popup.close();
     throw error;
   }
 }
 
-async function loadApiDocument(path: string, popup: Window, allowRefresh: boolean): Promise<void> {
+async function loadApiDocument(
+  path: string,
+  popup: Window,
+  print: boolean,
+  allowRefresh: boolean,
+): Promise<void> {
   const tenantId = getTenantId();
   const headers = new Headers();
   const requestId = createRequestId();
@@ -128,7 +137,7 @@ async function loadApiDocument(path: string, popup: Window, allowRefresh: boolea
   });
 
   if (response.status === 401 && allowRefresh && (await refreshSession())) {
-    return loadApiDocument(path, popup, false);
+    return loadApiDocument(path, popup, print, false);
   }
 
   if (!response.ok) {
@@ -146,8 +155,10 @@ async function loadApiDocument(path: string, popup: Window, allowRefresh: boolea
 
   const html = await response.text();
   popup.document.open();
-  popup.document.write(html);
+  const apiOrigin = new URL(API_URL).origin;
+  popup.document.write(html.replace("<head>", `<head><base href="${apiOrigin}/" />`));
   popup.document.close();
+  if (print) window.setTimeout(() => popup.print(), 350);
 }
 
 function createRequestId() {

@@ -57,7 +57,7 @@ export const defaultTenantBranding: TenantBranding = {
   primaryColor: "#0B1D3D",
   accentColor: "#F5C34A",
   website: "useorien.com.br",
-  footerNote: "Documento gerado automaticamente pela Orien."
+  footerNote: "Documento gerado automaticamente pela Orien.",
 };
 
 export function resolveBranding(input?: Partial<TenantBranding> | null): TenantBranding {
@@ -66,14 +66,17 @@ export function resolveBranding(input?: Partial<TenantBranding> | null): TenantB
     ...input,
     companyName: input?.companyName?.trim() || defaultTenantBranding.companyName,
     primaryColor: normalizeHex(input?.primaryColor, defaultTenantBranding.primaryColor),
-    accentColor: normalizeHex(input?.accentColor, defaultTenantBranding.accentColor)
+    accentColor: normalizeHex(input?.accentColor, defaultTenantBranding.accentColor),
   };
 }
 
 export function renderDocumentHtml(input: DocumentRenderInput): string {
   const branding = resolveBranding(input.branding);
   const metaHtml = (input.meta ?? [])
-    .map((item) => `<div class="meta-card"><span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.value)}</strong></div>`)
+    .map(
+      (item) =>
+        `<div class="meta-card"><span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.value)}</strong></div>`,
+    )
     .join("");
   const sectionHtml = input.sections.map((section) => renderSection(section)).join("");
 
@@ -96,7 +99,7 @@ export function renderDocumentHtml(input: DocumentRenderInput): string {
           ${input.subtitle ? `<p class="subtitle">${escapeHtml(input.subtitle)}</p>` : ""}
         </div>
         <div class="brand-mark">
-          <span>${escapeHtml(input.badge || "Documento oficial")}</span>
+          ${branding.logoUrl ? `<img src="${escapeHtml(branding.logoUrl)}" alt="Logo ${escapeHtml(branding.companyName)}" />` : `<span>${escapeHtml(input.badge || "Documento oficial")}</span>`}
         </div>
       </header>
       <section class="brand-strip">
@@ -156,7 +159,10 @@ export function renderEmailHtml(input: EmailRenderInput): string {
 function renderSection(section: DocumentSection): string {
   const metricsHtml = section.metrics?.length
     ? `<div class="metric-grid">${section.metrics
-        .map((metric) => `<div class="metric-card"><span>${escapeHtml(metric.label)}</span><strong>${escapeHtml(metric.value)}</strong></div>`)
+        .map(
+          (metric) =>
+            `<div class="metric-card"><span>${escapeHtml(metric.label)}</span><strong>${escapeHtml(metric.value)}</strong></div>`,
+        )
         .join("")}</div>`
     : "";
   const tableHtml = section.table ? renderTable(section.table.columns, section.table.rows) : "";
@@ -178,7 +184,7 @@ function renderTable(columns: Array<{ key: string; label: string }>, rows: Docum
       (row) =>
         `<tr>${columns
           .map((column) => `<td>${escapeHtml(String(row[column.key] ?? "-"))}</td>`)
-          .join("")}</tr>`
+          .join("")}</tr>`,
     )
     .join("");
   return `<div class="table-wrap"><table><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table></div>`;
@@ -224,6 +230,7 @@ function baseStyles(branding: TenantBranding): string {
       font-size: 13px;
       font-weight: 600;
     }
+    .brand-mark img { max-width: 140px; max-height: 56px; border-radius: 10px; background: white; object-fit: contain; padding: 6px; }
     .brand-strip, .meta-grid, .metric-grid { display: grid; gap: 16px; }
     .brand-strip {
       grid-template-columns: repeat(2, minmax(0, 1fr));

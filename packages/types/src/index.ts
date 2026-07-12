@@ -412,6 +412,7 @@ export const tenantBrandingSchema = z.object({
   supportPhone: z.string().trim().max(30).optional(),
   website: z.string().trim().max(180).optional(),
   logoUrl: z.string().url().optional(),
+  logoData: z.string().max(7_000_000).optional(),
   footerNote: z.string().trim().max(240).optional(),
 });
 

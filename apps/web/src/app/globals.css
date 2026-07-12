@@ -266,6 +266,21 @@ h3,
   box-shadow: 0 6px 16px rgba(37, 99, 235, 0.24);
 }
 
+.orien-nav-item {
+  color: rgb(255 255 255 / 0.74);
+}
+
+.orien-nav-item:hover {
+  background: rgb(255 255 255 / 0.08);
+  color: #fff;
+}
+
+.orien-nav-item-active {
+  background: linear-gradient(135deg, var(--brand-secondary), var(--brand-highlight));
+  color: #fff;
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--brand-highlight) 28%, transparent);
+}
+
 [data-orien-tab="true"]:focus-visible {
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.24);
 }

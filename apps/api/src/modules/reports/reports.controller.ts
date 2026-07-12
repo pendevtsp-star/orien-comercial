@@ -17,17 +17,81 @@ export class ReportsController {
   constructor(@Inject(ReportsService) private readonly reports: ReportsService) {}
 
   @RequirePermissions(permissions.dashboard.read)
-  @Get("overview") overview(@CurrentTenant() tenant: TenantContext, @Query("startDate") startDate?: string, @Query("endDate") endDate?: string) { return this.reports.overview(tenant, startDate, endDate); }
+  @Get("overview")
+  overview(
+    @CurrentTenant() tenant: TenantContext,
+    @Query("startDate") startDate?: string,
+    @Query("endDate") endDate?: string,
+  ) {
+    return this.reports.overview(tenant, startDate, endDate);
+  }
 
   @RequirePermissions(permissions.sales.read)
-  @Get("sales") sales(@CurrentTenant() tenant: TenantContext, @Query("startDate") startDate?: string, @Query("endDate") endDate?: string) { return this.reports.sales(tenant, startDate, endDate); }
+  @Get("sales")
+  sales(
+    @CurrentTenant() tenant: TenantContext,
+    @Query("startDate") startDate?: string,
+    @Query("endDate") endDate?: string,
+  ) {
+    return this.reports.sales(tenant, startDate, endDate);
+  }
 
   @RequirePermissions(permissions.financial.read)
-  @Get("financial") financial(@CurrentTenant() tenant: TenantContext, @Query("startDate") startDate?: string, @Query("endDate") endDate?: string) { return this.reports.financial(tenant, startDate, endDate); }
+  @Get("financial")
+  financial(
+    @CurrentTenant() tenant: TenantContext,
+    @Query("startDate") startDate?: string,
+    @Query("endDate") endDate?: string,
+  ) {
+    return this.reports.financial(tenant, startDate, endDate);
+  }
 
   @RequirePermissions(permissions.stock.reports)
-  @Get("stock") stock(@CurrentTenant() tenant: TenantContext) { return this.reports.stock(tenant); }
+  @Get("stock")
+  stock(@CurrentTenant() tenant: TenantContext) {
+    return this.reports.stock(tenant);
+  }
 
   @RequirePermissions(permissions.dashboard.read)
-  @Get("overview/document") async overviewDocument(@CurrentTenant() tenant: TenantContext, @Query("startDate") startDate: string | undefined, @Query("endDate") endDate: string | undefined, @Res() response: Response) { response.type("html"); response.send(await this.reports.overviewDocument(tenant, startDate, endDate)); }
+  @Get("overview/document")
+  async overviewDocument(
+    @CurrentTenant() tenant: TenantContext,
+    @Query("startDate") startDate: string | undefined,
+    @Query("endDate") endDate: string | undefined,
+    @Res() response: Response,
+  ) {
+    response.type("html");
+    response.send(await this.reports.overviewDocument(tenant, startDate, endDate));
+  }
+
+  @RequirePermissions(permissions.sales.read)
+  @Get("sales/document")
+  async salesDocument(
+    @CurrentTenant() tenant: TenantContext,
+    @Query("startDate") startDate: string | undefined,
+    @Query("endDate") endDate: string | undefined,
+    @Res() response: Response,
+  ) {
+    response.type("html");
+    response.send(await this.reports.document(tenant, "sales", startDate, endDate));
+  }
+
+  @RequirePermissions(permissions.financial.read)
+  @Get("financial/document")
+  async financialDocument(
+    @CurrentTenant() tenant: TenantContext,
+    @Query("startDate") startDate: string | undefined,
+    @Query("endDate") endDate: string | undefined,
+    @Res() response: Response,
+  ) {
+    response.type("html");
+    response.send(await this.reports.document(tenant, "financial", startDate, endDate));
+  }
+
+  @RequirePermissions(permissions.stock.reports)
+  @Get("stock/document")
+  async stockDocument(@CurrentTenant() tenant: TenantContext, @Res() response: Response) {
+    response.type("html");
+    response.send(await this.reports.document(tenant, "stock"));
+  }
 }
