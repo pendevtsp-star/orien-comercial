@@ -333,11 +333,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const groups = navigationGroups
       .map((group) => ({
         ...group,
-        items: group.routes
-          .map((route) => allowedNavigation.find((item) => item.href === route))
-          .filter(
-            (item): item is NavigationItem => Boolean(item) && !favoriteRoutes.has(item.href),
-          ),
+        items: group.routes.flatMap((route) => {
+          const item = allowedNavigation.find((candidate) => candidate.href === route);
+          return item && !favoriteRoutes.has(item.href) ? [item] : [];
+        }),
       }))
       .filter((group) => group.items.length > 0);
     return { favoriteItems, groups };
