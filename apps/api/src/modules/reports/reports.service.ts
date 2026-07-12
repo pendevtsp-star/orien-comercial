@@ -1,6 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { TenantContext } from "../../shared/request-context";
 import { DatabaseService } from "../database/database.service";
+import { renderDocumentHtml } from "@sgc/documents";
+import { loadTenantBranding } from "../../shared/tenant-branding";
 
 @Injectable()
 export class ReportsService {
@@ -53,5 +55,10 @@ export class ReportsService {
       FROM stock_balances sb JOIN products p ON p.id=sb.product_id JOIN branches b ON b.id=sb.branch_id
       WHERE sb.tenant_id=$1${branch} ORDER BY sb.quantity <= p.min_stock DESC, p.name LIMIT 100`, params);
     return { items: rows.rows };
+  }
+
+  async overviewDocument(context: TenantContext, startDate?: string, endDate?: string) {
+    const [branding, data] = await Promise.all([loadTenantBranding(this.database, context.tenantId), this.overview(context, startDate, endDate)]);
+    return renderDocumentHtml({ title: "Relatório gerencial", subtitle: "Leitura executiva de vendas e relacionamento no período selecionado.", badge: "Orien Relatórios", branding, meta: [{ label: "Período", value: `${data.period.startDate} a ${data.period.endDate}` }, { label: "Escopo", value: context.branchId ? "Filial autorizada" : "Todas as lojas" }, { label: "Emitido em", value: new Date().toLocaleString("pt-BR") }], sections: [{ title: "Resumo executivo", metrics: [{ label: "Vendas", value: String(data.salesCount ?? 0) }, { label: "Receita", value: Number(data.grossRevenue ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) }, { label: "Ticket médio", value: Number(data.averageTicket ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) }], contentHtml: `<p>Base ativa de clientes: <strong>${data.customers ?? 0}</strong>. Descontos concedidos: <strong>${Number(data.discounts ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong>.</p>` }] });
   }
 }

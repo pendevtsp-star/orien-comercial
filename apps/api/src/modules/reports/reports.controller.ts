@@ -1,4 +1,5 @@
-import { Controller, Get, Inject, Query, UseGuards } from "@nestjs/common";
+import { Controller, Get, Inject, Query, Res, UseGuards } from "@nestjs/common";
+import type { Response } from "express";
 import { ApiTags } from "@nestjs/swagger";
 import { permissions } from "@sgc/auth";
 import { JwtAuthGuard } from "../../shared/auth.guard";
@@ -26,4 +27,7 @@ export class ReportsController {
 
   @RequirePermissions(permissions.stock.reports)
   @Get("stock") stock(@CurrentTenant() tenant: TenantContext) { return this.reports.stock(tenant); }
+
+  @RequirePermissions(permissions.dashboard.read)
+  @Get("overview/document") async overviewDocument(@CurrentTenant() tenant: TenantContext, @Query("startDate") startDate: string | undefined, @Query("endDate") endDate: string | undefined, @Res() response: Response) { response.type("html"); response.send(await this.reports.overviewDocument(tenant, startDate, endDate)); }
 }

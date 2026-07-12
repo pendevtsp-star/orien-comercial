@@ -330,6 +330,8 @@ export const asaasWebhookSchema = z.object({
     id: z.string(),
     customer: z.string().optional(),
     subscription: z.string().optional(),
+    externalReference: z.string().optional(),
+    invoiceUrl: z.string().url().optional(),
     value: z.coerce.number().optional(),
     status: z.string().optional()
   }).optional()

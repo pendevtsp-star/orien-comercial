@@ -101,8 +101,17 @@ export class SubscriptionsService {
           externalCustomerId = customerData.id ?? null;
         }
 
-        providerSubscriptionId = `sandbox-${context.tenantId}-${selectedPlan.slug}`;
-        checkoutUrl = buildHostedSubscriptionUrl(this.config.ASAAS_API_URL, providerSubscriptionId);
+        if (!externalCustomerId) throw new Error("Não foi possível criar o cliente no Asaas.");
+        const subscriptionResponse = await fetch(`${this.config.ASAAS_API_URL}/subscriptions`, {
+          method: "POST",
+          headers: { accept: "application/json", "content-type": "application/json", access_token: this.config.ASAAS_API_KEY },
+          body: JSON.stringify({ customer: externalCustomerId, billingType: input.billingType, value: selectedPlan.price_cents / 100, nextDueDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10), externalReference: context.tenantId, description: `Orien ${selectedPlan.name}` })
+        });
+        if (!subscriptionResponse.ok) throw new Error("O Asaas recusou o checkout. Revise as credenciais e o cadastro.");
+        const subscriptionData = (await subscriptionResponse.json()) as { id?: string; invoiceUrl?: string };
+        providerSubscriptionId = subscriptionData.id ?? null;
+        if (!providerSubscriptionId) throw new Error("O Asaas não retornou o identificador da assinatura.");
+        checkoutUrl = subscriptionData.invoiceUrl ?? buildHostedSubscriptionUrl(this.config.ASAAS_API_URL, providerSubscriptionId);
       }
 
       const existing = await client.query<{ id: string }>(
@@ -168,7 +177,7 @@ export class SubscriptionsService {
         return { ok: true, duplicated: true };
       }
 
-      const tenantId = payload.payment?.customer || payload.payment?.subscription || null;
+      const tenantId = payload.payment?.externalReference || payload.payment?.customer || payload.payment?.subscription || null;
       const tenantLookup: QueryResult<{ tenant_id: string }> | null = tenantId
         ? await client.query<{ tenant_id: string }>(
             `
@@ -204,19 +213,22 @@ export class SubscriptionsService {
       if (resolvedTenantId && payload.payment?.id) {
         await client.query(
           `
-          INSERT INTO subscription_invoices (tenant_id, subscription_id, provider_invoice_id, amount, status, external_reference)
-          SELECT $1, s.id, $2, $3, $4, $5
+          INSERT INTO subscription_invoices (tenant_id, subscription_id, provider_invoice_id, amount, status, invoice_url, external_reference)
+          SELECT $1, s.id, $2, $3, $4, $5, $6
           FROM subscriptions s
           WHERE s.tenant_id = $1
           ORDER BY s.created_at DESC
           LIMIT 1
+          ON CONFLICT (provider_invoice_id) WHERE provider_invoice_id IS NOT NULL DO UPDATE
+          SET status = EXCLUDED.status, amount = EXCLUDED.amount, invoice_url = EXCLUDED.invoice_url, updated_at = now()
           `,
           [
             resolvedTenantId,
             payload.payment.id,
             payload.payment.value ?? 0,
             normalizeInvoiceStatus(payload.payment.status),
-            payload.payment.subscription ?? payload.payment.customer ?? payload.payment.id
+            payload.payment.invoiceUrl ?? null,
+            payload.payment.externalReference ?? payload.payment.subscription ?? payload.payment.customer ?? payload.payment.id
           ]
         );
       }
