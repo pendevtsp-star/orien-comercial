@@ -1,12 +1,3 @@
-import { Controller, Get, Inject, UseGuards } from "@nestjs/common";
-import { JwtAuthGuard } from "../../shared/auth.guard";
-import { CurrentUser } from "../../shared/current-user.decorator";
-import type { AuthUser } from "../../shared/request-context";
-import { PlatformService } from "./platform.service";
-@UseGuards(JwtAuthGuard)
-@Controller("platform")
-export class PlatformController {
-  constructor(@Inject(PlatformService) private readonly platform: PlatformService) {}
-  @Get("overview") async overview(@CurrentUser() user: AuthUser) { await this.platform.assertOwner(user.userId); return this.platform.overview(); }
-  @Get("tenants") async tenants(@CurrentUser() user: AuthUser) { await this.platform.assertOwner(user.userId); return this.platform.tenants(); }
-}
+import { Body, Controller, Get, Inject, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import { JwtAuthGuard } from "../../shared/auth.guard"; import { CurrentUser } from "../../shared/current-user.decorator"; import type { AuthUser } from "../../shared/request-context"; import { PlatformService } from "./platform.service";
+@UseGuards(JwtAuthGuard) @Controller("platform") export class PlatformController {constructor(@Inject(PlatformService)private readonly p:PlatformService){} private async ok(u:AuthUser){await this.p.assertOwner(u.userId)} @Get("overview")async overview(@CurrentUser()u:AuthUser){await this.ok(u);return this.p.overview()} @Get("tenants")async tenants(@CurrentUser()u:AuthUser){await this.ok(u);return this.p.tenants()} @Patch("tenants/:id/status")async status(@CurrentUser()u:AuthUser,@Param("id")id:string,@Body()b:{status:string}){await this.ok(u);return this.p.updateTenant(u.userId,id,b.status)} @Get("billing")async billing(@CurrentUser()u:AuthUser){await this.ok(u);return this.p.billing()} @Get("health")async health(@CurrentUser()u:AuthUser){await this.ok(u);return this.p.health()} @Get("staff")async staff(@CurrentUser()u:AuthUser){await this.ok(u);return this.p.staff()} @Get("tenants/:id/notes")async notes(@CurrentUser()u:AuthUser,@Param("id")id:string){await this.ok(u);return this.p.supportNotes(id)} @Post("tenants/:id/notes")async note(@CurrentUser()u:AuthUser,@Param("id")id:string,@Body()b:{body:string}){await this.ok(u);return this.p.addSupportNote(u.userId,id,b.body)}}
