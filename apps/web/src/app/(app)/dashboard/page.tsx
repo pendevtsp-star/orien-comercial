@@ -33,6 +33,15 @@ interface Summary {
   cashForecast: number;
   salesGoal: number;
   goalProgressPercent: number | null;
+  roleFocus: string;
+  sellerCommission: number;
+  health: {
+    grossMargin: number;
+    stockTurnover: number;
+    overdueReceivables: number;
+    stockoutRisk: number;
+    purchaseSuggestions: Array<{ name: string; quantity: string; minStock: string; suggestedQuantity: string }>;
+  };
 }
 
 const cards = [
@@ -295,6 +304,33 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </section>
+      <section className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+        <Card>
+          <CardContent className="grid gap-4">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Seu foco hoje</p>
+              <h2 className="mt-2 text-lg font-semibold text-[var(--brand-primary)]">{roleFocus(summary?.roleFocus)}</h2>
+              <p className="mt-1 text-sm text-slate-500">{roleDescription(summary?.roleFocus)}</p>
+            </div>
+            {summary?.roleFocus === "seller" || summary?.roleFocus === "sales" ? <Metric label="Comissão no período" value={summary.sellerCommission} money loading={loading} /> : null}
+            {summary?.roleFocus === "manager" ? <Metric label="Estoque crítico na loja" value={summary.health.stockoutRisk} loading={loading} /> : null}
+            {summary?.roleFocus === "owner" || summary?.roleFocus === "admin" ? <Metric label="Margem bruta no período" value={summary.health.grossMargin} money loading={loading} /> : null}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="grid gap-4">
+            <div><p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Saúde operacional</p><h2 className="mt-2 text-lg font-semibold text-[var(--brand-primary)]">Risco e sugestão de compra</h2></div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Metric label="Margem" value={summary?.health.grossMargin ?? 0} money loading={loading} />
+              <Metric label="Giro de estoque" value={`${(summary?.health.stockTurnover ?? 0).toFixed(2)}x`} loading={loading} />
+              <Metric label="Inadimplência" value={summary?.health.overdueReceivables ?? 0} money loading={loading} />
+            </div>
+            <div className="grid divide-y divide-[var(--brand-border)] rounded-md border border-[var(--brand-border)]">
+              {summary?.health.purchaseSuggestions.length ? summary.health.purchaseSuggestions.map((item) => <div className="flex items-center justify-between gap-3 p-3 text-sm" key={item.name}><span className="truncate font-medium">{item.name}</span><span className="shrink-0 text-slate-500">Sugerir {Number(item.suggestedQuantity).toLocaleString("pt-BR")}</span></div>) : <p className="p-3 text-sm text-slate-500">Nenhum produto em ponto de reposição.</p>}
+            </div>
+          </CardContent>
+        </Card>
+      </section>
       <section data-dashboard-widget="period" className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card>
           <CardContent>
@@ -381,7 +417,7 @@ function Metric({
   loading = false,
 }: {
   label: string;
-  value: number;
+  value: number | string;
   money?: boolean;
   loading?: boolean;
 }) {
@@ -394,7 +430,7 @@ function Metric({
         {loading
           ? "..."
           : money
-            ? value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+            ? Number(value).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
             : value}
       </p>
     </div>
@@ -443,4 +479,16 @@ function iconToneClass(tone: "primary" | "secondary" | "highlight" | "accent") {
     default:
       return `${base} bg-[rgba(11,29,61,0.08)] text-[var(--brand-primary)]`;
   }
+}
+
+function roleFocus(role?: string) {
+  if (role === "seller" || role === "sales") return "Metas e comissão";
+  if (role === "manager") return "Loja, caixa e estoque";
+  return "Visão consolidada do negócio";
+}
+
+function roleDescription(role?: string) {
+  if (role === "seller" || role === "sales") return "Acompanhe seu ritmo de vendas, ticket e comissão do período.";
+  if (role === "manager") return "Priorize divergências de caixa, reposição e operação da filial autorizada.";
+  return "Leia margem, inadimplência, giro e reposição para orientar decisões de gestão.";
 }

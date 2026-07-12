@@ -73,6 +73,48 @@ export class CustomersService {
     return customer;
   }
 
+  async history(context: TenantContext, id: string) {
+    const customer = await this.get(context, id);
+    const [sales, receivables, wallet, credits, audit] = await Promise.all([
+      this.database.tenantQuery(
+        context.tenantId,
+        `SELECT s.id, s.status, s.total_amount::text AS "totalAmount", s.created_at AS "createdAt", b.name AS "branchName"
+         FROM sales s JOIN branches b ON b.id=s.branch_id
+         WHERE s.tenant_id=$1 AND s.customer_id=$2 AND s.deleted_at IS NULL
+         ORDER BY s.created_at DESC LIMIT 20`,
+        [context.tenantId, id],
+      ),
+      this.database.tenantQuery(
+        context.tenantId,
+        `SELECT id, amount::text AS amount, due_date AS "dueDate", status, created_at AS "createdAt"
+         FROM accounts_receivable WHERE tenant_id=$1 AND customer_id=$2
+         ORDER BY created_at DESC LIMIT 20`,
+        [context.tenantId, id],
+      ),
+      this.database.tenantQuery(
+        context.tenantId,
+        `SELECT points_balance AS "pointsBalance", balance::text AS balance, updated_at AS "updatedAt"
+         FROM loyalty_wallets WHERE tenant_id=$1 AND customer_id=$2 LIMIT 1`,
+        [context.tenantId, id],
+      ),
+      this.database.tenantQuery(
+        context.tenantId,
+        `SELECT amount::text AS amount, balance::text AS balance, status, expires_at AS "expiresAt", created_at AS "createdAt"
+         FROM customer_credits WHERE tenant_id=$1 AND customer_id=$2 ORDER BY created_at DESC LIMIT 10`,
+        [context.tenantId, id],
+      ),
+      this.database.tenantQuery(
+        context.tenantId,
+        `SELECT a.action, a.metadata, a.created_at AS "createdAt", u.name AS "actorName"
+         FROM audit_logs a LEFT JOIN users u ON u.id=a.actor_user_id
+         WHERE a.tenant_id=$1 AND (a.entity_id=$2 OR a.metadata::text ILIKE $3)
+         ORDER BY a.created_at DESC LIMIT 20`,
+        [context.tenantId, id, `%${id}%`],
+      ),
+    ]);
+    return { customer, sales: sales.rows, receivables: receivables.rows, loyalty: wallet.rows[0] ?? null, credits: credits.rows, audit: audit.rows };
+  }
+
   async create(context: TenantContext, input: CustomerCreateInput) {
     ensureBranchAccess(context, input.branchId);
 

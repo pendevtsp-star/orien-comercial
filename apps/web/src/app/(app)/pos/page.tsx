@@ -76,6 +76,17 @@ export default function PosPage() {
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Falha ao abrir o PDV."));
   }, []);
+  function repeatLastSale() {
+    const last = window.localStorage.getItem("orien.pos.last-cart");
+    if (!last) { setError("Ainda não há uma venda anterior neste dispositivo."); return; }
+    try {
+      const saved = JSON.parse(last) as { items: CartItem[]; branchId: string };
+      setCart(saved.items);
+      if (saved.branchId) setBranchId(saved.branchId);
+      setPaymentParts([]);
+      setError(null);
+    } catch { setError("Não foi possível recuperar a última composição."); }
+  }
   useEffect(() => {
     const queueKey = "orien.pos.pending-sales";
     const sync = async () => {
@@ -264,6 +275,7 @@ export default function PosPage() {
         items: cart.map(({ name: _name, ...item }) => item),
         payments,
       };
+      window.localStorage.setItem("orien.pos.last-cart", JSON.stringify({ items: cart, branchId }));
       if (!navigator.onLine) {
         const queueKey = "orien.pos.pending-sales";
         const pending = JSON.parse(window.localStorage.getItem(queueKey) ?? "[]") as Array<
@@ -289,6 +301,7 @@ export default function PosPage() {
         description="Scanner sempre disponível, atalhos de pagamento e controle de abertura e fechamento do caixa."
         actions={
           <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={repeatLastSale} disabled={!cash}>Repetir última venda</Button>
             <Button
               variant="secondary"
               onClick={() => void cashMovement("supply")}

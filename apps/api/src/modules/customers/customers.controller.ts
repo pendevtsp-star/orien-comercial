@@ -24,6 +24,12 @@ export class CustomersController {
   }
 
   @RequirePermissions(permissions.customers.read)
+  @Get(":id/history")
+  history(@CurrentTenant() tenant: TenantContext, @Param("id") id: string) {
+    return this.customersService.history(tenant, id);
+  }
+
+  @RequirePermissions(permissions.customers.read)
   @Get(":id")
   get(@CurrentTenant() tenant: TenantContext, @Param("id") id: string) {
     return this.customersService.get(tenant, id);

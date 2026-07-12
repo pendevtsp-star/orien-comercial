@@ -23,6 +23,7 @@ interface ResourcePageProps<T extends { id: string; isActive?: boolean | null }>
   heroBadge?: string;
   insights?: Array<{ label: string; value: (rows: T[]) => number | string; detail: string; icon: LucideIcon; accent?: boolean }>;
   sortOptions?: Array<{ label: string; value: string }>;
+  rowActions?: (row: T) => React.ReactNode;
 }
 
 export function ResourcePage<T extends { id: string; isActive?: boolean | null }>({
@@ -37,7 +38,8 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
   heroDescription,
   heroBadge,
   insights,
-  sortOptions
+  sortOptions,
+  rowActions,
 }: ResourcePageProps<T>) {
   const [rows, setRows] = useState<T[]>([]);
   const [search, setSearch] = useState("");
@@ -286,6 +288,7 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
                 header: "Operação",
                 render: (row) => (
                   <div className="flex flex-wrap gap-2">
+                    {rowActions?.(row)}
                     <Button type="button" variant="secondary" icon={<Pencil size={14} />} onClick={() => setEditingRow(row)}>
                       Editar
                     </Button>
