@@ -17,6 +17,7 @@ import {
   inviteAcceptSchema,
   loginSchema,
   resetPasswordSchema,
+  strongPasswordSchema,
 } from "@sgc/types";
 import { z } from "zod";
 import type { Request, Response } from "express";
@@ -74,7 +75,7 @@ export class AuthController {
     @CurrentUser() user: AuthUser,
     @Body(
       new ZodValidationPipe(
-        z.object({ currentPassword: z.string().min(1), newPassword: z.string().min(12).max(128) }),
+        z.object({ currentPassword: z.string().min(1), newPassword: strongPasswordSchema }),
       ),
     )
     body: { currentPassword: string; newPassword: string },
