@@ -52,6 +52,8 @@ interface SaleRow {
   cancelledAt?: string | null;
   cancelledReason?: string | null;
   notes?: string | null;
+  fiscalStatus?: string | null;
+  fiscalExternalId?: string | null;
 }
 
 interface SaleHistory {
@@ -59,6 +61,18 @@ interface SaleHistory {
   movements: Array<{ id: string; movementType: string; quantity: string; reason: string; createdAt: string }>;
   receivables: Array<{ id: string; amount: string; dueDate: string; status: string }>;
   audit: Array<{ action: string; createdAt: string }>;
+}
+interface FiscalDocument {
+  id: string;
+  provider?: string;
+  environment?: string;
+  status: string;
+  externalId?: string | null;
+  attemptCount: number;
+  lastError?: string | null;
+  requestedAt?: string | null;
+  issuedAt?: string | null;
+  createdAt: string;
 }
 
 export default function SalesPage() {
@@ -69,6 +83,7 @@ export default function SalesPage() {
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [draftItems, setDraftItems] = useState<DraftItem[]>([]);
   const [history, setHistory] = useState<Record<string, SaleHistory>>({});
+  const [fiscalHistory, setFiscalHistory] = useState<Record<string, FiscalDocument[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -239,6 +254,8 @@ export default function SalesPage() {
         body: "{}",
       });
       setNotice(result.message);
+      await loadFiscal(id);
+      await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível solicitar a emissão fiscal.");
     }
@@ -259,6 +276,15 @@ export default function SalesPage() {
       setHistory((current) => ({ ...current, [id]: response }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao carregar historico.");
+    }
+  }
+
+  async function loadFiscal(id: string) {
+    try {
+      const response = await apiFetch<{ data: FiscalDocument[] }>(`/sales/${id}/fiscal`);
+      setFiscalHistory((current) => ({ ...current, [id]: response.data }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível carregar o histórico fiscal.");
     }
   }
 
@@ -463,6 +489,11 @@ export default function SalesPage() {
               },
               { key: "status", header: "Status", render: (row) => <Badge>{row.status}</Badge> },
               {
+                key: "fiscal",
+                header: "Fiscal",
+                render: (row) => <Badge>{fiscalLabel(row.fiscalStatus)}</Badge>,
+              },
+              {
                 key: "actions",
                 header: "Acoes",
                 render: (row) => (
@@ -479,6 +510,15 @@ export default function SalesPage() {
                     <Button variant="secondary" onClick={() => void issueFiscal(row.id)}>
                       Emitir NFC-e
                     </Button>
+                    <Button variant="secondary" onClick={() => void loadFiscal(row.id)}>
+                      Status fiscal
+                    </Button>
+                    <a
+                      className="inline-flex min-h-10 items-center justify-center rounded-md border border-[var(--brand-border)] px-4 py-2 text-sm font-medium text-[var(--brand-primary)]"
+                      href={`/operations?sale=${row.id}`}
+                    >
+                      Troca/devolução
+                    </a>
                     <Button variant="secondary" onClick={() => void toggleHistory(row.id)}>
                       {history[row.id] ? "Ocultar" : "Historico"}
                     </Button>
@@ -502,6 +542,7 @@ export default function SalesPage() {
 
           {sales.map((sale) => {
             const saleHistory = history[sale.id];
+            const docs = fiscalHistory[sale.id];
             return saleHistory ? (
               <Card key={sale.id}>
                 <CardContent className="grid gap-4">
@@ -518,6 +559,23 @@ export default function SalesPage() {
                     <HistoryList title="Estoque" items={saleHistory.movements.map((item) => `${item.movementType} · ${item.quantity}`)} />
                     <HistoryList title="Auditoria" items={saleHistory.audit.map((item) => `${item.action} · ${new Date(item.createdAt).toLocaleString("pt-BR")}`)} />
                   </div>
+                </CardContent>
+              </Card>
+            ) : docs ? (
+              <Card key={`${sale.id}-fiscal`}>
+                <CardContent className="grid gap-3">
+                  <h3 className="text-sm font-semibold text-[var(--brand-primary)]">Fiscal da venda {sale.id.slice(0, 8)}</h3>
+                  {docs.length ? docs.map((doc) => (
+                    <div key={doc.id} className="grid gap-1 rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface)] p-4 text-sm">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <strong>NFC-e · {fiscalLabel(doc.status)}</strong>
+                        <Badge>{doc.provider || "provedor pendente"} · {doc.environment || "homologação"}</Badge>
+                      </div>
+                      <p className="text-slate-600">Tentativas: {doc.attemptCount} · Criada em {new Date(doc.createdAt).toLocaleString("pt-BR")}</p>
+                      {doc.externalId ? <p className="text-slate-600">ID externo: {doc.externalId}</p> : null}
+                      {doc.lastError ? <p className="text-rose-700">{doc.lastError}</p> : null}
+                    </div>
+                  )) : <p className="text-sm text-slate-500">Nenhuma solicitação fiscal registrada para esta venda.</p>}
                 </CardContent>
               </Card>
             ) : null;
@@ -537,6 +595,19 @@ function HistoryList({ title, items }: { title: string; items: string[] }) {
       </div>
     </div>
   );
+}
+
+function fiscalLabel(status?: string | null) {
+  if (!status) return "Não solicitada";
+  const labels: Record<string, string> = {
+    queued: "Na fila",
+    pending_provider: "Aguardando provedor",
+    processing: "Processando",
+    issued: "Emitida",
+    error: "Erro",
+    cancelled: "Cancelada",
+  };
+  return labels[status] ?? status;
 }
 
 function InsightCard({

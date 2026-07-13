@@ -194,6 +194,9 @@ export const saleCreateSchema = z.object({
   branchId: uuidSchema,
   cashRegisterSessionId: uuidSchema.optional(),
   customerId: uuidSchema.optional(),
+  customerDocument: z.string().trim().max(20).optional(),
+  loyaltyPointsToRedeem: z.coerce.number().int().min(0).default(0),
+  fiscalRequested: z.boolean().default(false),
   items: z.array(saleItemSchema).min(1).max(100),
   payments: z.array(salePaymentSchema).max(10).default([]),
   notes: z.string().trim().max(500).optional(),
@@ -471,6 +474,8 @@ export const printingSettingsSchema = z.object({
   receiptFooter: z.string().trim().max(180).optional(),
   defaultPrinterName: z.string().trim().max(120).optional(),
   silentPrint: z.boolean().default(false),
+  autoCut: z.boolean().default(true),
+  openCashDrawer: z.boolean().default(false),
 });
 
 export const integrationSettingsSchema = z.object({

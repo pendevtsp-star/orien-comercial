@@ -20,6 +20,15 @@ interface Product {
   barcode?: string;
   salePrice: string;
 }
+interface Customer {
+  id: string;
+  name: string;
+  document?: string;
+}
+interface LoyaltyWallet {
+  customerId: string;
+  pointsBalance: number;
+}
 interface CashSession {
   id: string;
   branch_id: string;
@@ -55,7 +64,13 @@ interface PrintingSettings {
 export default function PosPage() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [wallets, setWallets] = useState<LoyaltyWallet[]>([]);
   const [branchId, setBranchId] = useState("");
+  const [customerId, setCustomerId] = useState("");
+  const [customerDocument, setCustomerDocument] = useState("");
+  const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState(0);
+  const [fiscalRequested, setFiscalRequested] = useState(false);
   const [cash, setCash] = useState<CashSession | null>(null);
   const [cashHistory, setCashHistory] = useState<CashHistory[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -80,10 +95,14 @@ export default function PosPage() {
     void Promise.all([
       apiFetch<ListResponse<Branch>>("/branches?pageSize=100&isActive=true"),
       apiFetch<ListResponse<Product>>("/products?pageSize=100&isActive=true"),
+      apiFetch<ListResponse<Customer>>("/customers?pageSize=100&isActive=true"),
+      apiFetch<ListResponse<LoyaltyWallet>>("/loyalty/wallets"),
     ])
-      .then(([b, p]) => {
+      .then(([b, p, c, w]) => {
         setBranches(b.data);
         setProducts(p.data);
+        setCustomers(c.data);
+        setWallets(w.data);
         setBranchId((current) => current || b.data[0]?.id || "");
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Falha ao abrir o PDV."));
@@ -166,6 +185,7 @@ export default function PosPage() {
       }
       if (event.key === "F4") setPaymentMethod("cash");
       if (event.key === "F6") setPaymentMethod("pix");
+      if (event.key === "F7") setPaymentMethod("asaas_pix");
       if (event.key === "F8") setPaymentMethod("card");
     }
     window.addEventListener("keydown", shortcut);
@@ -176,16 +196,28 @@ export default function PosPage() {
     () => cart.reduce((sum, item) => sum + item.quantity * item.unitPrice - item.discountAmount, 0),
     [cart],
   );
+  const selectedWallet = wallets.find((wallet) => wallet.customerId === customerId);
+  const loyaltyDiscount = Math.min(total, Math.max(0, loyaltyPointsToRedeem) * 0.01);
+  const payableTotal = Math.max(0, total - loyaltyDiscount);
   const branchOptions = branches.map((branch) => ({ label: branch.name, value: branch.id }));
+  const customerOptions = [
+    { label: "Consumidor final", value: "" },
+    ...customers.map((customer) => ({ label: customer.name, value: customer.id })),
+  ];
+  useEffect(() => {
+    const selected = customers.find((customer) => customer.id === customerId);
+    if (selected?.document) setCustomerDocument(selected.document);
+    setLoyaltyPointsToRedeem(0);
+  }, [customerId, customers]);
 
   async function scan() {
-    const code = scanner.trim();
-    const product = products.find((item) => item.barcode === code || item.sku === code);
+    const parsed = parseQuantityCode(scanner);
+    const product = products.find((item) => item.barcode === parsed.code || item.sku === parsed.code);
     if (!product) {
-      setError(`Produto não encontrado para ${code}.`);
+      setError(`Produto não encontrado para ${parsed.code}.`);
       return;
     }
-    await addProduct(product, scanQuantity);
+    await addProduct(product, parsed.quantity ?? scanQuantity);
     setScanner("");
     setScanQuantity(1);
     scannerRef.current?.focus();
@@ -295,7 +327,7 @@ export default function PosPage() {
   }
   function addPayment() {
     const allocated = paymentParts.reduce((sum, item) => sum + item.amount, 0);
-    const amount = Number(paymentAmount || Math.max(0, total - allocated));
+    const amount = Number(paymentAmount || Math.max(0, payableTotal - allocated));
     if (amount <= 0) return;
     setPaymentParts((current) => [...current, { method: paymentMethod, amount, status: "paid" }]);
     setPaymentAmount("");
@@ -304,15 +336,19 @@ export default function PosPage() {
     if (!cash || !cart.length) return;
     const payments = paymentParts.length
       ? paymentParts
-      : [{ method: paymentMethod, amount: total, status: "paid" as const }];
+      : [{ method: paymentMethod, amount: payableTotal, status: "paid" as const }];
     const paid = payments.reduce((sum, item) => sum + item.amount, 0);
-    if (Math.abs(paid - total) > 0.009) {
+    if (Math.abs(paid - payableTotal) > 0.009) {
       setError("A soma dos pagamentos precisa ser igual ao total da venda.");
       return;
     }
     try {
       const payload = {
         branchId,
+        customerId: customerId || undefined,
+        customerDocument: customerDocument || undefined,
+        loyaltyPointsToRedeem,
+        fiscalRequested,
         cashRegisterSessionId: cash.id,
         items: cart.map((item) => ({
           productId: item.productId,
@@ -341,6 +377,7 @@ export default function PosPage() {
       }
       setCart([]);
       setPaymentParts([]);
+      setLoyaltyPointsToRedeem(0);
       setError(null);
       scannerRef.current?.focus();
     } catch (err) {
@@ -440,12 +477,26 @@ export default function PosPage() {
               </form>
             ) : (
               <div className="grid gap-3">
+                <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px]">
+                  <Select
+                    label="Cliente"
+                    value={customerId}
+                    options={customerOptions}
+                    onChange={(event) => setCustomerId(event.target.value)}
+                  />
+                  <Input
+                    label="CPF/CNPJ na nota"
+                    value={customerDocument}
+                    placeholder="Opcional"
+                    onChange={(event) => setCustomerDocument(event.target.value)}
+                  />
+                </div>
                 <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_110px]">
                   <Input
                     ref={scannerRef}
                     label="Leitor de código de barras · F2"
                     value={scanner}
-                    placeholder="Leia o código e pressione Enter"
+                    placeholder="Leia o código, use 3*789 ou 789*3 e pressione Enter"
                     onChange={(event) => setScanner(event.target.value)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
@@ -598,10 +649,36 @@ export default function PosPage() {
             <div>
               <p className="text-xs uppercase tracking-[0.18em] text-white/70">Total da venda</p>
               <p className="mt-2 text-5xl font-semibold text-white">
-                {total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                {payableTotal.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
               </p>
+              {loyaltyDiscount > 0 ? (
+                <p className="mt-2 text-sm text-[var(--brand-accent)]">
+                  Desconto por pontos: {loyaltyDiscount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                </p>
+              ) : null}
             </div>
-            <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3">
+            {customerId ? (
+              <div className="rounded-md border border-white/15 bg-white/5 p-3 text-sm text-white/75">
+                <div className="flex items-center justify-between gap-3">
+                  <span>Pontos disponíveis</span>
+                  <strong>{selectedWallet?.pointsBalance ?? 0}</strong>
+                </div>
+                <Input
+                  label="Usar pontos como desconto"
+                  type="number"
+                  min={0}
+                  max={selectedWallet?.pointsBalance ?? 0}
+                  value={loyaltyPointsToRedeem}
+                  onChange={(event) =>
+                    setLoyaltyPointsToRedeem(
+                      Math.min(selectedWallet?.pointsBalance ?? 0, Math.max(0, Number(event.target.value || 0))),
+                    )
+                  }
+                />
+                <p className="mt-1 text-xs text-white/55">100 pontos equivalem a R$ 1,00 no PDV.</p>
+              </div>
+            ) : null}
+            <div className="grid gap-2 sm:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
               <PaymentButton
                 active={paymentMethod === "cash"}
                 label="Dinheiro F4"
@@ -613,6 +690,12 @@ export default function PosPage() {
                 label="Pix F6"
                 icon={<WalletCards size={18} />}
                 onClick={() => setPaymentMethod("pix")}
+              />
+              <PaymentButton
+                active={paymentMethod === "asaas_pix"}
+                label="Pix Asaas F7"
+                icon={<WalletCards size={18} />}
+                onClick={() => setPaymentMethod("asaas_pix")}
               />
               <PaymentButton
                 active={paymentMethod === "card"}
@@ -663,6 +746,15 @@ export default function PosPage() {
               <span>
                 Abrir comprovante de conferência ao concluir. O documento não tem valor fiscal e usa o padrão salvo em Impressoras.
               </span>
+            </label>
+            <label className="flex items-start gap-2 rounded-md border border-white/15 bg-white/5 p-3 text-xs leading-5 text-white/75">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={fiscalRequested}
+                onChange={(event) => setFiscalRequested(event.target.checked)}
+              />
+              <span>Solicitar NFC-e após a venda quando a integração fiscal estiver configurada.</span>
             </label>
             <Button
               className="min-h-12 w-full bg-[var(--brand-accent)] text-base text-[var(--brand-primary)] hover:brightness-95"
@@ -768,6 +860,14 @@ export default function PosPage() {
 }
 
 function createIdempotencyKey() { return `pos_${crypto.randomUUID().replaceAll("-", "")}`; }
+function parseQuantityCode(value: string) {
+  const input = value.trim();
+  const left = input.match(/^(\d+(?:[,.]\d+)?)\*(.+)$/);
+  const right = input.match(/^(.+)\*(\d+(?:[,.]\d+)?)$/);
+  const quantity = left ? Number(left[1]!.replace(",", ".")) : right ? Number(right[2]!.replace(",", ".")) : undefined;
+  const code = left ? left[2]!.trim() : right ? right[1]!.trim() : input;
+  return { code, quantity: quantity && quantity > 0 ? quantity : undefined };
+}
 function receiptModeLabel(mode: string) {
   if (mode === "none") return "não imprimir";
   if (mode === "thermal") return "térmico";

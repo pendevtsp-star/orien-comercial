@@ -675,6 +675,8 @@ function resolvePrintingSettings(input: Partial<PrintingSettingsInput>): Printin
     receiptFooter: input.receiptFooter ?? "",
     defaultPrinterName: input.defaultPrinterName ?? "",
     silentPrint: Boolean(input.silentPrint),
+    autoCut: input.autoCut ?? true,
+    openCashDrawer: Boolean(input.openCashDrawer),
   };
 }
 

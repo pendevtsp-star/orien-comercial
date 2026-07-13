@@ -24,6 +24,8 @@ export default function PrintersPage() {
   const [receiptFooter, setReceiptFooter] = useState("");
   const [printerName, setPrinterName] = useState("");
   const [silentPrint, setSilentPrint] = useState(false);
+  const [autoCut, setAutoCut] = useState(true);
+  const [openCashDrawer, setOpenCashDrawer] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -58,6 +60,8 @@ export default function PrintersPage() {
         receiptFooter?: string;
         defaultPrinterName?: string;
         silentPrint: boolean;
+        autoCut: boolean;
+        openCashDrawer: boolean;
       }>(`/printing-settings?branchId=${nextBranchId}`);
       setSize(settings.labelSize);
       setDpi(settings.dpi);
@@ -69,6 +73,8 @@ export default function PrintersPage() {
       setReceiptFooter(settings.receiptFooter ?? "");
       setPrinterName(settings.defaultPrinterName ?? "");
       setSilentPrint(settings.silentPrint);
+      setAutoCut(settings.autoCut ?? true);
+      setOpenCashDrawer(settings.openCashDrawer ?? false);
       setError("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível carregar a configuração.");
@@ -94,6 +100,8 @@ export default function PrintersPage() {
           receiptFooter: receiptFooter || undefined,
           defaultPrinterName: printerName,
           silentPrint,
+          autoCut,
+          openCashDrawer,
         }),
       });
       setMessage("Configuração de impressão salva para esta loja.");
@@ -253,6 +261,36 @@ export default function PrintersPage() {
                 Preparar para impressão silenciosa quando o agente local estiver disponível.
               </span>
             </label>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="flex items-start gap-2 rounded-md border border-[var(--brand-border)] p-3 text-sm text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={autoCut}
+                  onChange={(event) => setAutoCut(event.target.checked)}
+                />
+                <span>Cortar papel automaticamente ao final do comprovante.</span>
+              </label>
+              <label className="flex items-start gap-2 rounded-md border border-[var(--brand-border)] p-3 text-sm text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={openCashDrawer}
+                  onChange={(event) => setOpenCashDrawer(event.target.checked)}
+                />
+                <span>Abrir gaveta de dinheiro ao finalizar venda em dinheiro.</span>
+              </label>
+            </div>
+            <div className="rounded-xl border border-[var(--brand-border)] bg-white p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--brand-secondary)]">Prévia compacta</p>
+              <div className="mt-3 max-w-[260px] rounded-md border border-dashed border-slate-300 bg-white p-3 font-mono text-[11px] text-slate-800">
+                {receiptShowLogo ? <p className="text-center font-bold">LOGO DA EMPRESA</p> : null}
+                <p className="text-center font-bold">COMPROVANTE</p>
+                <p>Venda: 00000001</p>
+                {receiptShowDocument ? <p>CPF/CNPJ: 000.000.000-00</p> : null}
+                <p>1x Produto exemplo R$ 10,00</p>
+                <p className="border-t border-dashed pt-1 font-bold">TOTAL R$ 10,00</p>
+                <p className="text-center text-slate-500">{receiptFooter || "Obrigado pela preferência."}</p>
+              </div>
+            </div>
             <div className="rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface)] p-4 text-sm text-slate-600">
               Use escala 100%, margens ausentes e orientação automática. Se a etiqueta sair cortada,
               ajuste primeiro o tamanho no driver da impressora e só depois no Orien.

@@ -70,6 +70,8 @@ export class SalesService {
         s.created_at AS "createdAt",
         b.name AS "branchName",
         c.name AS "customerName",
+        latest_fiscal.status AS "fiscalStatus",
+        latest_fiscal.external_id AS "fiscalExternalId",
         COALESCE(items.item_count, 0) AS "itemCount",
         COALESCE(payments.paid_amount, 0)::text AS "paidAmount",
         GREATEST(s.total_amount - COALESCE(payments.paid_amount, 0), 0)::text AS "openAmount"
@@ -88,6 +90,13 @@ export class SalesService {
         WHERE tenant_id = $1
         GROUP BY sale_id
       ) payments ON payments.sale_id = s.id
+      LEFT JOIN LATERAL (
+        SELECT status, external_id
+        FROM fiscal_documents fd
+        WHERE fd.tenant_id = s.tenant_id AND fd.sale_id = s.id AND fd.document_type = 'nfce'
+        ORDER BY fd.created_at DESC
+        LIMIT 1
+      ) latest_fiscal ON true
       WHERE ${filters.join(" AND ")}
       ORDER BY ${sort.field} ${sort.direction}, s.created_at DESC
       LIMIT $${params.length - 1} OFFSET $${params.length}
@@ -101,7 +110,7 @@ export class SalesService {
   async get(context: TenantContext, saleId: string) {
     const result = await this.database.tenantQuery(
       context.tenantId,
-      `SELECT s.id,s.branch_id AS "branchId",s.status,s.total_amount AS "totalAmount",s.notes,s.cancelled_at AS "cancelledAt",s.cancelled_reason AS "cancelledReason",s.created_at AS "createdAt",b.name AS "branchName",c.name AS "customerName",COALESCE(items.item_count,0)::int AS "itemCount",COALESCE(payments.paid_amount,0)::text AS "paidAmount",GREATEST(s.total_amount-COALESCE(payments.paid_amount,0),0)::text AS "openAmount" FROM sales s JOIN branches b ON b.id=s.branch_id LEFT JOIN customers c ON c.id=s.customer_id LEFT JOIN (SELECT sale_id,count(*)::int item_count FROM sale_items WHERE tenant_id=$1 GROUP BY sale_id) items ON items.sale_id=s.id LEFT JOIN (SELECT sale_id,sum(amount) FILTER(WHERE status='paid') paid_amount FROM sale_payments WHERE tenant_id=$1 GROUP BY sale_id) payments ON payments.sale_id=s.id WHERE s.tenant_id=$1 AND s.id=$2 AND s.deleted_at IS NULL`,
+      `SELECT s.id,s.branch_id AS "branchId",s.status,s.total_amount AS "totalAmount",s.notes,s.cancelled_at AS "cancelledAt",s.cancelled_reason AS "cancelledReason",s.created_at AS "createdAt",b.name AS "branchName",c.name AS "customerName",latest_fiscal.status AS "fiscalStatus",latest_fiscal.external_id AS "fiscalExternalId",COALESCE(items.item_count,0)::int AS "itemCount",COALESCE(payments.paid_amount,0)::text AS "paidAmount",GREATEST(s.total_amount-COALESCE(payments.paid_amount,0),0)::text AS "openAmount" FROM sales s JOIN branches b ON b.id=s.branch_id LEFT JOIN customers c ON c.id=s.customer_id LEFT JOIN (SELECT sale_id,count(*)::int item_count FROM sale_items WHERE tenant_id=$1 GROUP BY sale_id) items ON items.sale_id=s.id LEFT JOIN (SELECT sale_id,sum(amount) FILTER(WHERE status='paid') paid_amount FROM sale_payments WHERE tenant_id=$1 GROUP BY sale_id) payments ON payments.sale_id=s.id LEFT JOIN LATERAL(SELECT status,external_id FROM fiscal_documents fd WHERE fd.tenant_id=s.tenant_id AND fd.sale_id=s.id AND fd.document_type='nfce' ORDER BY fd.created_at DESC LIMIT 1) latest_fiscal ON true WHERE s.tenant_id=$1 AND s.id=$2 AND s.deleted_at IS NULL`,
       [context.tenantId, saleId],
     );
     const sale = ensureFound(result.rows[0], "Venda") as { branchId?: string };
@@ -174,11 +183,26 @@ export class SalesService {
           );
         }
       }
-      const totalAmount = input.items.reduce((total, item) => {
+      const grossSaleAmount = input.items.reduce((total, item) => {
         const product = productById.get(item.productId);
         const unitPrice = item.unitPrice ?? Number(product?.sale_price ?? 0);
         return total + item.quantity * unitPrice - item.discountAmount;
       }, 0);
+      let loyaltyDiscountAmount = 0;
+      let loyaltyWalletId: string | null = null;
+      const loyaltyPointsToRedeem = Math.floor(Number(input.loyaltyPointsToRedeem ?? 0));
+      if (loyaltyPointsToRedeem > 0) {
+        if (!input.customerId) throw new BadRequestException("Informe um cliente para resgatar pontos.");
+        const wallet = await client.query<{ id: string; points_balance: number }>(
+          "SELECT id, points_balance FROM loyalty_wallets WHERE tenant_id=$1 AND customer_id=$2 FOR UPDATE",
+          [context.tenantId, input.customerId],
+        );
+        if (!wallet.rows[0] || wallet.rows[0].points_balance < loyaltyPointsToRedeem)
+          throw new BadRequestException("Saldo de pontos insuficiente para o desconto.");
+        loyaltyWalletId = wallet.rows[0].id;
+        loyaltyDiscountAmount = Math.min(grossSaleAmount, loyaltyPointsToRedeem * 0.01);
+      }
+      const totalAmount = Math.max(0, grossSaleAmount - loyaltyDiscountAmount);
 
       if (totalAmount < 0) {
         throw new BadRequestException("Total da venda nao pode ser negativo.");
@@ -209,14 +233,15 @@ export class SalesService {
 
       const sale = await client.query<{ id: string }>(
         `
-        INSERT INTO sales (tenant_id, branch_id, customer_id, seller_user_id, cash_register_session_id, status, total_amount, notes)
-        VALUES ($1, $2, $3, $4, $5, 'sold', $6, $7)
+        INSERT INTO sales (tenant_id, branch_id, customer_id, customer_document, seller_user_id, cash_register_session_id, status, total_amount, notes)
+        VALUES ($1, $2, $3, $4, $5, $6, 'sold', $7, $8)
         RETURNING id
         `,
         [
           context.tenantId,
           input.branchId,
           input.customerId ?? null,
+          normalizeDocument(input.customerDocument),
           context.userId ?? null,
           input.cashRegisterSessionId ?? null,
           totalAmount,
@@ -269,6 +294,26 @@ export class SalesService {
         );
       }
 
+      if (loyaltyWalletId && loyaltyPointsToRedeem > 0) {
+        await client.query(
+          "UPDATE loyalty_wallets SET points_balance=points_balance-$2,updated_at=now() WHERE id=$1",
+          [loyaltyWalletId, loyaltyPointsToRedeem],
+        );
+        await client.query(
+          "INSERT INTO loyalty_ledger (tenant_id,wallet_id,movement_type,points,metadata) VALUES ($1,$2,'sale_discount',$3,$4::jsonb)",
+          [
+            context.tenantId,
+            loyaltyWalletId,
+            -loyaltyPointsToRedeem,
+            JSON.stringify({ saleId, discountAmount: loyaltyDiscountAmount }),
+          ],
+        );
+        await client.query(
+          "INSERT INTO loyalty_redemptions (tenant_id,wallet_id,sale_id,amount,status) VALUES ($1,$2,$3,$4,'confirmed')",
+          [context.tenantId, loyaltyWalletId, saleId, loyaltyDiscountAmount],
+        );
+      }
+
       const openAmount = totalAmount - paidAmount;
       if (openAmount > 0) {
         await client.query(
@@ -315,8 +360,20 @@ export class SalesService {
           totalAmount,
           itemCount: input.items.length,
           discountAmount: input.items.reduce((sum, item) => sum + item.discountAmount, 0),
+          customerDocument: normalizeDocument(input.customerDocument),
+          loyaltyPointsRedeemed: loyaltyPointsToRedeem,
+          loyaltyDiscountAmount,
         },
       });
+
+      if (input.fiscalRequested) {
+        await enqueueFiscalDocument(client, context, {
+          saleId,
+          branchId: input.branchId,
+          customerDocument: normalizeDocument(input.customerDocument),
+          source: "sale.create",
+        });
+      }
 
       const response = { id: saleId, totalAmount, paidAmount, openAmount };
       if (idempotencyKey) await client.query("UPDATE idempotency_keys SET response=$3::jsonb,completed_at=now() WHERE tenant_id=$1 AND scope='sales.create' AND key=$2", [context.tenantId, idempotencyKey, JSON.stringify(response)]);
@@ -484,6 +541,7 @@ export class SalesService {
       created_at: Date;
       branch_name: string;
       customer_name: string | null;
+      customer_document: string | null;
     }>(
       context.tenantId,
       `
@@ -494,7 +552,8 @@ export class SalesService {
         s.notes,
         s.created_at,
         b.name AS branch_name,
-        c.name AS customer_name
+        c.name AS customer_name,
+        COALESCE(s.customer_document,c.document) AS customer_document
       FROM sales s
       JOIN branches b ON b.id = s.branch_id
       LEFT JOIN customers c ON c.id = s.customer_id
@@ -542,6 +601,7 @@ export class SalesService {
         { label: "Venda", value: sale.id.slice(0, 8) },
         { label: "Loja", value: sale.branch_name },
         { label: "Cliente", value: sale.customer_name ?? "Consumidor final" },
+        { label: "CPF/CNPJ", value: sale.customer_document ?? "-" },
         { label: "Emitido em", value: sale.created_at.toLocaleString("pt-BR") },
       ],
       sections: [
@@ -609,11 +669,12 @@ export class SalesService {
       branch_id: string;
       branch_name: string;
       customer_name: string | null;
+      customer_document: string | null;
     }>(
       context.tenantId,
       `
       SELECT s.id,s.status,s.total_amount::text,s.notes,s.created_at,s.branch_id,
-        b.name AS branch_name,c.name AS customer_name
+        b.name AS branch_name,c.name AS customer_name,COALESCE(s.customer_document,c.document) AS customer_document
       FROM sales s
       JOIN branches b ON b.id = s.branch_id
       LEFT JOIN customers c ON c.id = s.customer_id
@@ -676,39 +737,52 @@ export class SalesService {
   }
 
   async requestFiscalIssue(context: TenantContext, saleId: string) {
-    const sale = await this.database.tenantQuery<{ id: string; status: string }>(
+    return this.database.tenantTransaction(context.tenantId, async (client) => {
+      const sale = await client.query<{ id: string; status: string; branch_id: string; customer_document: string | null }>(
+        "SELECT id,status,branch_id,customer_document FROM sales WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL",
+        [context.tenantId, saleId],
+      );
+      ensureFound(sale.rows[0], "Venda");
+      ensureBranchAccess(context, sale.rows[0]!.branch_id);
+      if (sale.rows[0]!.status === "cancelled") throw new BadRequestException("Venda cancelada não pode emitir NFC-e.");
+      const current = await resolveFiscalIntegration(client, context.tenantId);
+      if (!current.configured) throw new BadRequestException("Configure a integração fiscal em homologação antes de emitir NFC-e.");
+      const fiscal = await enqueueFiscalDocument(client, context, {
+        saleId,
+        branchId: sale.rows[0]!.branch_id,
+        customerDocument: sale.rows[0]!.customer_document,
+        source: "manual",
+        provider: current.provider,
+        environment: current.environment,
+      });
+      return {
+        status: fiscal.status,
+        fiscalDocumentId: fiscal.id,
+        message:
+          current.provider === "manual_homologation"
+            ? "Solicitação fiscal registrada em homologação. A transmissão real será ativada quando o provedor NFC-e for definido."
+            : "NFC-e adicionada à fila fiscal para transmissão pelo provedor configurado.",
+      };
+    });
+  }
+
+  async fiscalStatus(context: TenantContext, saleId: string) {
+    const sale = await this.database.tenantQuery<{ branch_id: string }>(
       context.tenantId,
-      "SELECT id,status FROM sales WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL",
+      "SELECT branch_id FROM sales WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL",
       [context.tenantId, saleId],
     );
-    ensureFound(sale.rows[0], "Venda");
-    if (sale.rows[0]!.status === "cancelled") throw new BadRequestException("Venda cancelada não pode emitir NFC-e.");
-    const fiscal = await this.database.tenantQuery<{ status: string; settings: Record<string, string>; has_credential: boolean }>(
+    const saleRow = ensureFound(sale.rows[0], "Venda");
+    ensureBranchAccess(context, saleRow.branch_id);
+    const docs = await this.database.tenantQuery(
       context.tenantId,
-      `SELECT i.status,COALESCE(i.settings,'{}') settings,
-        EXISTS(SELECT 1 FROM integration_credentials ic WHERE ic.tenant_integration_id=i.id) AS has_credential
-       FROM tenant_integrations i WHERE i.tenant_id=$1 AND i.provider='fiscal' LIMIT 1`,
-      [context.tenantId],
+      `SELECT id,provider,environment,status,external_id AS "externalId",attempt_count AS "attemptCount",last_error AS "lastError",metadata,requested_at AS "requestedAt",issued_at AS "issuedAt",created_at AS "createdAt"
+       FROM fiscal_documents
+       WHERE tenant_id=$1 AND sale_id=$2 AND document_type='nfce'
+       ORDER BY created_at DESC`,
+      [context.tenantId, saleId],
     );
-    const current = fiscal.rows[0];
-    if (!current || current.status !== "configured" || !current.has_credential) {
-      throw new BadRequestException("Configure a integração fiscal em homologação antes de emitir NFC-e.");
-    }
-    await this.database.tenantQuery(
-      context.tenantId,
-      `INSERT INTO audit_logs (tenant_id,actor_user_id,action,entity_type,entity_id,metadata)
-       VALUES ($1,$2,'fiscal.nfce.issue.requested','sale',$3,$4::jsonb)`,
-      [
-        context.tenantId,
-        context.userId ?? null,
-        saleId,
-        JSON.stringify({ provider: current.settings.provider ?? "pendente", environment: current.settings.environment ?? "homologation" }),
-      ],
-    );
-    return {
-      status: "pending_provider",
-      message: "Solicitação fiscal registrada. A transmissão real será ativada quando o provedor NFC-e for definido.",
-    };
+    return { data: docs.rows };
   }
 }
 
@@ -728,6 +802,7 @@ function receiptCopyHtml(input: {
     created_at: Date;
     branch_name: string;
     customer_name: string | null;
+    customer_document: string | null;
   };
   items: SaleDocumentItemRow[];
   payments: SaleDocumentPaymentRow[];
@@ -751,7 +826,8 @@ function receiptCopyHtml(input: {
     <div class="line"></div>
     <p><strong>Venda:</strong> ${escapeHtml(input.sale.id.slice(0, 8))}</p>
     <p><strong>Loja:</strong> ${escapeHtml(input.sale.branch_name)}</p>
-    <p><strong>Cliente:</strong> ${escapeHtml(input.sale.customer_name ?? "Consumidor final")}</p>
+      <p><strong>Cliente:</strong> ${escapeHtml(input.sale.customer_name ?? "Consumidor final")}</p>
+    ${input.showDocument && input.sale.customer_document ? `<p><strong>CPF/CNPJ:</strong> ${escapeHtml(input.sale.customer_document)}</p>` : ""}
     <p><strong>Emissão:</strong> ${escapeHtml(input.sale.created_at.toLocaleString("pt-BR"))}</p>
     <div class="line"></div>
     <table><tbody>
@@ -785,6 +861,82 @@ async function assertCustomer(client: PoolClient, tenantId: string, customerId: 
     [tenantId, customerId],
   );
   ensureFound(customer.rows[0], "Cliente");
+}
+
+function normalizeDocument(value?: string | null) {
+  const digits = (value ?? "").replace(/\D/g, "");
+  return digits.length >= 11 ? digits.slice(0, 20) : null;
+}
+
+async function resolveFiscalIntegration(client: PoolClient, tenantId: string) {
+  const fiscal = await client.query<{
+    status: string;
+    settings: Record<string, string>;
+    has_credential: boolean;
+  }>(
+    `SELECT i.status,COALESCE(i.settings,'{}') settings,
+      EXISTS(SELECT 1 FROM integration_credentials ic WHERE ic.tenant_integration_id=i.id) AS has_credential
+     FROM tenant_integrations i WHERE i.tenant_id=$1 AND i.provider='fiscal' LIMIT 1`,
+    [tenantId],
+  );
+  const current = fiscal.rows[0];
+  if (!current || current.status !== "configured" || !current.has_credential) {
+    return { configured: false, provider: "manual_homologation", environment: "homologation" };
+  }
+  return {
+    configured: true,
+    provider: current.settings.provider || "manual_homologation",
+    environment: current.settings.environment || current.settings.mode || "homologation",
+  };
+}
+
+async function enqueueFiscalDocument(
+  client: PoolClient,
+  context: TenantContext,
+  input: {
+    saleId: string;
+    branchId: string;
+    customerDocument?: string | null;
+    source: string;
+    provider?: string;
+    environment?: string;
+  },
+) {
+  const provider = input.provider || "manual_homologation";
+  const environment = input.environment || "homologation";
+  const status = provider === "manual_homologation" ? "pending_provider" : "queued";
+  const existing = await client.query<{ id: string; status: string }>(
+    "SELECT id,status FROM fiscal_documents WHERE tenant_id=$1 AND sale_id=$2 AND document_type='nfce' AND status NOT IN ('cancelled','error') ORDER BY created_at DESC LIMIT 1",
+    [context.tenantId, input.saleId],
+  );
+  if (existing.rows[0]) return existing.rows[0];
+  const created = await client.query<{ id: string; status: string }>(
+    `INSERT INTO fiscal_documents(tenant_id,branch_id,sale_id,provider,document_type,status,environment,requested_at,metadata)
+     VALUES($1,$2,$3,$4,'nfce',$5,$6,now(),$7::jsonb)
+     RETURNING id,status`,
+    [
+      context.tenantId,
+      input.branchId,
+      input.saleId,
+      provider,
+      status,
+      environment,
+      JSON.stringify({
+        source: input.source,
+        customerDocument: input.customerDocument ?? null,
+        transmission: provider === "manual_homologation" ? "waiting_provider" : "queued_adapter",
+      }),
+    ],
+  );
+  await insertAuditLog(client, {
+    tenantId: context.tenantId,
+    actorUserId: context.userId,
+    action: "fiscal.nfce.queued",
+    entityType: "sale",
+    entityId: input.saleId,
+    metadata: { fiscalDocumentId: created.rows[0]!.id, provider, environment, status },
+  });
+  return created.rows[0]!;
 }
 
 async function decrementStock(

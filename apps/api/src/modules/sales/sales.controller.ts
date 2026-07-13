@@ -63,6 +63,12 @@ export class SalesController {
   }
 
   @RequirePermissions(permissions.sales.read)
+  @Get(":id/fiscal")
+  fiscalStatus(@CurrentTenant() tenant: TenantContext, @Param("id") id: string) {
+    return this.salesService.fiscalStatus(tenant, id);
+  }
+
+  @RequirePermissions(permissions.sales.read)
   @Get(":id")
   get(@CurrentTenant() tenant: TenantContext, @Param("id") id: string) {
     return this.salesService.get(tenant, id);
