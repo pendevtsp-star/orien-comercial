@@ -1,7 +1,7 @@
 "use client";
 
 import { Autocomplete, Badge, Button, Card, CardContent, DataTable, Input, PageHeader, Select } from "@sgc/ui";
-import { Banknote, CircleDollarSign, CreditCard, Landmark, Minus, Plus, ScanBarcode, WalletCards, X } from "lucide-react";
+import { Banknote, CircleDollarSign, CreditCard, Landmark, Maximize2, Minimize2, Minus, Plus, ScanBarcode, WalletCards, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { apiFetch, openApiDocument } from "../../../lib/api";
@@ -89,6 +89,7 @@ export default function PosPage() {
   const [printAfterSale, setPrintAfterSale] = useState(true);
   const [isOnline, setIsOnline] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [productionMode, setProductionMode] = useState(false);
   const scannerRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -106,6 +107,11 @@ export default function PosPage() {
         setBranchId((current) => current || b.data[0]?.id || "");
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Falha ao abrir o PDV."));
+  }, []);
+  useEffect(() => {
+    const onFullscreenChange = () => setProductionMode(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
   }, []);
   function repeatLastSale() {
     const last = window.localStorage.getItem("orien.pos.last-cart");
@@ -199,6 +205,10 @@ export default function PosPage() {
   const selectedWallet = wallets.find((wallet) => wallet.customerId === customerId);
   const loyaltyDiscount = Math.min(total, Math.max(0, loyaltyPointsToRedeem) * 0.01);
   const payableTotal = Math.max(0, total - loyaltyDiscount);
+  const allocatedPayment = paymentParts.reduce((sum, item) => sum + item.amount, 0);
+  const remainingPayment = Math.max(0, payableTotal - allocatedPayment);
+  const typedPayment = Number(paymentAmount || 0);
+  const estimatedChange = paymentMethod === "cash" ? Math.max(0, typedPayment - remainingPayment) : 0;
   const branchOptions = branches.map((branch) => ({ label: branch.name, value: branch.id }));
   const customerOptions = [
     { label: "Consumidor final", value: "" },
@@ -326,11 +336,19 @@ export default function PosPage() {
     }
   }
   function addPayment() {
-    const allocated = paymentParts.reduce((sum, item) => sum + item.amount, 0);
-    const amount = Number(paymentAmount || Math.max(0, payableTotal - allocated));
+    const received = Number(paymentAmount || remainingPayment);
+    const amount = Math.min(remainingPayment, received);
     if (amount <= 0) return;
     setPaymentParts((current) => [...current, { method: paymentMethod, amount, status: "paid" }]);
     setPaymentAmount("");
+  }
+  async function toggleProductionMode() {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await document.documentElement.requestFullscreen();
+    } catch {
+      setError("O navegador não permitiu abrir a tela cheia. Use o atalho F11 como alternativa.");
+    }
   }
   async function finishSale() {
     if (!cash || !cart.length) return;
@@ -393,6 +411,9 @@ export default function PosPage() {
         actions={
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={repeatLastSale} disabled={!cash}>Repetir última venda</Button>
+            <Button variant="secondary" icon={productionMode ? <Minimize2 size={16} /> : <Maximize2 size={16} />} onClick={() => void toggleProductionMode()}>
+              {productionMode ? "Sair da tela cheia" : "Modo produção"}
+            </Button>
             <Button
               variant="secondary"
               onClick={() => void cashMovement("supply")}
@@ -730,6 +751,22 @@ export default function PosPage() {
               <Button variant="secondary" onClick={addPayment}>
                 Adicionar
               </Button>
+            </div>
+            <div className="grid grid-cols-4 gap-2" aria-label="Teclado numérico do pagamento">
+              {["1", "2", "3", "4", "5", "6", "7", "8", "9", "00", "0", "Limpar"].map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  className="h-9 rounded-md border border-white/15 bg-white/10 text-sm font-medium text-white transition hover:bg-white/20"
+                  onClick={() => setPaymentAmount((current) => key === "Limpar" ? "" : `${current}${key}`)}
+                >
+                  {key}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap justify-between gap-2 rounded-md border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/75">
+              <span>Restante: <strong>{remainingPayment.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong></span>
+              {estimatedChange > 0 ? <span className="text-[var(--brand-accent)]">Troco: <strong>{estimatedChange.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong></span> : null}
             </div>
             {paymentParts.length ? (
               <div className="grid gap-1 text-xs text-white/75">

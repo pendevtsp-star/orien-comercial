@@ -345,23 +345,39 @@ export class StockService {
     if (!parsed.items.length) throw new BadRequestException("Não encontramos itens de produto no XML informado.");
     const barcodes = parsed.items.map((item) => item.barcode).filter((value): value is string => Boolean(value));
     const products = barcodes.length
-      ? await this.database.tenantQuery<{ id: string; name: string; sku: string | null; barcode: string | null }>(
+      ? await this.database.tenantQuery<{ id: string; name: string; sku: string | null; barcode: string | null; costPrice: string }>(
           context.tenantId,
-          "SELECT id,name,sku,barcode FROM products WHERE tenant_id=$1 AND barcode=ANY($2::text[]) AND deleted_at IS NULL",
+          "SELECT id,name,sku,barcode,cost_price::text AS \"costPrice\" FROM products WHERE tenant_id=$1 AND barcode=ANY($2::text[]) AND deleted_at IS NULL",
           [context.tenantId, barcodes],
         )
       : { rows: [] };
+    const supplier = parsed.supplier.document
+      ? await this.database.tenantQuery<{ id: string; name: string }>(
+          context.tenantId,
+          "SELECT id,name FROM suppliers WHERE tenant_id=$1 AND document=$2 AND deleted_at IS NULL LIMIT 1",
+          [context.tenantId, parsed.supplier.document],
+        )
+      : { rows: [] as Array<{ id: string; name: string }> };
     const byBarcode = new Map(products.rows.filter((item) => item.barcode).map((item) => [item.barcode!, item]));
     return {
       document: parsed.document,
-      supplier: parsed.supplier,
+      supplier: { ...parsed.supplier, match: supplier.rows[0] ?? null },
       items: parsed.items.map((item, index) => {
         const match = item.barcode ? byBarcode.get(item.barcode) : undefined;
+        const previousCost = Number(match?.costPrice ?? 0);
+        const costDifferencePercent = previousCost > 0 ? ((item.unitCost - previousCost) / previousCost) * 100 : null;
+        const divergences = [
+          ...(!match ? ["Produto não cadastrado"] : []),
+          ...(costDifferencePercent !== null && Math.abs(costDifferencePercent) >= 20
+            ? [`Custo ${costDifferencePercent > 0 ? "acima" : "abaixo"} em ${Math.abs(costDifferencePercent).toFixed(0)}%`] : []),
+          ...(item.quantity >= 1000 ? ["Quantidade alta: confira antes de receber"] : []),
+        ];
         return {
           ...item,
           sourceIndex: index,
-          match: match ? { productId: match.id, name: match.name, sku: match.sku, confidence: "barcode" } : null,
+          match: match ? { productId: match.id, name: match.name, sku: match.sku, costPrice: previousCost, confidence: "barcode" } : null,
           suggestedAction: match ? "link" : "create",
+          divergences,
         };
       }),
     };

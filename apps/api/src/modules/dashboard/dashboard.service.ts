@@ -120,6 +120,31 @@ export class DashboardService {
     ].map((item) => ({ ...item, done: item.autoDone || completedKeys.has(item.key) }));
 
     const completed = checklist.filter((item) => item.done).length;
+    const [oldestCash, dueToday, pendingPurchases] = await Promise.all([
+      this.database.tenantQuery<{ openedAt: string | null }>(
+        context.tenantId,
+        `SELECT min(opened_at)::text AS "openedAt" FROM cash_register_sessions WHERE tenant_id=$1 AND status='open' ${context.branchId ? "AND branch_id=$2" : ""}`,
+        params,
+      ),
+      this.database.tenantQuery<{ total: string; amount: string }>(
+        context.tenantId,
+        `SELECT count(*)::text total,COALESCE(sum(amount),0)::text amount FROM accounts_receivable WHERE tenant_id=$1 AND status IN ('open','overdue') AND due_date<=CURRENT_DATE ${branchFilter}`,
+        params,
+      ),
+      this.database.tenantQuery<{ total: string }>(
+        context.tenantId,
+        `SELECT count(*)::text total FROM purchase_orders WHERE tenant_id=$1 AND status IN ('draft','approved','partial') ${branchFilter}`,
+        params,
+      ),
+    ]);
+    const cashOpenedAt = oldestCash.rows[0]?.openedAt ? new Date(oldestCash.rows[0].openedAt) : null;
+    const openHours = cashOpenedAt ? Math.max(0, Math.floor((Date.now() - cashOpenedAt.getTime()) / 3_600_000)) : 0;
+    const actionItems = [
+      ...(counts.criticalStock ? [{ severity: "warning", title: `${counts.criticalStock} item(ns) abaixo do mínimo`, detail: "Revise a sugestão de compra antes de perder vendas.", href: "/stock" }] : []),
+      ...(counts.openCash ? [{ severity: openHours >= 9 ? "warning" : "info", title: `Caixa aberto há ${openHours} hora(s)`, detail: "Confira suprimentos, sangrias e o turno do operador.", href: "/pos" }] : []),
+      ...(Number(dueToday.rows[0]?.total ?? 0) ? [{ severity: "warning", title: `${dueToday.rows[0]?.total} conta(s) vencendo hoje`, detail: `${Number(dueToday.rows[0]?.amount ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} para acompanhar no financeiro.`, href: "/financial" }] : []),
+      ...(Number(pendingPurchases.rows[0]?.total ?? 0) ? [{ severity: "info", title: `${pendingPurchases.rows[0]?.total} compra(s) aguardando recebimento`, detail: "Confirme a entrada para atualizar custo e saldo.", href: "/purchases" }] : []),
+    ];
     return {
       counts,
       checklist,
@@ -129,6 +154,7 @@ export class DashboardService {
         dismissed: Boolean(persisted.dismissed),
         completedKeys: Array.from(new Set([...completedKeys, ...checklist.filter((item) => item.autoDone).map((item) => item.key)])),
       },
+      actionItems,
     };
   }
 

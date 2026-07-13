@@ -111,6 +111,7 @@ export default function TeamPage() {
   const [audit, setAudit] = useState<AuditRow[]>([]);
   const [branches, setBranches] = useState<BranchRow[]>([]);
   const [roles, setRoles] = useState<RoleOption[]>([]);
+  const [simulatedRoleId, setSimulatedRoleId] = useState("");
   const [roleDrafts, setRoleDrafts] = useState<Record<string, string[]>>({});
   const [savingRoleId, setSavingRoleId] = useState<string | null>(null);
   const [lastInvite, setLastInvite] = useState<{ inviteUrl: string; emailPreviewHtml: string } | null>(null);
@@ -437,6 +438,10 @@ export default function TeamPage() {
                       como referência de acesso total para evitar perda acidental de administração.
                     </p>
                   </div>
+                  <div className="grid gap-3 rounded-md border border-[var(--brand-border)] bg-[var(--brand-surface)] p-4 md:grid-cols-[280px_minmax(0,1fr)] md:items-end">
+                    <Select label="Simular visão de um perfil" value={simulatedRoleId} onChange={(event) => setSimulatedRoleId(event.target.value)} options={[{ label: "Selecione um perfil", value: "" }, ...roles.map((role) => ({ label: role.roleName, value: role.roleId }))]} />
+                    <PermissionSimulation role={roles.find((role) => role.roleId === simulatedRoleId)} permissions={roleDrafts[simulatedRoleId] ?? roles.find((role) => role.roleId === simulatedRoleId)?.permissions ?? []} />
+                  </div>
                   <div className="overflow-x-auto rounded-md border border-[var(--brand-border)]">
                     <table className="min-w-[1120px] w-full text-sm">
                       <thead className="bg-[var(--brand-surface)] text-left text-xs uppercase tracking-[0.14em] text-[var(--brand-secondary)]">
@@ -638,6 +643,13 @@ export default function TeamPage() {
       />
     </div>
   );
+}
+
+function PermissionSimulation({ role, permissions }: { role?: RoleOption; permissions: string[] }) {
+  if (!role) return <p className="text-sm leading-6 text-slate-500">Escolha um perfil para conferir exatamente quais áreas aparecem para ele. O bloqueio também é aplicado pela API.</p>;
+  const visibleAreas = permissionGroups.filter((group) => role.roleSlug === "owner" || group.permissions.some((permission) => permissions.includes(permission))).map((group) => group.label);
+  const blockedAreas = permissionGroups.filter((group) => !visibleAreas.includes(group.label)).map((group) => group.label);
+  return <div className="grid gap-2 text-sm"><div><strong className="text-[var(--brand-primary)]">{role.roleName}</strong><span className="ml-2 text-slate-500">enxerga {visibleAreas.length} área(s)</span></div><p className="text-slate-600"><strong>Disponível:</strong> {visibleAreas.join(", ") || "nenhuma área"}.</p>{blockedAreas.length ? <p className="text-slate-500"><strong>Oculto e bloqueado:</strong> {blockedAreas.join(", ")}.</p> : null}</div>;
 }
 
 function TeamMetric({

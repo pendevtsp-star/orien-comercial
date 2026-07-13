@@ -59,6 +59,7 @@ export default function ProductsPage() {
         { name: "salePrice", label: "Preco de venda", type: "number", required: true },
         { name: "costPrice", label: "Custo", type: "number" },
         { name: "minStock", label: "Estoque minimo", type: "number" }
+        ,{ name: "initialStock", label: "Estoque inicial", type: "number" }
       ]}
       formExtras={<CatalogAssistant />}
       transform={(form) => ({
@@ -69,6 +70,8 @@ export default function ProductsPage() {
         salePrice: Number(form.get("salePrice") || 0),
         costPrice: Number(form.get("costPrice") || 0),
         minStock: Number(form.get("minStock") || 0),
+        initialStock: Number(form.get("initialStock") || 0),
+        initialStockBranchId: form.get("initialStockBranchId") || undefined,
         unit: "un",
         isActive: true
       })}
@@ -91,6 +94,8 @@ export default function ProductsPage() {
 function CatalogAssistant() {
   const [lookupStatus, setLookupStatus] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
+  const [initialStockBranchId, setInitialStockBranchId] = useState("");
 
   useEffect(() => {
     const fileInput = document.querySelector<HTMLInputElement>('input[name="imageFile"]');
@@ -101,6 +106,14 @@ function CatalogAssistant() {
     };
     fileInput?.addEventListener("change", handleChange);
     return () => fileInput?.removeEventListener("change", handleChange);
+  }, []);
+  useEffect(() => {
+    void apiFetch<{ data: Array<{ id: string; name: string }> }>("/branches?pageSize=100&isActive=true")
+      .then((result) => {
+        setBranches(result.data);
+        setInitialStockBranchId(result.data[0]?.id ?? "");
+      })
+      .catch(() => undefined);
   }, []);
 
   const field = (name: string) => document.querySelector<HTMLInputElement>(`input[name="${name}"]`);
@@ -141,6 +154,7 @@ function CatalogAssistant() {
   return (
     <div className="grid gap-3 rounded-md border border-[var(--brand-border)] bg-[var(--brand-surface)] p-3">
       <input type="hidden" name="imageUrl" />
+      <input type="hidden" name="initialStockBranchId" value={initialStockBranchId} />
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-[var(--brand-primary)]">Cadastro assistido</p>
@@ -152,6 +166,11 @@ function CatalogAssistant() {
         <Button type="button" variant="secondary" icon={<ScanBarcode size={15} />} onClick={() => void lookup()}>Consultar código</Button>
         <Button type="button" variant="secondary" icon={<Sparkles size={15} />} onClick={() => void generateSku()}>Gerar SKU</Button>
       </div>
+      <ol className="grid gap-2 text-xs sm:grid-cols-4">
+        {[["1", "Leia o código"], ["2", "Confirme dados"], ["3", "Preço e imagem"], ["4", "Estoque inicial"]].map(([step, label]) => (
+          <li key={step} className="flex items-center gap-2 rounded-md border border-[var(--brand-border)] bg-white px-2 py-2 text-slate-600"><span className="grid h-5 w-5 place-items-center rounded-full bg-[var(--brand-primary)] text-[10px] font-bold text-white">{step}</span>{label}</li>
+        ))}
+      </ol>
       {lookupStatus ? <p className="text-xs leading-5 text-slate-600">{lookupStatus}</p> : null}
       <div className="rounded-md border border-dashed border-[var(--brand-border)] bg-white p-2">
         <div className="flex items-center gap-3">
@@ -160,6 +179,7 @@ function CatalogAssistant() {
           {preview ? <button type="button" aria-label="Limpar prévia" className="rounded-md p-2 text-slate-500 hover:bg-slate-100" onClick={() => setPreview(null)}><X size={15} /></button> : null}
         </div>
       </div>
+      {branches.length ? <label className="grid gap-1 text-xs font-medium text-slate-600">Loja do estoque inicial<select value={initialStockBranchId} onChange={(event) => setInitialStockBranchId(event.target.value)} className="h-9 rounded-md border border-[var(--brand-border)] bg-white px-2 text-sm text-slate-800">{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label> : null}
     </div>
   );
 }

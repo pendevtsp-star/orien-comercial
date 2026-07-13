@@ -31,6 +31,7 @@ interface OperationalStatus {
   checklist: Array<{ key: string; label: string; done: boolean; href: string }>;
   progressPercent: number;
   nextAction: { label: string; href: string } | null;
+  actionItems: Array<{ severity: "info" | "warning"; title: string; detail: string; href: string }>;
 }
 
 interface Summary {
@@ -185,6 +186,16 @@ export default function StoreCentralPage() {
           );
         })}
       </section>
+
+      <Card>
+        <CardContent className="grid gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <div><p className="text-xs font-medium uppercase tracking-[0.16em] text-[var(--brand-secondary)]">Próximas ações</p><h2 className="mt-1 font-semibold text-[var(--brand-primary)]">O que pede decisão agora</h2></div>
+            <Badge>{status?.actionItems.length ?? 0} prioridade(s)</Badge>
+          </div>
+          {status?.actionItems.length ? <div className="grid gap-2 lg:grid-cols-2">{status.actionItems.map((item) => <Link key={item.title} href={item.href} className={`rounded-md border p-3 transition hover:-translate-y-0.5 ${item.severity === "warning" ? "border-amber-200 bg-amber-50" : "border-[var(--brand-border)] bg-[var(--brand-surface)]"}`}><strong className="block text-sm text-[var(--brand-primary)]">{item.title}</strong><span className="mt-1 block text-xs leading-5 text-slate-600">{item.detail}</span></Link>)}</div> : <EmptyState eyebrow="Rotina em dia" title="Nenhuma ação crítica agora." description="A Central avisará quando caixa, estoque, contas ou compras pedirem atenção." icon={<ClipboardList size={20} />} />}
+        </CardContent>
+      </Card>
 
       <section className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
         <Card>

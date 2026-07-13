@@ -114,6 +114,7 @@ export class ProductsService {
 
   async create(context: TenantContext, input: ProductCreateInput) {
     ensureBranchAccess(context, input.branchId);
+    ensureBranchAccess(context, input.initialStockBranchId);
     const created = await this.database.tenantTransaction(context.tenantId, async (client) => {
       const sku = input.sku?.trim() || (await this.nextSku(client, context.tenantId));
       const result = await client.query(
@@ -141,7 +142,24 @@ export class ProductsService {
           input.isActive,
         ],
       );
-      return result.rows[0] as Record<string, unknown>;
+      const product = result.rows[0] as Record<string, unknown>;
+      const initialStock = Number(input.initialStock ?? 0);
+      const stockBranchId = input.initialStockBranchId ?? input.branchId ?? context.branchId;
+      if (initialStock > 0 && stockBranchId) {
+        await client.query(
+          `INSERT INTO stock_balances (tenant_id,branch_id,product_id,quantity)
+           VALUES ($1,$2,$3,$4)
+           ON CONFLICT (tenant_id,branch_id,product_id)
+           DO UPDATE SET quantity=stock_balances.quantity + EXCLUDED.quantity, updated_at=now()`,
+          [context.tenantId, stockBranchId, product.id, initialStock],
+        );
+        await client.query(
+          `INSERT INTO stock_movements (tenant_id,branch_id,product_id,movement_type,quantity,reason,actor_user_id)
+           VALUES ($1,$2,$3,'initial_stock',$4,'Estoque inicial no cadastro',$5)`,
+          [context.tenantId, stockBranchId, product.id, initialStock, context.userId ?? null],
+        );
+      }
+      return product;
     });
     if (created && (input.imageData || input.imageUrl)) await this.setPrimaryImage(context, created.id as string, input.imageData ?? input.imageUrl!);
     if (created)
@@ -159,6 +177,8 @@ export class ProductsService {
             costPrice: input.costPrice,
             salePrice: input.salePrice,
             minStock: input.minStock,
+            initialStock: input.initialStock ?? 0,
+            initialStockBranchId: input.initialStockBranchId ?? input.branchId ?? context.branchId ?? null,
           }),
         ],
       );
