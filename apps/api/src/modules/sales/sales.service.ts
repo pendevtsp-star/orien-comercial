@@ -295,6 +295,7 @@ export class SalesService {
       }
 
       if (loyaltyWalletId && loyaltyPointsToRedeem > 0) {
+        await consumeLoyaltyLots(client, context.tenantId, loyaltyWalletId, loyaltyPointsToRedeem);
         await client.query(
           "UPDATE loyalty_wallets SET points_balance=points_balance-$2,updated_at=now() WHERE id=$1",
           [loyaltyWalletId, loyaltyPointsToRedeem],
@@ -333,19 +334,20 @@ export class SalesService {
       }
 
       if (input.customerId && openAmount <= 0) {
-        const campaign = await client.query<{ rule: { pointsPerReal?: number } }>(
-          `SELECT lr.rule FROM loyalty_campaigns lc JOIN loyalty_rules lr ON lr.campaign_id=lc.id WHERE lc.tenant_id=$1 AND lc.is_active=true ORDER BY lc.created_at DESC LIMIT 1`,
-          [context.tenantId],
+        const campaign = await client.query<{ rule: { pointsPerReal?: number }; expires_in_days: number | null; minimum_sale_amount: string }>(
+          `SELECT lr.rule,lc.expires_in_days,lc.minimum_sale_amount::text FROM loyalty_campaigns lc JOIN loyalty_rules lr ON lr.campaign_id=lc.id WHERE lc.tenant_id=$1 AND lc.is_active=true AND (lc.branch_id IS NULL OR lc.branch_id=$2) AND (lc.starts_at IS NULL OR lc.starts_at<=now()) AND (lc.ends_at IS NULL OR lc.ends_at>=now()) ORDER BY lc.created_at DESC LIMIT 1`,
+          [context.tenantId, input.branchId],
         );
         const pointsPerReal = Number(campaign.rows[0]?.rule?.pointsPerReal ?? 0);
-        const points = Math.floor(totalAmount * pointsPerReal);
+        const points = totalAmount >= Number(campaign.rows[0]?.minimum_sale_amount ?? 0) ? Math.floor(totalAmount * pointsPerReal) : 0;
         if (points > 0) {
           const wallet = await client.query<{ id: string }>(
             `INSERT INTO loyalty_wallets (tenant_id,customer_id,points_balance) VALUES ($1,$2,0) ON CONFLICT (tenant_id,customer_id) DO UPDATE SET updated_at=now() RETURNING id`,
             [context.tenantId, input.customerId],
           );
           await client.query("UPDATE loyalty_wallets SET points_balance=points_balance+$2,updated_at=now() WHERE id=$1", [wallet.rows[0]!.id, points]);
-          await client.query("INSERT INTO loyalty_ledger (tenant_id,wallet_id,movement_type,points,metadata) VALUES ($1,$2,'sale_paid',$3,$4::jsonb)", [context.tenantId, wallet.rows[0]!.id, points, JSON.stringify({ saleId, totalAmount })]);
+          const ledger = await client.query<{ id: string }>("INSERT INTO loyalty_ledger (tenant_id,wallet_id,movement_type,points,expires_at,metadata) VALUES ($1,$2,'sale_paid',$3,CASE WHEN $4::int IS NULL THEN NULL ELSE now() + ($4::text || ' days')::interval END,$5::jsonb) RETURNING id", [context.tenantId, wallet.rows[0]!.id, points, campaign.rows[0]?.expires_in_days ?? null, JSON.stringify({ saleId, totalAmount })]);
+          await client.query("INSERT INTO loyalty_point_lots (tenant_id,wallet_id,source_ledger_id,original_points,remaining_points,expires_at) VALUES ($1,$2,$3,$4,$4,CASE WHEN $5::int IS NULL THEN NULL ELSE now() + ($5::text || ' days')::interval END)", [context.tenantId, wallet.rows[0]!.id, ledger.rows[0]!.id, points, campaign.rows[0]?.expires_in_days ?? null]);
         }
       }
 
@@ -784,6 +786,30 @@ export class SalesService {
     );
     return { data: docs.rows };
   }
+}
+
+async function consumeLoyaltyLots(
+  client: Pick<PoolClient, "query">,
+  tenantId: string,
+  walletId: string,
+  points: number,
+) {
+  const lots = await client.query<{ id: string; remaining_points: number }>(
+    `SELECT id, remaining_points
+     FROM loyalty_point_lots
+     WHERE tenant_id=$1 AND wallet_id=$2 AND remaining_points>0 AND (expires_at IS NULL OR expires_at>=now())
+     ORDER BY expires_at NULLS LAST, created_at, id
+     FOR UPDATE`,
+    [tenantId, walletId],
+  );
+  let remaining = points;
+  for (const lot of lots.rows) {
+    if (remaining <= 0) break;
+    const consumed = Math.min(remaining, lot.remaining_points);
+    await client.query("UPDATE loyalty_point_lots SET remaining_points=remaining_points-$2 WHERE id=$1", [lot.id, consumed]);
+    remaining -= consumed;
+  }
+  if (remaining > 0) throw new BadRequestException("O saldo disponível de pontos foi alterado. Atualize e tente novamente.");
 }
 
 async function assertBranch(client: PoolClient, tenantId: string, branchId: string) {

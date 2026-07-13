@@ -1,0 +1,10 @@
+{
+  "version": "0.2",
+  "import": ["@cspell/dict-pt-br/cspell-ext.json"],
+  "language": "pt,en",
+  "dictionaries": ["pt-br"],
+  "useGitignore": true,
+  "ignorePaths": ["**/node_modules/**", "**/.next/**", "**/dist/**", "pnpm-lock.yaml"],
+  "words": ["API", "Asaas", "backoffice", "cashback", "CPF", "CNPJ", "CRM", "CSV", "e-mail", "ERP", "Fidelidade", "GTIN", "LGPD", "MFA", "NFCe", "NF-e", "Orien", "PDV", "PII", "pix", "SaaS", "SKU", "SMTP", "TOTP", "tenant", "tenants", "WhatsApp", "XML"],
+  "files": ["packages/ui/src/copy/**/*.ts"]
+}
