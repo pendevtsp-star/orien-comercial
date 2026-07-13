@@ -203,6 +203,7 @@ export class SalesService {
       }, 0);
       let loyaltyDiscountAmount = 0;
       let loyaltyWalletId: string | null = null;
+      let redeemedCouponId: string | null = null;
       type LoyaltyRewardRow = {
         id: string;
         name: string;
@@ -214,6 +215,18 @@ export class SalesService {
       };
       let loyaltyReward: LoyaltyRewardRow | null = null;
       let loyaltyPointsToRedeem = Math.floor(Number(input.loyaltyPointsToRedeem ?? 0));
+      if (input.loyaltyCouponCode) {
+        if (!input.customerId)
+          throw new BadRequestException("Informe o cliente para utilizar um cupom de fidelidade.");
+        const coupon = await client.query<{ id: string; value_amount: string }>(
+          "SELECT id,value_amount::text FROM loyalty_customer_coupons WHERE tenant_id=$1 AND customer_id=$2 AND code=$3 AND status='available' AND (expires_at IS NULL OR expires_at>=now()) FOR UPDATE",
+          [context.tenantId, input.customerId, input.loyaltyCouponCode.trim().toUpperCase()],
+        );
+        if (!coupon.rows[0])
+          throw new BadRequestException("Cupom inválido, expirado ou já utilizado.");
+        redeemedCouponId = coupon.rows[0].id;
+        loyaltyDiscountAmount = Math.min(grossSaleAmount, Number(coupon.rows[0].value_amount));
+      }
       if (input.loyaltyRewardId) {
         if (!input.customerId)
           throw new BadRequestException("Informe um cliente para resgatar uma recompensa.");
@@ -224,15 +237,20 @@ export class SalesService {
         loyaltyReward = reward.rows[0] ?? null;
         if (!loyaltyReward)
           throw new BadRequestException("A recompensa selecionada não está disponível.");
-        if (loyaltyReward.reward_type !== "discount")
+        if (redeemedCouponId)
           throw new BadRequestException(
-            "Esta recompensa deve ser resgatada no atendimento; use uma recompensa de desconto no PDV.",
+            "Use um cupom ou uma recompensa por venda, não os dois juntos.",
           );
         loyaltyPointsToRedeem = loyaltyReward.points_required;
-        loyaltyDiscountAmount = Math.min(
-          grossSaleAmount,
-          Number(loyaltyReward.value_amount ?? loyaltyPointsToRedeem * 0.01),
-        );
+        if (loyaltyReward.reward_type === "discount")
+          loyaltyDiscountAmount = Math.min(
+            grossSaleAmount,
+            Number(loyaltyReward.value_amount ?? loyaltyPointsToRedeem * 0.01),
+          );
+        if (loyaltyReward.reward_type === "cashback" && Number(loyaltyReward.value_amount) <= 0)
+          throw new BadRequestException("Configure o valor do crédito para esta recompensa.");
+        if (loyaltyReward.reward_type === "bonus_product" && !loyaltyReward.product_id)
+          throw new BadRequestException("Configure o produto brinde para esta recompensa.");
       }
       if (loyaltyPointsToRedeem > 0) {
         if (!input.customerId)
@@ -345,6 +363,19 @@ export class SalesService {
         );
       }
 
+      if (loyaltyReward?.reward_type === "bonus_product") {
+        const gift = await client.query<{ id: string; name: string }>(
+          "SELECT id,name FROM products WHERE tenant_id=$1 AND id=$2 AND is_active=true AND deleted_at IS NULL",
+          [context.tenantId, loyaltyReward.product_id],
+        );
+        if (!gift.rows[0]) throw new BadRequestException("O produto brinde não está disponível.");
+        await client.query(
+          "INSERT INTO sale_items (tenant_id,sale_id,product_id,description,quantity,unit_price,discount_amount) VALUES ($1,$2,$3,$4,1,0,0)",
+          [context.tenantId, saleId, gift.rows[0].id, `Brinde fidelidade: ${gift.rows[0].name}`],
+        );
+        await decrementStock(client, context.tenantId, input.branchId, gift.rows[0].id, 1, saleId);
+      }
+
       const paidAmount = input.payments
         .filter((payment) => payment.status === "paid")
         .reduce((sum, payment) => sum + payment.amount, 0);
@@ -388,6 +419,34 @@ export class SalesService {
             loyaltyDiscountAmount,
             JSON.stringify({ rewardName: loyaltyReward?.name ?? null }),
           ],
+        );
+        if (loyaltyReward?.reward_type === "cashback") {
+          const amount = Number(loyaltyReward.value_amount ?? 0);
+          await client.query(
+            "INSERT INTO customer_credits (tenant_id,customer_id,branch_id,amount,balance) VALUES ($1,$2,$3,$4,$4)",
+            [context.tenantId, input.customerId, input.branchId, amount],
+          );
+        }
+        if (loyaltyReward?.reward_type === "coupon") {
+          const code = `${loyaltyReward.coupon_code?.trim().toUpperCase() || "LOY"}-${saleId.slice(0, 8).toUpperCase()}`;
+          await client.query(
+            "INSERT INTO loyalty_customer_coupons (tenant_id,customer_id,reward_id,code,value_amount,expires_at,issued_sale_id) VALUES ($1,$2,$3,$4,$5,(SELECT ends_at FROM loyalty_rewards WHERE id=$3),$6)",
+            [
+              context.tenantId,
+              input.customerId,
+              loyaltyReward.id,
+              code,
+              Number(loyaltyReward.value_amount ?? 0),
+              saleId,
+            ],
+          );
+        }
+      }
+
+      if (redeemedCouponId) {
+        await client.query(
+          "UPDATE loyalty_customer_coupons SET status='redeemed',redeemed_sale_id=$2,redeemed_at=now() WHERE id=$1",
+          [redeemedCouponId, saleId],
         );
       }
 
@@ -533,7 +592,22 @@ export class SalesService {
         });
       }
 
-      const response = { id: saleId, totalAmount, paidAmount, openAmount };
+      const response = {
+        id: saleId,
+        totalAmount,
+        paidAmount,
+        openAmount,
+        loyalty: loyaltyReward
+          ? {
+              type: loyaltyReward.reward_type,
+              rewardName: loyaltyReward.name,
+              couponCode:
+                loyaltyReward.reward_type === "coupon"
+                  ? `${loyaltyReward.coupon_code?.trim().toUpperCase() || "LOY"}-${saleId.slice(0, 8).toUpperCase()}`
+                  : undefined,
+            }
+          : undefined,
+      };
       if (idempotencyKey)
         await client.query(
           "UPDATE idempotency_keys SET response=$3::jsonb,completed_at=now() WHERE tenant_id=$1 AND scope='sales.create' AND key=$2",

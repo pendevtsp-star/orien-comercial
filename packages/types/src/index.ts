@@ -214,6 +214,7 @@ export const saleCreateSchema = z.object({
   customerDocument: z.string().trim().max(20).optional(),
   loyaltyPointsToRedeem: z.coerce.number().int().min(0).default(0),
   loyaltyRewardId: uuidSchema.optional(),
+  loyaltyCouponCode: z.string().trim().min(3).max(64).optional(),
   fiscalRequested: z.boolean().default(false),
   items: z.array(saleItemSchema).min(1).max(100),
   payments: z.array(salePaymentSchema).max(10).default([]),

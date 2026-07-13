@@ -101,6 +101,8 @@ export default function PosPage() {
   const [customerDocument, setCustomerDocument] = useState("");
   const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState(0);
   const [loyaltyRewardId, setLoyaltyRewardId] = useState("");
+  const [loyaltyCouponCode, setLoyaltyCouponCode] = useState("");
+  const [notice, setNotice] = useState("");
   const [fiscalRequested, setFiscalRequested] = useState(false);
   const [cash, setCash] = useState<CashSession | null>(null);
   const [cashHistory, setCashHistory] = useState<CashHistory[]>([]);
@@ -268,9 +270,7 @@ export default function PosPage() {
       return;
     }
     void apiFetch<{ data: LoyaltyReward[] }>(`/loyalty/rewards/available?customerId=${customerId}`)
-      .then((result) =>
-        setLoyaltyRewards(result.data.filter((reward) => reward.rewardType === "discount")),
-      )
+      .then((result) => setLoyaltyRewards(result.data))
       .catch(() => setLoyaltyRewards([]));
   }, [customerId, customers]);
 
@@ -423,6 +423,7 @@ export default function PosPage() {
         customerDocument: customerDocument || undefined,
         loyaltyPointsToRedeem,
         loyaltyRewardId: loyaltyRewardId || undefined,
+        loyaltyCouponCode: loyaltyCouponCode.trim().toUpperCase() || undefined,
         fiscalRequested,
         cashRegisterSessionId: cash.id,
         items: cart.map((item) => ({
@@ -444,12 +445,24 @@ export default function PosPage() {
         window.localStorage.setItem(queueKey, JSON.stringify(pending));
         setPendingSync(pending.length);
       } else {
-        const result = await apiFetch<{ id?: string; sale?: { id?: string } }>("/sales", {
+        const result = await apiFetch<{
+          id?: string;
+          sale?: { id?: string };
+          loyalty?: { type: string; rewardName: string; couponCode?: string };
+        }>("/sales", {
           method: "POST",
           headers: { "idempotency-key": createIdempotencyKey() },
           body: JSON.stringify(payload),
         });
         const saleId = result.id ?? result.sale?.id;
+        if (result.loyalty?.couponCode)
+          setNotice(
+            `Cupom ${result.loyalty.couponCode} emitido para ${result.loyalty.rewardName}.`,
+          );
+        else if (result.loyalty?.type === "cashback")
+          setNotice(`Crédito de fidelidade lançado para ${result.loyalty.rewardName}.`);
+        else if (result.loyalty?.type === "bonus_product")
+          setNotice(`Brinde ${result.loyalty.rewardName} incluído na venda.`);
         if (saleId && printAfterSale && printing?.receiptMode !== "none") {
           const shouldOpenPrint = printing?.receiptMode === "thermal" || printing?.silentPrint;
           const receiptPath =
@@ -463,6 +476,7 @@ export default function PosPage() {
       setPaymentParts([]);
       setLoyaltyPointsToRedeem(0);
       setLoyaltyRewardId("");
+      setLoyaltyCouponCode("");
       setError(null);
       scannerRef.current?.focus();
     } catch (err) {
@@ -541,6 +555,11 @@ export default function PosPage() {
           {error}
         </p>
       ) : null}
+      {notice ? (
+        <p className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+          {notice}
+        </p>
+      ) : null}
       <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
         <Card className="min-w-0">
           <CardContent className="grid gap-3">
@@ -567,24 +586,6 @@ export default function PosPage() {
                   step="0.01"
                   defaultValue="0"
                 />
-                {loyaltyRewards.length ? (
-                  <Select
-                    label="Recompensa disponível"
-                    value={loyaltyRewardId}
-                    onChange={(event) => {
-                      const reward = loyaltyRewards.find((item) => item.id === event.target.value);
-                      setLoyaltyRewardId(event.target.value);
-                      if (reward) setLoyaltyPointsToRedeem(reward.pointsRequired);
-                    }}
-                    options={[
-                      { label: "Usar pontos livremente", value: "" },
-                      ...loyaltyRewards.map((reward) => ({
-                        label: `${reward.name} · ${reward.pointsRequired} pontos`,
-                        value: reward.id,
-                      })),
-                    ]}
-                  />
-                ) : null}
                 <Button type="submit">Abrir caixa</Button>
               </form>
             ) : (
@@ -789,6 +790,32 @@ export default function PosPage() {
                     )
                   }
                 />
+                <Input
+                  label="Aplicar cupom de fidelidade"
+                  value={loyaltyCouponCode}
+                  onChange={(event) => setLoyaltyCouponCode(event.target.value.toUpperCase())}
+                  placeholder="Ex.: LOY-AB12CD34"
+                  disabled={Boolean(loyaltyRewardId)}
+                />
+                {loyaltyRewards.length ? (
+                  <Select
+                    label="Resgatar recompensa"
+                    value={loyaltyRewardId}
+                    onChange={(event) => {
+                      const reward = loyaltyRewards.find((item) => item.id === event.target.value);
+                      setLoyaltyRewardId(event.target.value);
+                      if (event.target.value) setLoyaltyCouponCode("");
+                      if (reward) setLoyaltyPointsToRedeem(reward.pointsRequired);
+                    }}
+                    options={[
+                      { label: "Usar pontos livremente", value: "" },
+                      ...loyaltyRewards.map((reward) => ({
+                        label: `${reward.name} · ${reward.pointsRequired} pontos · ${rewardTypeLabel(reward.rewardType)}`,
+                        value: reward.id,
+                      })),
+                    ]}
+                  />
+                ) : null}
                 <p className="mt-1 text-xs text-white/55">100 pontos equivalem a R$ 1,00 no PDV.</p>
               </div>
             ) : null}
@@ -1052,6 +1079,19 @@ function receiptModeLabel(mode: string) {
   if (mode === "none") return "não imprimir";
   if (mode === "thermal") return "térmico";
   return "navegador";
+}
+
+function rewardTypeLabel(type: LoyaltyReward["rewardType"]) {
+  return (
+    (
+      {
+        discount: "desconto",
+        coupon: "cupom",
+        cashback: "crédito",
+        bonus_product: "brinde",
+      } as Record<LoyaltyReward["rewardType"], string>
+    )[type] ?? type
+  );
 }
 
 function paymentMethodLabel(method: string) {
