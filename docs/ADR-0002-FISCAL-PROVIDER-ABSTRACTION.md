@@ -2,7 +2,9 @@
 
 ## Status
 
-Aceita em 13 de julho de 2026. A emissão real continua desativada até a homologação do primeiro provedor.
+Aceita em 13 de julho de 2026 e atualizada na versão 1.2.0. A Focus NFe é o primeiro
+adaptador de homologação. Produção continua bloqueada até a aprovação contábil e o aceite
+formal do piloto fiscal.
 
 ## Contexto
 
@@ -16,6 +18,9 @@ A Orien precisa emitir NF-e e NFC-e para múltiplos tenants e filiais sem acopla
 - Webhooks atualizam o documento fiscal de forma idempotente.
 - O estado comercial da venda e o estado fiscal permanecem separados e auditáveis.
 - Nenhuma credencial fiscal será armazenada em texto puro ou enviada ao navegador.
+- O token principal, o certificado A1 e o CSC usam referências distintas no cofre criptografado.
+- A referência da venda é idempotente no provedor e no banco da Orien.
+- Falhas transitórias entram em fila de nova tentativa; rejeições fiscais exigem ação humana.
 
 ## Prontidão do produto
 
@@ -26,3 +31,10 @@ Um produto é considerado apto quando possui NCM, origem, CFOP interno e interes
 - A integração inicial exige mais modelagem, porém permite trocar de provedor sem reescrever o PDV.
 - Rejeições da SEFAZ devem ser traduzidas para mensagens operacionais sem esconder o código técnico no histórico.
 - Homologação, contingência, cancelamento, inutilização e download de XML/DANFE precisam de testes contratuais próprios.
+
+## Primeiro adaptador
+
+A Focus NFe foi selecionada para o primeiro ciclo porque publica contratos específicos para
+NFC-e e NF-e, autenticação HTTP Basic, ambientes separados, consulta, cancelamento e
+contingência. A Spedy permanece compatível com a abstração e será reavaliada após acesso à
+documentação contratual completa e definição comercial.

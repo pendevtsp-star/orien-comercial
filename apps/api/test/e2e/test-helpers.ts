@@ -58,7 +58,12 @@ const permissionSlugs = [
   "subscriptions.read",
   "subscriptions.manage",
   "subscriptions.webhook",
-  "dashboard.read"
+  "dashboard.read",
+  "fiscal.read",
+  "fiscal.configure",
+  "fiscal.issue",
+  "fiscal.cancel",
+  "fiscal.review"
 ] as const;
 
 const roleSlugs = ["owner", "admin", "manager", "seller", "cashier", "stock", "finance", "support", "viewer"] as const;

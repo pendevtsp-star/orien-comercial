@@ -1,35 +1,35 @@
 export const permissions = {
   platform: {
     manageTenants: "platform.tenants.manage",
-    viewAudit: "platform.audit.view"
+    viewAudit: "platform.audit.view",
   },
   tenants: {
     read: "tenants.read",
-    update: "tenants.update"
+    update: "tenants.update",
   },
   users: {
     invite: "users.invite",
     read: "users.read",
     manageRoles: "users.roles.manage",
-    manageMemberships: "users.memberships.manage"
+    manageMemberships: "users.memberships.manage",
   },
   branches: {
     read: "branches.read",
     create: "branches.create",
     update: "branches.update",
-    delete: "branches.delete"
+    delete: "branches.delete",
   },
   products: {
     read: "products.read",
     create: "products.create",
     update: "products.update",
-    delete: "products.delete"
+    delete: "products.delete",
   },
   customers: {
     read: "customers.read",
     create: "customers.create",
     update: "customers.update",
-    delete: "customers.delete"
+    delete: "customers.delete",
   },
   stock: {
     read: "stock.read",
@@ -37,29 +37,36 @@ export const permissions = {
     transfer: "stock.transfer",
     inventory: "stock.inventory",
     purchase: "stock.purchase",
-    reports: "stock.reports"
+    reports: "stock.reports",
   },
   sales: {
     read: "sales.read",
     create: "sales.create",
     cancel: "sales.cancel",
-    history: "sales.history"
+    history: "sales.history",
   },
   financial: {
     read: "financial.read",
     receive: "financial.receive",
     pay: "financial.pay",
     reconcile: "financial.reconcile",
-    categories: "financial.categories.manage"
+    categories: "financial.categories.manage",
   },
   subscriptions: {
     read: "subscriptions.read",
     manage: "subscriptions.manage",
-    webhook: "subscriptions.webhook"
+    webhook: "subscriptions.webhook",
   },
   dashboard: {
-    read: "dashboard.read"
-  }
+    read: "dashboard.read",
+  },
+  fiscal: {
+    read: "fiscal.read",
+    configure: "fiscal.configure",
+    issue: "fiscal.issue",
+    cancel: "fiscal.cancel",
+    review: "fiscal.review",
+  },
 } as const;
 
 export type Permission = Leaves<typeof permissions>;
@@ -79,7 +86,7 @@ export const roleSlugs = {
   stock: "stock",
   finance: "finance",
   support: "support",
-  viewer: "viewer"
+  viewer: "viewer",
 } as const;
 
 export type RoleSlug = (typeof roleSlugs)[keyof typeof roleSlugs];
@@ -118,7 +125,12 @@ export const defaultRolePermissions: Record<RoleSlug, Permission[]> = {
     permissions.financial.categories,
     permissions.subscriptions.read,
     permissions.subscriptions.manage,
-    permissions.dashboard.read
+    permissions.dashboard.read,
+    permissions.fiscal.read,
+    permissions.fiscal.configure,
+    permissions.fiscal.issue,
+    permissions.fiscal.cancel,
+    permissions.fiscal.review,
   ],
   manager: [
     permissions.branches.read,
@@ -144,7 +156,11 @@ export const defaultRolePermissions: Record<RoleSlug, Permission[]> = {
     permissions.users.read,
     permissions.users.invite,
     permissions.subscriptions.read,
-    permissions.dashboard.read
+    permissions.dashboard.read,
+    permissions.fiscal.read,
+    permissions.fiscal.issue,
+    permissions.fiscal.cancel,
+    permissions.fiscal.review,
   ],
   seller: [
     permissions.products.read,
@@ -154,7 +170,9 @@ export const defaultRolePermissions: Record<RoleSlug, Permission[]> = {
     permissions.sales.read,
     permissions.sales.create,
     permissions.sales.history,
-    permissions.dashboard.read
+    permissions.dashboard.read,
+    permissions.fiscal.read,
+    permissions.fiscal.issue,
   ],
   cashier: [
     permissions.products.read,
@@ -162,7 +180,9 @@ export const defaultRolePermissions: Record<RoleSlug, Permission[]> = {
     permissions.sales.read,
     permissions.sales.create,
     permissions.sales.history,
-    permissions.dashboard.read
+    permissions.dashboard.read,
+    permissions.fiscal.read,
+    permissions.fiscal.issue,
   ],
   stock: [
     permissions.branches.read,
@@ -175,7 +195,8 @@ export const defaultRolePermissions: Record<RoleSlug, Permission[]> = {
     permissions.stock.inventory,
     permissions.stock.purchase,
     permissions.stock.reports,
-    permissions.dashboard.read
+    permissions.dashboard.read,
+    permissions.fiscal.read,
   ],
   finance: [
     permissions.customers.read,
@@ -187,18 +208,35 @@ export const defaultRolePermissions: Record<RoleSlug, Permission[]> = {
     permissions.financial.reconcile,
     permissions.financial.categories,
     permissions.subscriptions.read,
-    permissions.dashboard.read
+    permissions.dashboard.read,
+    permissions.fiscal.read,
   ],
-  support: [permissions.tenants.read, permissions.users.read, permissions.subscriptions.read, permissions.dashboard.read],
-  viewer: [permissions.branches.read, permissions.products.read, permissions.customers.read, permissions.dashboard.read]
+  support: [
+    permissions.tenants.read,
+    permissions.users.read,
+    permissions.subscriptions.read,
+    permissions.dashboard.read,
+  ],
+  viewer: [
+    permissions.branches.read,
+    permissions.products.read,
+    permissions.customers.read,
+    permissions.dashboard.read,
+  ],
 };
 
-export function hasEveryPermission(granted: readonly string[], required: readonly string[]): boolean {
+export function hasEveryPermission(
+  granted: readonly string[],
+  required: readonly string[],
+): boolean {
   const permissionSet = new Set(granted);
   return required.every((permission) => permissionSet.has(permission));
 }
 
-export function assertTenantScopedQuery(input: { tenantId?: string | null; resourceId?: string | null }): void {
+export function assertTenantScopedQuery(input: {
+  tenantId?: string | null;
+  resourceId?: string | null;
+}): void {
   if (!input.tenantId) {
     throw new Error("Tenant-scoped queries must include tenantId.");
   }

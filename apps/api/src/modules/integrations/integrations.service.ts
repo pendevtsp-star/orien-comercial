@@ -19,7 +19,13 @@ export class IntegrationsService {
   ) {}
 
   async list(context: TenantContext) {
-    const result = await this.db.tenantQuery(
+    const result = await this.db.tenantQuery<{
+      provider: Provider;
+      status: string;
+      settings: Settings;
+      hasCredential: boolean;
+      updatedAt: Date;
+    }>(
       context.tenantId,
       `SELECT i.provider,i.status,COALESCE(i.settings,'{}') settings,
         EXISTS(SELECT 1 FROM integration_credentials ic WHERE ic.tenant_integration_id=i.id) AS "hasCredential",
@@ -27,10 +33,24 @@ export class IntegrationsService {
        FROM tenant_integrations i WHERE i.tenant_id=$1`,
       [context.tenantId],
     );
-    return { data: providers.map((provider) => result.rows.find((row: any) => row.provider === provider) ?? { provider, status: "disabled", settings: {}, hasCredential: false }) };
+    return {
+      data: providers.map(
+        (provider) =>
+          result.rows.find((row) => row.provider === provider) ?? {
+            provider,
+            status: "disabled",
+            settings: {},
+            hasCredential: false,
+          },
+      ),
+    };
   }
 
-  async save(context: TenantContext, provider: string, input: { status: string; mode: string; settings: Settings }) {
+  async save(
+    context: TenantContext,
+    provider: string,
+    input: { status: string; mode: string; settings: Settings },
+  ) {
     this.assert(provider);
     if (provider === "smtp") this.validateSmtpSettings(input.settings);
     const row = await this.db.tenantQuery(
@@ -69,7 +89,10 @@ export class IntegrationsService {
     let message = "Configuração protegida e pronta para uso.";
     try {
       if (provider === "asaas_business") {
-        const response = await fetch(`${integration.settings.apiUrl ?? this.config.ASAAS_API_URL}/myAccount`, { headers: { access_token: integration.secret } });
+        const response = await fetch(
+          `${integration.settings.apiUrl ?? this.config.ASAAS_API_URL}/myAccount`,
+          { headers: { access_token: integration.secret } },
+        );
         ok = response.ok;
         message = ok ? "Conta Asaas validada." : "Não foi possível validar a conta Asaas.";
       }
@@ -83,28 +106,69 @@ export class IntegrationsService {
           from: integration.settings.from,
           to: recipient,
           subject: "Orien · teste de e-mail da empresa",
-          html: "<main style=\"font-family:Arial,sans-serif;color:#0b1d3d\"><h1>E-mail configurado</h1><p>Esta mensagem confirma que a Orien pode enviar comunicações em nome da sua empresa.</p></main>",
+          html: '<main style="font-family:Arial,sans-serif;color:#0b1d3d"><h1>E-mail configurado</h1><p>Esta mensagem confirma que a Orien pode enviar comunicações em nome da sua empresa.</p></main>',
         });
         message = "E-mail de teste enviado. Confira sua caixa de entrada.";
       }
+      if (provider === "fiscal") {
+        const fiscalProvider = integration.settings.provider || "focus_nfe";
+        if (fiscalProvider !== "focus_nfe") {
+          throw new BadRequestException(
+            "O adaptador Spedy permanece em avaliação. Selecione Focus NFe para a homologação atual.",
+          );
+        }
+        const baseUrl =
+          integration.settings.environment === "production"
+            ? "https://api.focusnfe.com.br"
+            : "https://homologacao.focusnfe.com.br";
+        const response = await fetch(`${baseUrl}/v2/empresas`, {
+          signal: AbortSignal.timeout(8_000),
+          headers: {
+            Authorization: `Basic ${Buffer.from(`${integration.secret}:`).toString("base64")}`,
+            Accept: "application/json",
+          },
+        });
+        ok = response.ok;
+        message = ok
+          ? "Credencial Focus NFe validada no ambiente selecionado."
+          : "A Focus NFe recusou a credencial. Confirme o token e o ambiente.";
+      }
     } catch (error) {
       ok = false;
-      message = error instanceof BadRequestException ? error.message : "Não foi possível conectar ao serviço agora. Revise os dados e tente novamente.";
+      message =
+        error instanceof BadRequestException
+          ? error.message
+          : "Não foi possível conectar ao serviço agora. Revise os dados e tente novamente.";
     }
     await this.db.tenantQuery(
       context.tenantId,
       `UPDATE tenant_integrations SET settings=COALESCE(settings,'{}'::jsonb)||$3::jsonb,status=$4,updated_at=now()
        WHERE tenant_id=$1 AND provider=$2`,
-      [context.tenantId, provider, JSON.stringify({ lastTestAt: new Date().toISOString(), lastTestOk: ok, lastTestMessage: message }), ok ? "configured" : "error"],
+      [
+        context.tenantId,
+        provider,
+        JSON.stringify({
+          lastTestAt: new Date().toISOString(),
+          lastTestOk: ok,
+          lastTestMessage: message,
+        }),
+        ok ? "configured" : "error",
+      ],
     );
     return { ok, message };
   }
 
-  async sendTenantEmail(context: TenantContext, input: { to: string; subject: string; html: string }) {
+  async sendTenantEmail(
+    context: TenantContext,
+    input: { to: string; subject: string; html: string },
+  ) {
     const integration = await this.integration(context, "smtp");
     if (!integration) return { sent: false, reason: "not_configured" as const };
     try {
-      await this.smtpTransport(integration.settings, this.parseSmtpCredentials(integration.secret)).sendMail({
+      await this.smtpTransport(
+        integration.settings,
+        this.parseSmtpCredentials(integration.secret),
+      ).sendMail({
         from: integration.settings.from,
         to: input.to,
         subject: input.subject,
@@ -116,17 +180,90 @@ export class IntegrationsService {
     }
   }
 
-  private async integration(context: TenantContext, provider: Provider) {
-    const result = await this.db.tenantQuery<{ encrypted_payload: string; settings: Settings }>(
+  async getFiscalConnection(context: TenantContext) {
+    const connection = await this.integration(context, "fiscal");
+    if (!connection || connection.status !== "configured" || !connection.lastTestOk) {
+      return null;
+    }
+    return connection;
+  }
+
+  async putScopedCredential(
+    context: TenantContext,
+    provider: Provider,
+    secretRef: string,
+    secret: string,
+  ) {
+    this.assert(provider);
+    if (!secretRef.startsWith(`${provider}:`) || secretRef.length > 220) {
+      throw new BadRequestException("Referência de credencial inválida.");
+    }
+    const integration = await this.db.tenantQuery<{ id: string }>(
       context.tenantId,
-      `SELECT ic.encrypted_payload,i.settings FROM tenant_integrations i
-       JOIN integration_credentials ic ON ic.tenant_integration_id=i.id
-       WHERE i.tenant_id=$1 AND i.provider=$2
-       ORDER BY ic.rotated_at DESC NULLS LAST,ic.created_at DESC LIMIT 1`,
+      `INSERT INTO tenant_integrations (tenant_id,provider,status) VALUES ($1,$2,'configured')
+       ON CONFLICT (tenant_id,provider) DO UPDATE SET updated_at=now() RETURNING id`,
       [context.tenantId, provider],
     );
+    await this.db.tenantQuery(
+      context.tenantId,
+      `INSERT INTO integration_credentials
+        (tenant_id,tenant_integration_id,secret_ref,encrypted_payload,rotated_at)
+       VALUES ($1,$2,$3,$4,now())`,
+      [context.tenantId, integration.rows[0]!.id, secretRef, this.encrypt(secret)],
+    );
+  }
+
+  async hasScopedCredential(context: TenantContext, provider: Provider, secretRef: string) {
+    const result = await this.db.tenantQuery<{ present: boolean }>(
+      context.tenantId,
+      `SELECT EXISTS(
+        SELECT 1 FROM integration_credentials ic
+        JOIN tenant_integrations i ON i.id=ic.tenant_integration_id
+        WHERE i.tenant_id=$1 AND i.provider=$2 AND ic.secret_ref=$3
+       ) AS present`,
+      [context.tenantId, provider, secretRef],
+    );
+    return result.rows[0]?.present ?? false;
+  }
+
+  async getScopedCredential(context: TenantContext, provider: Provider, secretRef: string) {
+    const result = await this.db.tenantQuery<{ encrypted_payload: string }>(
+      context.tenantId,
+      `SELECT ic.encrypted_payload FROM integration_credentials ic
+       JOIN tenant_integrations i ON i.id=ic.tenant_integration_id
+       WHERE i.tenant_id=$1 AND i.provider=$2 AND ic.secret_ref=$3
+       ORDER BY ic.rotated_at DESC NULLS LAST,ic.created_at DESC LIMIT 1`,
+      [context.tenantId, provider, secretRef],
+    );
     const row = result.rows[0];
-    return row ? { settings: row.settings, secret: this.decrypt(row.encrypted_payload) } : null;
+    return row ? this.decrypt(row.encrypted_payload) : null;
+  }
+
+  private async integration(context: TenantContext, provider: Provider) {
+    const result = await this.db.tenantQuery<{
+      encrypted_payload: string;
+      settings: Settings;
+      status: string;
+      last_test_ok: boolean;
+    }>(
+      context.tenantId,
+      `SELECT ic.encrypted_payload,i.settings,i.status,
+        COALESCE((i.settings->>'lastTestOk')::boolean,false) AS last_test_ok
+       FROM tenant_integrations i
+       JOIN integration_credentials ic ON ic.tenant_integration_id=i.id
+       WHERE i.tenant_id=$1 AND i.provider=$2 AND ic.secret_ref=$3
+       ORDER BY ic.rotated_at DESC NULLS LAST,ic.created_at DESC LIMIT 1`,
+      [context.tenantId, provider, `${provider}:primary`],
+    );
+    const row = result.rows[0];
+    return row
+      ? {
+          settings: row.settings,
+          status: row.status,
+          lastTestOk: row.last_test_ok,
+          secret: this.decrypt(row.encrypted_payload),
+        }
+      : null;
   }
 
   private smtpTransport(settings: Settings, credentials: SmtpCredentials) {
@@ -140,9 +277,13 @@ export class IntegrationsService {
   }
 
   private validateSmtpSettings(settings: Settings) {
-    if (!settings.from?.trim() || !settings.host?.trim()) throw new BadRequestException("Informe o e-mail que envia mensagens e o servidor do provedor.");
+    if (!settings.from?.trim() || !settings.host?.trim())
+      throw new BadRequestException(
+        "Informe o e-mail que envia mensagens e o servidor do provedor.",
+      );
     const port = Number(settings.port ?? 587);
-    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new BadRequestException("Informe uma porta válida.");
+    if (!Number.isInteger(port) || port < 1 || port > 65535)
+      throw new BadRequestException("Informe uma porta válida.");
   }
 
   private parseSmtpCredentials(secret: string): SmtpCredentials {
@@ -156,7 +297,8 @@ export class IntegrationsService {
   }
 
   private assert(provider: string): asserts provider is Provider {
-    if (!providers.includes(provider as Provider)) throw new BadRequestException("Provedor inválido.");
+    if (!providers.includes(provider as Provider))
+      throw new BadRequestException("Provedor inválido.");
   }
 
   private encrypt(value: string) {

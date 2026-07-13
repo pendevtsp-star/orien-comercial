@@ -28,6 +28,7 @@ import { TrialLifecycleModule } from "../modules/trials/trial-lifecycle.module";
 import { TasksModule } from "../modules/tasks/tasks.module";
 import { SupportModule } from "../modules/support/support.module";
 import { UpdatesModule } from "../modules/updates/updates.module";
+import { FiscalModule } from "../modules/fiscal/fiscal.module";
 
 @Module({
   imports: [
@@ -65,6 +66,7 @@ import { UpdatesModule } from "../modules/updates/updates.module";
     TasksModule,
     SupportModule,
     UpdatesModule,
+    FiscalModule,
   ],
 })
 export class AppModule {}

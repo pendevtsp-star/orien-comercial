@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Headers, Inject, Param, Post, Query, Res, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  Inject,
+  Param,
+  Post,
+  Query,
+  Res,
+  UseGuards,
+} from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { permissions } from "@sgc/auth";
 import { saleCancelSchema, saleCreateSchema, salesListQuerySchema } from "@sgc/types";
@@ -20,19 +31,30 @@ export class SalesController {
 
   @RequirePermissions(permissions.sales.read)
   @Get()
-  list(@CurrentTenant() tenant: TenantContext, @Query(new ZodValidationPipe(salesListQuerySchema)) query: never) {
+  list(
+    @CurrentTenant() tenant: TenantContext,
+    @Query(new ZodValidationPipe(salesListQuerySchema)) query: never,
+  ) {
     return this.salesService.list(tenant, query);
   }
 
   @RequirePermissions(permissions.sales.create)
   @Post()
-  create(@CurrentTenant() tenant: TenantContext, @Headers("idempotency-key") idempotencyKey: string | undefined, @Body(new ZodValidationPipe(saleCreateSchema)) body: never) {
+  create(
+    @CurrentTenant() tenant: TenantContext,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Body(new ZodValidationPipe(saleCreateSchema)) body: never,
+  ) {
     return this.salesService.create(tenant, body, idempotencyKey);
   }
 
   @RequirePermissions(permissions.sales.cancel)
   @Post(":id/cancel")
-  cancel(@CurrentTenant() tenant: TenantContext, @Param("id") id: string, @Body(new ZodValidationPipe(saleCancelSchema)) body: never) {
+  cancel(
+    @CurrentTenant() tenant: TenantContext,
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(saleCancelSchema)) body: never,
+  ) {
     return this.salesService.cancel(tenant, id, body);
   }
 
@@ -44,25 +66,37 @@ export class SalesController {
 
   @RequirePermissions(permissions.sales.read)
   @Get(":id/document")
-  async document(@CurrentTenant() tenant: TenantContext, @Param("id") id: string, @Res() response: Response) {
+  async document(
+    @CurrentTenant() tenant: TenantContext,
+    @Param("id") id: string,
+    @Res() response: Response,
+  ) {
     response.type("html");
     response.send(await this.salesService.document(tenant, id));
   }
 
   @RequirePermissions(permissions.sales.read)
   @Get(":id/receipt")
-  async receipt(@CurrentTenant() tenant: TenantContext, @Param("id") id: string, @Res() response: Response) {
+  async receipt(
+    @CurrentTenant() tenant: TenantContext,
+    @Param("id") id: string,
+    @Res() response: Response,
+  ) {
     response.type("html");
     response.send(await this.salesService.thermalReceipt(tenant, id));
   }
 
-  @RequirePermissions(permissions.sales.create)
+  @RequirePermissions(permissions.fiscal.issue)
   @Post(":id/fiscal/issue")
-  fiscalIssue(@CurrentTenant() tenant: TenantContext, @Param("id") id: string) {
-    return this.salesService.requestFiscalIssue(tenant, id);
+  fiscalIssue(
+    @CurrentTenant() tenant: TenantContext,
+    @Param("id") id: string,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+  ) {
+    return this.salesService.requestFiscalIssue(tenant, id, idempotencyKey);
   }
 
-  @RequirePermissions(permissions.sales.read)
+  @RequirePermissions(permissions.fiscal.read)
   @Get(":id/fiscal")
   fiscalStatus(@CurrentTenant() tenant: TenantContext, @Param("id") id: string) {
     return this.salesService.fiscalStatus(tenant, id);

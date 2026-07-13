@@ -594,6 +594,93 @@ export const integrationSettingsSchema = z.object({
 });
 export const integrationCredentialSchema = z.object({ secret: z.string().min(8).max(4000) });
 
+export const branchFiscalSettingsSchema = z.object({
+  provider: z.enum(["focus_nfe", "spedy"]).default("focus_nfe"),
+  environment: z.enum(["homologation", "production"]).default("homologation"),
+  documentMode: z.enum(["nfce", "nfe", "both"]).default("nfce"),
+  taxRegime: z.enum(["simples_nacional", "simples_excesso", "regime_normal"]),
+  legalName: z.string().trim().min(2).max(180),
+  tradeName: z.string().trim().min(2).max(180),
+  taxId: z
+    .string()
+    .transform((value) => value.replace(/\D/g, ""))
+    .pipe(z.string().regex(/^\d{14}$/, "Informe um CNPJ válido para emissão fiscal.")),
+  stateRegistration: z.string().trim().min(2).max(32),
+  municipalRegistration: z.string().trim().max(32).optional(),
+  state: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{2}$/),
+  cityCode: z
+    .string()
+    .trim()
+    .regex(/^\d{7}$/, "Informe o código IBGE do município."),
+  addressLine: z.string().trim().min(2).max(180),
+  addressNumber: z.string().trim().min(1).max(24),
+  district: z.string().trim().min(2).max(100),
+  postalCode: z
+    .string()
+    .transform((value) => value.replace(/\D/g, ""))
+    .pipe(z.string().regex(/^\d{8}$/)),
+  cscIdentifier: z.string().trim().max(12).optional(),
+  nfceSeries: z.coerce.number().int().min(1).max(999),
+  nextNfceNumber: z.coerce.number().int().min(1),
+  nfeSeries: z.coerce.number().int().min(1).max(999),
+  nextNfeNumber: z.coerce.number().int().min(1),
+  contingencyEnabled: z.boolean().default(true),
+  certificateMode: z.enum(["provider_managed", "orien_vault"]).default("provider_managed"),
+  certificateExpiresAt: z.string().datetime().optional(),
+});
+
+export const fiscalCredentialSchema = z
+  .object({
+    certificateBase64: z.string().max(3_000_000).optional(),
+    certificatePassword: z.string().max(256).optional(),
+    cscToken: z.string().trim().max(256).optional(),
+  })
+  .refine(
+    (value) => Boolean(value.certificateBase64 || value.cscToken),
+    "Informe o certificado ou o CSC.",
+  );
+
+export const fiscalIssueSchema = z.object({
+  saleId: uuidSchema,
+  documentType: z.enum(["nfce", "nfe"]).default("nfce"),
+  contingency: z.boolean().default(false),
+});
+
+export const fiscalCancelSchema = z.object({
+  justification: z.string().trim().min(15).max(255),
+});
+
+export const fiscalReviewSchema = z
+  .object({
+    status: z.enum(["approved", "rejected"]),
+    note: z.string().trim().max(1000).optional(),
+  })
+  .refine(
+    (value) => value.status !== "rejected" || Boolean(value.note),
+    "Informe o motivo da reprovação.",
+  );
+
+export const fiscalDocumentListQuerySchema = paginationQuerySchema.extend({
+  branchId: uuidSchema.optional(),
+  status: z
+    .enum([
+      "queued",
+      "transmitting",
+      "authorized",
+      "cancelled",
+      "rejected",
+      "retry_pending",
+      "error",
+      "contingency",
+    ])
+    .optional(),
+  documentType: z.enum(["nfce", "nfe"]).optional(),
+});
+
 export type LoginInput = z.infer<typeof loginSchema>;
 export type PaginationQuery = z.infer<typeof paginationQuerySchema>;
 export type ResourceListQuery = z.infer<typeof resourceListQuerySchema>;
@@ -645,3 +732,9 @@ export type AsaasWebhookInput = z.infer<typeof asaasWebhookSchema>;
 export type TenantBrandingInput = z.infer<typeof tenantBrandingSchema>;
 export type PrintingSettingsInput = z.infer<typeof printingSettingsSchema>;
 export type PrinterProfileInput = z.infer<typeof printerProfileSchema>;
+export type BranchFiscalSettingsInput = z.infer<typeof branchFiscalSettingsSchema>;
+export type FiscalCredentialInput = z.infer<typeof fiscalCredentialSchema>;
+export type FiscalIssueInput = z.infer<typeof fiscalIssueSchema>;
+export type FiscalCancelInput = z.infer<typeof fiscalCancelSchema>;
+export type FiscalReviewInput = z.infer<typeof fiscalReviewSchema>;
+export type FiscalDocumentListQuery = z.infer<typeof fiscalDocumentListQuerySchema>;

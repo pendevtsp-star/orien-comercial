@@ -12,10 +12,14 @@ import {
 import type { TenantContext } from "../../shared/request-context";
 import { loadTenantBranding } from "../../shared/tenant-branding";
 import { DatabaseService } from "../database/database.service";
+import { FiscalService } from "../fiscal/fiscal.service";
 
 @Injectable()
 export class SalesService {
-  constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
+  constructor(
+    @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(FiscalService) private readonly fiscal: FiscalService,
+  ) {}
 
   async list(context: TenantContext, query: SalesListQuery) {
     const page = pagination(query);
@@ -976,62 +980,16 @@ export class SalesService {
     </style></head><body>${copyHtml}<script>window.onload=()=>window.print()</script></body></html>`;
   }
 
-  async requestFiscalIssue(context: TenantContext, saleId: string) {
-    return this.database.tenantTransaction(context.tenantId, async (client) => {
-      const sale = await client.query<{
-        id: string;
-        status: string;
-        branch_id: string;
-        customer_document: string | null;
-      }>(
-        "SELECT id,status,branch_id,customer_document FROM sales WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL",
-        [context.tenantId, saleId],
-      );
-      ensureFound(sale.rows[0], "Venda");
-      ensureBranchAccess(context, sale.rows[0]!.branch_id);
-      if (sale.rows[0]!.status === "cancelled")
-        throw new BadRequestException("Venda cancelada não pode emitir NFC-e.");
-      const current = await resolveFiscalIntegration(client, context.tenantId);
-      if (!current.configured)
-        throw new BadRequestException(
-          "Configure a integração fiscal em homologação antes de emitir NFC-e.",
-        );
-      const fiscal = await enqueueFiscalDocument(client, context, {
-        saleId,
-        branchId: sale.rows[0]!.branch_id,
-        customerDocument: sale.rows[0]!.customer_document,
-        source: "manual",
-        provider: current.provider,
-        environment: current.environment,
-      });
-      return {
-        status: fiscal.status,
-        fiscalDocumentId: fiscal.id,
-        message:
-          current.provider === "manual_homologation"
-            ? "Solicitação fiscal registrada em homologação. A transmissão real será ativada quando o provedor NFC-e for definido."
-            : "NFC-e adicionada à fila fiscal para transmissão pelo provedor configurado.",
-      };
-    });
+  async requestFiscalIssue(context: TenantContext, saleId: string, idempotencyKey?: string) {
+    return this.fiscal.issueSale(
+      context,
+      { saleId, documentType: "nfce", contingency: false },
+      idempotencyKey,
+    );
   }
 
   async fiscalStatus(context: TenantContext, saleId: string) {
-    const sale = await this.database.tenantQuery<{ branch_id: string }>(
-      context.tenantId,
-      "SELECT branch_id FROM sales WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL",
-      [context.tenantId, saleId],
-    );
-    const saleRow = ensureFound(sale.rows[0], "Venda");
-    ensureBranchAccess(context, saleRow.branch_id);
-    const docs = await this.database.tenantQuery(
-      context.tenantId,
-      `SELECT id,provider,environment,status,external_id AS "externalId",attempt_count AS "attemptCount",last_error AS "lastError",metadata,requested_at AS "requestedAt",issued_at AS "issuedAt",created_at AS "createdAt"
-       FROM fiscal_documents
-       WHERE tenant_id=$1 AND sale_id=$2 AND document_type='nfce'
-       ORDER BY created_at DESC`,
-      [context.tenantId, saleId],
-    );
-    return { data: docs.rows };
+    return this.fiscal.saleDocuments(context, saleId);
   }
 }
 
@@ -1147,28 +1105,6 @@ function normalizeDocument(value?: string | null) {
   return digits.length >= 11 ? digits.slice(0, 20) : null;
 }
 
-async function resolveFiscalIntegration(client: PoolClient, tenantId: string) {
-  const fiscal = await client.query<{
-    status: string;
-    settings: Record<string, string>;
-    has_credential: boolean;
-  }>(
-    `SELECT i.status,COALESCE(i.settings,'{}') settings,
-      EXISTS(SELECT 1 FROM integration_credentials ic WHERE ic.tenant_integration_id=i.id) AS has_credential
-     FROM tenant_integrations i WHERE i.tenant_id=$1 AND i.provider='fiscal' LIMIT 1`,
-    [tenantId],
-  );
-  const current = fiscal.rows[0];
-  if (!current || current.status !== "configured" || !current.has_credential) {
-    return { configured: false, provider: "manual_homologation", environment: "homologation" };
-  }
-  return {
-    configured: true,
-    provider: current.settings.provider || "manual_homologation",
-    environment: current.settings.environment || current.settings.mode || "homologation",
-  };
-}
-
 async function enqueueFiscalDocument(
   client: PoolClient,
   context: TenantContext,
@@ -1177,33 +1113,34 @@ async function enqueueFiscalDocument(
     branchId: string;
     customerDocument?: string | null;
     source: string;
-    provider?: string;
-    environment?: string;
   },
 ) {
-  const provider = input.provider || "manual_homologation";
-  const environment = input.environment || "homologation";
-  const status = provider === "manual_homologation" ? "pending_provider" : "queued";
-  const existing = await client.query<{ id: string; status: string }>(
-    "SELECT id,status FROM fiscal_documents WHERE tenant_id=$1 AND sale_id=$2 AND document_type='nfce' AND status NOT IN ('cancelled','error') ORDER BY created_at DESC LIMIT 1",
-    [context.tenantId, input.saleId],
+  const settings = await client.query<{ provider: string; environment: string }>(
+    "SELECT provider,environment FROM branch_fiscal_settings WHERE tenant_id=$1 AND branch_id=$2 LIMIT 1",
+    [context.tenantId, input.branchId],
   );
-  if (existing.rows[0]) return existing.rows[0];
+  const provider = settings.rows[0]?.provider ?? "focus_nfe";
+  const environment = settings.rows[0]?.environment ?? "homologation";
+  const reference = `orien-nfce-${input.saleId}`;
+  const idempotencyKey = `fiscal-nfce-${input.saleId}`;
   const created = await client.query<{ id: string; status: string }>(
-    `INSERT INTO fiscal_documents(tenant_id,branch_id,sale_id,provider,document_type,status,environment,requested_at,metadata)
-     VALUES($1,$2,$3,$4,'nfce',$5,$6,now(),$7::jsonb)
-     RETURNING id,status`,
+    `INSERT INTO fiscal_documents(
+      tenant_id,branch_id,sale_id,provider,document_type,status,environment,reference,
+      idempotency_key,requested_at,next_retry_at,metadata
+     ) VALUES($1,$2,$3,$4,'nfce','retry_pending',$5,$6,$7,now(),now(),$8::jsonb)
+     ON CONFLICT(tenant_id,idempotency_key) WHERE idempotency_key IS NOT NULL
+     DO UPDATE SET updated_at=now() RETURNING id,status`,
     [
       context.tenantId,
       input.branchId,
       input.saleId,
       provider,
-      status,
       environment,
+      reference,
+      idempotencyKey,
       JSON.stringify({
         source: input.source,
-        customerDocument: input.customerDocument ?? null,
-        transmission: provider === "manual_homologation" ? "waiting_provider" : "queued_adapter",
+        customerDocumentPresent: Boolean(input.customerDocument),
       }),
     ],
   );
@@ -1213,7 +1150,7 @@ async function enqueueFiscalDocument(
     action: "fiscal.nfce.queued",
     entityType: "sale",
     entityId: input.saleId,
-    metadata: { fiscalDocumentId: created.rows[0]!.id, provider, environment, status },
+    metadata: { fiscalDocumentId: created.rows[0]!.id, provider, environment },
   });
   return created.rows[0]!;
 }

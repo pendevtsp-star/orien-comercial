@@ -21,6 +21,7 @@ import {
   Menu,
   Moon,
   Newspaper,
+  ReceiptText,
   PackageCheck,
   Palette,
   Settings,
@@ -120,6 +121,12 @@ const navigation: NavigationItem[] = [
   },
   { href: "/settings", label: "Configurações", icon: Settings, permissions: ["tenants.read"] },
   { href: "/integrations", label: "Integrações", icon: PlugZap, permissions: ["tenants.read"] },
+  {
+    href: "/fiscal",
+    label: "Central fiscal",
+    icon: ReceiptText,
+    anyPermissions: ["fiscal.read", "fiscal.configure"],
+  },
   { href: "/preferences", label: "Preferências", icon: Palette },
   { href: "/sessions", label: "Dispositivos", icon: ShieldCheck },
 ];
@@ -161,7 +168,15 @@ const navigationGroups = [
   {
     id: "administration",
     label: "Administração",
-    routes: ["/team", "/subscription", "/settings", "/integrations", "/preferences", "/sessions"],
+    routes: [
+      "/team",
+      "/subscription",
+      "/settings",
+      "/integrations",
+      "/fiscal",
+      "/preferences",
+      "/sessions",
+    ],
   },
 ] as const;
 const appName = process.env.NEXT_PUBLIC_APP_NAME ?? "Orien";

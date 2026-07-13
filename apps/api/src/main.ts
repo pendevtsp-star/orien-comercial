@@ -20,9 +20,18 @@ async function bootstrap() {
   app.setGlobalPrefix("api/v1");
   const uploadDir = resolve(config.UPLOAD_DIR);
   mkdirSync(uploadDir, { recursive: true });
-  app.getHttpAdapter().getInstance().use("/uploads", (request: { path: string }, response: { sendFile: (path: string, options: { root: string }) => void }) => {
-    response.sendFile(request.path, { root: uploadDir });
-  });
+  app
+    .getHttpAdapter()
+    .getInstance()
+    .use(
+      "/uploads",
+      (
+        request: { path: string },
+        response: { sendFile: (path: string, options: { root: string }) => void },
+      ) => {
+        response.sendFile(request.path, { root: uploadDir });
+      },
+    );
   app.use(helmet());
   app.use(cookieParser(process.env.COOKIE_SECRET));
   app.use((request: Request & { requestId?: string }, response: Response, next: NextFunction) => {
@@ -50,7 +59,14 @@ async function bootstrap() {
     origin:
       config.NODE_ENV === "production"
         ? [config.WEB_APP_URL, config.ADMIN_APP_URL, config.MARKETING_APP_URL]
-        : [config.WEB_APP_URL, config.ADMIN_APP_URL, config.MARKETING_APP_URL, "http://localhost:3000", "http://localhost:3001", "http://localhost:3002"],
+        : [
+            config.WEB_APP_URL,
+            config.ADMIN_APP_URL,
+            config.MARKETING_APP_URL,
+            "http://localhost:3000",
+            "http://localhost:3001",
+            "http://localhost:3002",
+          ],
     credentials: true,
   });
   app.getHttpAdapter().get("/health", async (_request: Request, response: Response) => {
@@ -94,7 +110,7 @@ async function bootstrap() {
     const config = new DocumentBuilder()
       .setTitle("SaaS Gestao Comercial API")
       .setDescription("API versionada para o SaaS multitenant de gestao comercial.")
-      .setVersion("0.1.0")
+      .setVersion("1.2.0")
       .addBearerAuth()
       .build();
     const document = SwaggerModule.createDocument(app, config);
