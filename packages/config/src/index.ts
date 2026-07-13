@@ -31,6 +31,8 @@ const envSchema = z.object({
   ASAAS_WEBHOOK_TOKEN: z.string().optional(),
   RESEND_API_KEY: z.string().optional(),
   ALERT_FROM_EMAIL: z.string().email().default("alertas@useorien.com.br"),
+  EMAIL_FROM: z.string().email().default("no-reply@useorien.com.br"),
+  SUPPORT_EMAIL: z.string().email().default("suporte@useorien.com.br"),
   SENTRY_DSN: optionalUrl,
   SENTRY_ENVIRONMENT: z.string().default("local"),
   NEXT_PUBLIC_SENTRY_DSN: optionalUrl,

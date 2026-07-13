@@ -114,7 +114,8 @@ export class TrialLifecycleService implements OnModuleInit, OnModuleDestroy {
         method: "POST",
         headers: { Authorization: `Bearer ${this.config.RESEND_API_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          from: this.config.ALERT_FROM_EMAIL,
+          from: `Orien <${this.config.EMAIL_FROM}>`,
+          reply_to: this.config.SUPPORT_EMAIL,
           to: [event.recipient],
           subject: `Orien · ${content.subject}`,
           html: `<main style="font-family:Arial,sans-serif;color:#0b1d3d;max-width:620px;margin:auto"><p style="color:#d6a100;font-weight:700;letter-spacing:.12em">ORIEN</p><h1>${content.title}</h1><p style="font-size:16px;line-height:1.6">${content.text}</p><p><a href="${this.config.WEB_APP_URL}/subscription" style="display:inline-block;background:#0b1d3d;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none">Acessar minha assinatura</a></p><hr style="border:0;border-top:1px solid #d9e1ee"><small>Gestão inteligente para negócios em crescimento.</small></main>`,
