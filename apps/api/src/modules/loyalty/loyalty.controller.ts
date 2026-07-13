@@ -76,6 +76,10 @@ export class LoyaltyController {
   ) {
     return this.service.availableRewards(tenant, customerId);
   }
+  @Get("campaign-options")
+  campaignOptions(@CurrentTenant() tenant: TenantContext) {
+    return this.service.campaignOptions(tenant);
+  }
   @Get("wallets") wallets(
     @CurrentTenant() tenant: TenantContext,
     @Query("search") search?: string,

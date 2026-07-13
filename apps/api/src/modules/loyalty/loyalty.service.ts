@@ -122,6 +122,27 @@ export class LoyaltyService implements OnModuleInit, OnModuleDestroy {
     return { data: result.rows };
   }
 
+  async campaignOptions(tenant: TenantContext) {
+    const [branches, products, categories] = await Promise.all([
+      this.database.tenantQuery(
+        tenant.tenantId,
+        "SELECT id,name FROM branches WHERE tenant_id=$1 AND is_active=true AND deleted_at IS NULL ORDER BY name",
+        [tenant.tenantId],
+      ),
+      this.database.tenantQuery(
+        tenant.tenantId,
+        "SELECT id,name FROM products WHERE tenant_id=$1 AND is_active=true AND deleted_at IS NULL ORDER BY name LIMIT 250",
+        [tenant.tenantId],
+      ),
+      this.database.tenantQuery(
+        tenant.tenantId,
+        "SELECT id,name FROM product_categories WHERE tenant_id=$1 ORDER BY name",
+        [tenant.tenantId],
+      ),
+    ]);
+    return { branches: branches.rows, products: products.rows, categories: categories.rows };
+  }
+
   async createCampaign(tenant: TenantContext, actor: string, input: CampaignInput) {
     const name = input.name?.trim();
     const pointsPerReal = numberInRange(input.pointsPerReal, 0.01, 100, 1);

@@ -31,6 +31,8 @@ jobs:
       DATABASE_URL: postgresql://sgc_owner:sgc_owner_password@localhost:5432/orien_e2e
       DATABASE_MIGRATION_URL: postgresql://sgc_owner:sgc_owner_password@localhost:5432/orien_e2e
       REDIS_URL: redis://localhost:6379
+      APP_ENV: test
+      COOKIE_SECURE: "false"
       JWT_ACCESS_SECRET: e2e-access-secret-at-least-thirty-two-chars
       JWT_REFRESH_SECRET: e2e-refresh-secret-at-least-thirty-two-chars
       COOKIE_SECRET: e2e-cookie-secret-at-least-thirty-two-chars

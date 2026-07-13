@@ -67,23 +67,35 @@ type Overview = {
     recurringCustomersMonth: number;
   };
 };
+type CampaignOptions = {
+  branches: Array<{ id: string; name: string }>;
+  products: Array<{ id: string; name: string }>;
+  categories: Array<{ id: string; name: string }>;
+};
 
 export default function LoyaltyPage() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [customers, setCustomers] = useState<Array<{ id: string; name: string }>>([]);
+  const [campaignOptions, setCampaignOptions] = useState<CampaignOptions>({
+    branches: [],
+    products: [],
+    categories: [],
+  });
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   async function load() {
     try {
-      const [summary, walletResult, customerResult] = await Promise.all([
+      const [summary, walletResult, customerResult, optionsResult] = await Promise.all([
         apiFetch<Overview>("/loyalty/overview"),
         apiFetch<{ data: Wallet[] }>("/loyalty/wallets"),
         apiFetch<{ data: Array<{ id: string; name: string }> }>("/customers?pageSize=100"),
+        apiFetch<CampaignOptions>("/loyalty/campaign-options"),
       ]);
       setOverview(summary);
       setWallets(walletResult.data);
       setCustomers(customerResult.data);
+      setCampaignOptions(optionsResult);
       setError("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível carregar fidelidade.");
@@ -201,6 +213,13 @@ export default function LoyaltyPage() {
                             automationPoints:
                               Number(form.get("automationPoints") || 0) || undefined,
                             inactivityDays: Number(form.get("inactivityDays") || 0) || undefined,
+                            branchId: form.get("branchId") || undefined,
+                            productIds: form.get("productId")
+                              ? [String(form.get("productId"))]
+                              : undefined,
+                            categoryIds: form.get("categoryId")
+                              ? [String(form.get("categoryId"))]
+                              : undefined,
                           }),
                           "Campanha criada.",
                         )
@@ -222,6 +241,41 @@ export default function LoyaltyPage() {
                         <Input name="startsAt" type="datetime-local" label="Início" />
                         <Input name="endsAt" type="datetime-local" label="Fim" />
                       </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Select
+                          name="branchId"
+                          label="Loja"
+                          options={[
+                            { label: "Todas as lojas", value: "" },
+                            ...campaignOptions.branches.map((branch) => ({
+                              label: branch.name,
+                              value: branch.id,
+                            })),
+                          ]}
+                        />
+                        <Select
+                          name="productId"
+                          label="Produto específico"
+                          options={[
+                            { label: "Todo o catálogo", value: "" },
+                            ...campaignOptions.products.map((product) => ({
+                              label: product.name,
+                              value: product.id,
+                            })),
+                          ]}
+                        />
+                      </div>
+                      <Select
+                        name="categoryId"
+                        label="Categoria específica"
+                        options={[
+                          { label: "Todas as categorias", value: "" },
+                          ...campaignOptions.categories.map((category) => ({
+                            label: category.name,
+                            value: category.id,
+                          })),
+                        ]}
+                      />
                       <div className="grid gap-3 sm:grid-cols-2">
                         <Input
                           name="maxRedemptionPoints"
