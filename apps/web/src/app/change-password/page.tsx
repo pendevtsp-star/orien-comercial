@@ -13,7 +13,8 @@ export default function ChangePasswordPage() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const next = String(form.get("newPassword") ?? "");
+    const nextEntry = form.get("newPassword");
+    const next = typeof nextEntry === "string" ? nextEntry : "";
     if (next !== form.get("confirmPassword")) {
       setError("As novas senhas nao conferem.");
       return;

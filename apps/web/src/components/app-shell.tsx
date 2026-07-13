@@ -20,6 +20,7 @@ import {
   LogOut,
   Menu,
   Moon,
+  Newspaper,
   PackageCheck,
   Palette,
   Settings,
@@ -52,8 +53,19 @@ type NavigationItem = {
   platformOnly?: boolean;
 };
 const navigation: NavigationItem[] = [
-  { href: "/dashboard", label: "Visão estratégica", icon: BarChart3, permissions: ["dashboard.read"] },
-  { href: "/store-central", label: "Operação de hoje", icon: BriefcaseBusiness, permissions: ["dashboard.read"] },
+  {
+    href: "/dashboard",
+    label: "Visão estratégica",
+    icon: BarChart3,
+    permissions: ["dashboard.read"],
+  },
+  {
+    href: "/store-central",
+    label: "Operação de hoje",
+    icon: BriefcaseBusiness,
+    permissions: ["dashboard.read"],
+  },
+  { href: "/updates", label: "Novidades", icon: Newspaper, permissions: ["dashboard.read"] },
   { href: "/branches", label: "Lojas", icon: Building2, permissions: ["branches.read"] },
   { href: "/products", label: "Produtos", icon: Boxes, permissions: ["products.read"] },
   { href: "/stock", label: "Estoque", icon: PackageCheck, permissions: ["stock.read"] },
@@ -61,9 +73,24 @@ const navigation: NavigationItem[] = [
   { href: "/purchases", label: "Compras", icon: ClipboardList, permissions: ["stock.purchase"] },
   { href: "/sales", label: "Vendas", icon: ShoppingCart, permissions: ["sales.read"] },
   { href: "/pos", label: "PDV", icon: ScanBarcode, permissions: ["sales.create"] },
-  { href: "/operations?section=quotes", label: "Orçamentos e pedidos", icon: FileText, permissions: ["sales.create"] },
-  { href: "/operations?section=pricing", label: "Promoções e preços", icon: Tag, permissions: ["sales.create"] },
-  { href: "/operations?section=credit", label: "Crediário", icon: CircleDollarSign, permissions: ["financial.read"] },
+  {
+    href: "/operations?section=quotes",
+    label: "Orçamentos e pedidos",
+    icon: FileText,
+    permissions: ["sales.create"],
+  },
+  {
+    href: "/operations?section=pricing",
+    label: "Promoções e preços",
+    icon: Tag,
+    permissions: ["sales.create"],
+  },
+  {
+    href: "/operations?section=credit",
+    label: "Crediário",
+    icon: CircleDollarSign,
+    permissions: ["financial.read"],
+  },
   { href: "/customers", label: "Clientes", icon: UsersRound, permissions: ["customers.read"] },
   { href: "/loyalty", label: "Fidelidade", icon: Gift, permissions: ["customers.read"] },
   { href: "/catalog-tools", label: "Ferramentas", icon: Wrench, permissions: ["products.read"] },
@@ -97,30 +124,44 @@ const navigation: NavigationItem[] = [
   { href: "/sessions", label: "Dispositivos", icon: ShieldCheck },
 ];
 const navigationGroups = [
-  { id: "overview", label: "Visão executiva", routes: ["/dashboard"] },
-  { id: "operation", label: "Operação diária", routes: ["/store-central", "/pos", "/sales", "/operations?section=quotes"] },
+  { id: "overview", label: "Visão executiva", routes: ["/dashboard", "/updates"] },
+  {
+    id: "operation",
+    label: "Operação diária",
+    routes: ["/store-central", "/pos", "/sales", "/operations?section=quotes"],
+  },
   {
     id: "catalog",
     label: "Catálogo e estoque",
-    routes: ["/branches", "/products", "/stock", "/suppliers", "/purchases", "/catalog-tools", "/printers"],
+    routes: [
+      "/branches",
+      "/products",
+      "/stock",
+      "/suppliers",
+      "/purchases",
+      "/catalog-tools",
+      "/printers",
+    ],
   },
   { id: "customers", label: "Clientes", routes: ["/customers", "/loyalty"] },
   {
     id: "management",
     label: "Gestão",
-    routes: ["/financial", "/reports", "/alerts", "/tasks", "/support", "/operations?section=pricing", "/operations?section=credit", "/audit"],
+    routes: [
+      "/financial",
+      "/reports",
+      "/alerts",
+      "/tasks",
+      "/support",
+      "/operations?section=pricing",
+      "/operations?section=credit",
+      "/audit",
+    ],
   },
   {
     id: "administration",
     label: "Administração",
-    routes: [
-      "/team",
-      "/subscription",
-      "/settings",
-      "/integrations",
-      "/preferences",
-      "/sessions",
-    ],
+    routes: ["/team", "/subscription", "/settings", "/integrations", "/preferences", "/sessions"],
   },
 ] as const;
 const appName = process.env.NEXT_PUBLIC_APP_NAME ?? "Orien";
@@ -141,7 +182,7 @@ function roleLabel(slug?: string | null) {
   return (
     (
       {
-        owner: "Proprietario",
+        owner: "Proprietário",
         admin: "Administrador",
         manager: "Gerente",
         seller: "Vendedor",
@@ -195,6 +236,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [accountOpen, setAccountOpen] = useState(false);
   const [preferences, setPreferences] = useState<UserPreferences>(defaultPreferences);
   const [notificationCount, setNotificationCount] = useState(0);
+  const [updateCount, setUpdateCount] = useState(0);
   const [commandOpen, setCommandOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [editingFavorites, setEditingFavorites] = useState(false);
@@ -239,6 +281,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (!me || !getTenantId()) return;
     void apiFetch<{ notifications: number }>("/operations/overview")
       .then((value) => setNotificationCount(Number(value.notifications ?? 0)))
+      .catch(() => undefined);
+    void apiFetch<{ unread: number }>("/updates")
+      .then((value) => setUpdateCount(Number(value.unread ?? 0)))
       .catch(() => undefined);
   }, [me]);
 
@@ -420,16 +465,33 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       : pathname === item.href;
     return (
       <div key={item.href} className="relative flex items-center">
-      <Link
-        href={item.href}
-        title={compactMode ? item.label : undefined}
-        onClick={() => closeMobile && setMobileNavigationOpen(false)}
-        className={`orien-nav-item flex h-11 min-w-0 flex-1 items-center rounded-md text-sm font-medium transition ${compactMode ? "justify-center px-0" : "gap-3 px-3"} ${active ? "orien-nav-item-active" : ""}`}
-      >
-        <Icon size={17} />
-        {!compactMode ? item.label : null}
-      </Link>
-      {editingFavorites && !compactMode ? <button type="button" aria-label={`${preferences.favoriteRoutes.includes(item.href) ? "Remover dos" : "Adicionar aos"} favoritos`} title={preferences.favoriteRoutes.includes(item.href) ? "Remover dos favoritos" : "Adicionar aos favoritos"} className="absolute right-2 grid h-7 w-7 place-items-center rounded-md text-white/75 hover:bg-white/10 hover:text-[var(--brand-accent)]" onClick={() => void toggleFavorite(item.href)}><Star size={15} fill={preferences.favoriteRoutes.includes(item.href) ? "currentColor" : "none"} /></button> : null}
+        <Link
+          href={item.href}
+          title={compactMode ? item.label : undefined}
+          onClick={() => closeMobile && setMobileNavigationOpen(false)}
+          className={`orien-nav-item flex h-11 min-w-0 flex-1 items-center rounded-md text-sm font-medium transition ${compactMode ? "justify-center px-0" : "gap-3 px-3"} ${active ? "orien-nav-item-active" : ""}`}
+        >
+          <Icon size={17} />
+          {!compactMode ? item.label : null}
+        </Link>
+        {editingFavorites && !compactMode ? (
+          <button
+            type="button"
+            aria-label={`${preferences.favoriteRoutes.includes(item.href) ? "Remover dos" : "Adicionar aos"} favoritos`}
+            title={
+              preferences.favoriteRoutes.includes(item.href)
+                ? "Remover dos favoritos"
+                : "Adicionar aos favoritos"
+            }
+            className="absolute right-2 grid h-7 w-7 place-items-center rounded-md text-white/75 hover:bg-white/10 hover:text-[var(--brand-accent)]"
+            onClick={() => void toggleFavorite(item.href)}
+          >
+            <Star
+              size={15}
+              fill={preferences.favoriteRoutes.includes(item.href) ? "currentColor" : "none"}
+            />
+          </button>
+        ) : null}
       </div>
     );
   }
@@ -439,7 +501,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <>
         {groupedNavigation.favoriteItems.length ? (
           <section className="grid gap-1">
-            {!compactMode ? <div className="flex items-center justify-between px-2"><p className="orien-nav-group-label p-0">Favoritos</p><button type="button" className="rounded px-1 text-[10px] font-medium text-white/70 hover:bg-white/10 hover:text-white" onClick={() => setEditingFavorites((value) => !value)}>{editingFavorites ? "Concluir" : "Editar"}</button></div> : null}
+            {!compactMode ? (
+              <div className="flex items-center justify-between px-2">
+                <p className="orien-nav-group-label p-0">Favoritos</p>
+                <button
+                  type="button"
+                  className="rounded px-1 text-[10px] font-medium text-white/70 hover:bg-white/10 hover:text-white"
+                  onClick={() => setEditingFavorites((value) => !value)}
+                >
+                  {editingFavorites ? "Concluir" : "Editar"}
+                </button>
+              </div>
+            ) : null}
             {groupedNavigation.favoriteItems.map((item) =>
               navigationLink(item, compactMode, closeMobile),
             )}
@@ -452,21 +525,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <section key={group.id} className="grid gap-1">
               {!compactMode ? (
                 <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  className="orien-nav-group-label flex items-center justify-between"
-                  aria-expanded={open}
-                  onClick={() =>
-                    setOpenGroups((current) => ({ ...current, [group.id]: !current[group.id] }))
-                  }
-                >
-                  {group.label}
-                  <ChevronDown
-                    className={open ? "transition-transform" : "-rotate-90 transition-transform"}
-                    size={14}
-                  />
-                </button>
-                {editingFavorites || group.id === "overview" ? <button type="button" className="shrink-0 rounded px-1.5 py-1 text-[10px] font-medium text-white/70 hover:bg-white/10 hover:text-white" onClick={() => setEditingFavorites((value) => !value)} title={editingFavorites ? "Concluir edição de favoritos" : "Editar favoritos"}>{editingFavorites ? "Concluir" : "Editar"}</button> : null}
+                  <button
+                    type="button"
+                    className="orien-nav-group-label flex items-center justify-between"
+                    aria-expanded={open}
+                    onClick={() =>
+                      setOpenGroups((current) => ({ ...current, [group.id]: !current[group.id] }))
+                    }
+                  >
+                    {group.label}
+                    <ChevronDown
+                      className={open ? "transition-transform" : "-rotate-90 transition-transform"}
+                      size={14}
+                    />
+                  </button>
+                  {editingFavorites || group.id === "overview" ? (
+                    <button
+                      type="button"
+                      className="shrink-0 rounded px-1.5 py-1 text-[10px] font-medium text-white/70 hover:bg-white/10 hover:text-white"
+                      onClick={() => setEditingFavorites((value) => !value)}
+                      title={editingFavorites ? "Concluir edição de favoritos" : "Editar favoritos"}
+                    >
+                      {editingFavorites ? "Concluir" : "Editar"}
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
               {open
@@ -516,7 +598,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <BrandLogo size="sm" theme="dark" iconOnly={compact} />
               {!compact ? (
                 <p className="text-xs text-white/68">
-                  Gestao inteligente para negocios em crescimento
+                  Gestão inteligente para negócios em crescimento
                 </p>
               ) : null}
             </div>
@@ -528,7 +610,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="absolute inset-x-3 bottom-3 rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-white/72">
               <p className="font-medium text-white">{appName}</p>
               <p className="mt-1">
-                Painel premium para operacao comercial, financeira e multiunidade.
+                Painel premium para operações comerciais, financeiras e de várias lojas.
               </p>
             </div>
           ) : null}
@@ -595,14 +677,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <CircleHelp size={17} />
             </button>
             <Link
-              href="/operations"
+              href="/updates"
               className="relative inline-flex h-10 w-10 items-center justify-center rounded-md border border-[var(--brand-border)] bg-white text-[var(--brand-primary)]"
-              aria-label="Notificacoes"
+              aria-label="Novidades e notificações"
             >
               <BellRing size={17} />
-              {notificationCount ? (
+              {notificationCount + updateCount ? (
                 <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-rose-600 px-1 text-center text-[10px] font-semibold text-white">
-                  {Math.min(notificationCount, 99)}
+                  {Math.min(notificationCount + updateCount, 99)}
                 </span>
               ) : null}
             </Link>
@@ -643,7 +725,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   className="rounded-md p-3 text-sm hover:bg-[var(--brand-surface)]"
                   href="/preferences"
                 >
-                  Aparencia e preferencias
+                  Aparência e preferências
                 </Link>
                 <Link
                   className="rounded-md p-3 text-sm hover:bg-[var(--brand-surface)]"
@@ -742,25 +824,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   searchResults.map((result, index) => {
                     const active = index === activeSearchIndex;
                     return (
-                    <Link
-                      id={`global-search-result-${index}`}
-                      role="option"
-                      aria-selected={active}
-                      key={`${result.href}-${index}`}
-                      href={result.href}
-                      onClick={() => setCommandOpen(false)}
-                      onMouseEnter={() => setActiveSearchIndex(index)}
-                      className={`grid rounded-md px-3 py-2.5 ${
-                        active
-                          ? "bg-[var(--brand-highlight)] text-white"
-                          : "hover:bg-[var(--brand-surface)]"
-                      }`}
-                    >
-                      <strong className="text-sm">{result.label}</strong>
-                      <span className={`text-xs ${active ? "text-white/75" : "text-slate-500"}`}>
-                        {result.detail}
-                      </span>
-                    </Link>
+                      <Link
+                        id={`global-search-result-${index}`}
+                        role="option"
+                        aria-selected={active}
+                        key={`${result.href}-${index}`}
+                        href={result.href}
+                        onClick={() => setCommandOpen(false)}
+                        onMouseEnter={() => setActiveSearchIndex(index)}
+                        className={`grid rounded-md px-3 py-2.5 ${
+                          active
+                            ? "bg-[var(--brand-highlight)] text-white"
+                            : "hover:bg-[var(--brand-surface)]"
+                        }`}
+                      >
+                        <strong className="text-sm">{result.label}</strong>
+                        <span className={`text-xs ${active ? "text-white/75" : "text-slate-500"}`}>
+                          {result.detail}
+                        </span>
+                      </Link>
                     );
                   })
                 ) : (

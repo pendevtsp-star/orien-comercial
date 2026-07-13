@@ -3,7 +3,12 @@ import type { AppConfig } from "@sgc/config";
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import type { ProductCreateInput, ProductUpdateInput, ResourceListQuery } from "@sgc/types";
+import type {
+  ProductCreateInput,
+  ProductFiscalInput,
+  ProductUpdateInput,
+  ResourceListQuery,
+} from "@sgc/types";
 import {
   ensureBranchAccess,
   ensureFound,
@@ -14,11 +19,18 @@ import type { TenantContext } from "../../shared/request-context";
 import { DatabaseService } from "../database/database.service";
 import { APP_CONFIG } from "../config/config.module";
 import bwipjs from "bwip-js";
+import { fiscalReadiness, type FiscalReadinessInput } from "./product-fiscal-readiness";
 
 @Injectable()
 export class ProductsService {
-  private readonly catalogCache = new Map<string, { expiresAt: number; value: Record<string, unknown> }>();
-  constructor(@Inject(DatabaseService) private readonly database: DatabaseService, @Inject(APP_CONFIG) private readonly config: AppConfig) {}
+  private readonly catalogCache = new Map<
+    string,
+    { expiresAt: number; value: Record<string, unknown> }
+  >();
+  constructor(
+    @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
+  ) {}
 
   async list(context: TenantContext, query: ResourceListQuery) {
     const page = pagination(query);
@@ -69,12 +81,33 @@ export class ProductsService {
         p.cost_price AS "costPrice",
         p.promotional_price AS "promotionalPrice",
         p.min_stock AS "minStock",
+        pf.ncm AS "fiscalNcm",
+        pf.cest AS "fiscalCest",
+        pf.tax_origin AS "fiscalTaxOrigin",
+        pf.cfop_domestic AS "fiscalCfopDomestic",
+        pf.cfop_interstate AS "fiscalCfopInterstate",
+        pf.icms_tax_code AS "fiscalIcmsTaxCode",
+        pf.pis_tax_code AS "fiscalPisTaxCode",
+        pf.cofins_tax_code AS "fiscalCofinsTaxCode",
+        pf.ipi_tax_code AS "fiscalIpiTaxCode",
+        pf.subject_to_icms_st AS "fiscalSubjectToIcmsSt",
+        pf.icms_rate AS "fiscalIcmsRate",
+        pf.icms_st_rate AS "fiscalIcmsStRate",
+        pf.icms_st_mva_rate AS "fiscalIcmsStMvaRate",
+        pf.fcp_rate AS "fiscalFcpRate",
+        pf.pis_rate AS "fiscalPisRate",
+        pf.cofins_rate AS "fiscalCofinsRate",
+        pf.ipi_rate AS "fiscalIpiRate",
+        pf.tax_benefit_code AS "fiscalTaxBenefitCode",
+        pf.fiscal_notes AS "fiscalNotes",
+        pf.accountant_approved_at AS "fiscalAccountantApprovedAt",
         image.object_key AS "imageUrl",
         p.is_active AS "isActive",
         p.branch_id AS "branchId",
         b.name AS "branchName",
         p.created_at AS "createdAt"
       FROM products p
+      LEFT JOIN product_fiscal_profiles pf ON pf.product_id = p.id AND pf.tenant_id = p.tenant_id
       LEFT JOIN branches b ON b.id = p.branch_id AND b.tenant_id = p.tenant_id
       LEFT JOIN LATERAL (
         SELECT ma.object_key
@@ -91,13 +124,36 @@ export class ProductsService {
       params,
     );
 
-    return { data: rows.rows, pagination: { ...page, total: Number(count.rows[0]?.total ?? 0) } };
+    return {
+      data: rows.rows.map((row) => ({
+        ...(row as Record<string, unknown>),
+        fiscalReadiness: fiscalReadiness(
+          this.toFiscalReadinessInput(row as Record<string, unknown>),
+        ),
+      })),
+      pagination: { ...page, total: Number(count.rows[0]?.total ?? 0) },
+    };
   }
 
   async get(context: TenantContext, id: string) {
     const result = await this.database.tenantQuery(
       context.tenantId,
-      "SELECT * FROM products WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL",
+      `SELECT p.*,
+        p.sale_price AS "salePrice", p.cost_price AS "costPrice", p.promotional_price AS "promotionalPrice",
+        p.min_stock AS "minStock", p.is_active AS "isActive", p.branch_id AS "branchId",
+        pf.ncm AS "fiscalNcm", pf.cest AS "fiscalCest", pf.tax_origin AS "fiscalTaxOrigin",
+        pf.cfop_domestic AS "fiscalCfopDomestic", pf.cfop_interstate AS "fiscalCfopInterstate",
+        pf.icms_tax_code AS "fiscalIcmsTaxCode", pf.pis_tax_code AS "fiscalPisTaxCode",
+        pf.cofins_tax_code AS "fiscalCofinsTaxCode", pf.ipi_tax_code AS "fiscalIpiTaxCode",
+        pf.subject_to_icms_st AS "fiscalSubjectToIcmsSt", pf.icms_rate AS "fiscalIcmsRate",
+        pf.icms_st_rate AS "fiscalIcmsStRate", pf.icms_st_mva_rate AS "fiscalIcmsStMvaRate",
+        pf.fcp_rate AS "fiscalFcpRate", pf.pis_rate AS "fiscalPisRate",
+        pf.cofins_rate AS "fiscalCofinsRate", pf.ipi_rate AS "fiscalIpiRate",
+        pf.tax_benefit_code AS "fiscalTaxBenefitCode", pf.fiscal_notes AS "fiscalNotes",
+        pf.accountant_approved_at AS "fiscalAccountantApprovedAt"
+       FROM products p
+       LEFT JOIN product_fiscal_profiles pf ON pf.product_id=p.id AND pf.tenant_id=p.tenant_id
+       WHERE p.tenant_id = $1 AND p.id = $2 AND p.deleted_at IS NULL`,
       [context.tenantId, id],
     );
     const product = ensureFound(result.rows[0], "Produto") as Record<string, unknown>;
@@ -109,7 +165,11 @@ export class ProductsService {
        WHERE pi.tenant_id=$1 AND pi.product_id=$2 ORDER BY pi.sort_order, pi.created_at`,
       [context.tenantId, id],
     );
-    return { ...product, images: images.rows };
+    return {
+      ...product,
+      images: images.rows,
+      fiscalReadiness: fiscalReadiness(this.toFiscalReadinessInput(product)),
+    };
   }
 
   async create(context: TenantContext, input: ProductCreateInput) {
@@ -143,6 +203,14 @@ export class ProductsService {
         ],
       );
       const product = result.rows[0] as Record<string, unknown>;
+      if (input.fiscal) {
+        await this.upsertFiscalProfile(
+          client,
+          context.tenantId,
+          product.id as string,
+          input.fiscal,
+        );
+      }
       const initialStock = Number(input.initialStock ?? 0);
       const stockBranchId = input.initialStockBranchId ?? input.branchId ?? context.branchId;
       if (initialStock > 0 && stockBranchId) {
@@ -161,7 +229,8 @@ export class ProductsService {
       }
       return product;
     });
-    if (created && (input.imageData || input.imageUrl)) await this.setPrimaryImage(context, created.id as string, input.imageData ?? input.imageUrl!);
+    if (created && (input.imageData || input.imageUrl))
+      await this.setPrimaryImage(context, created.id as string, input.imageData ?? input.imageUrl!);
     if (created)
       await this.database.tenantQuery(
         context.tenantId,
@@ -178,58 +247,64 @@ export class ProductsService {
             salePrice: input.salePrice,
             minStock: input.minStock,
             initialStock: input.initialStock ?? 0,
-            initialStockBranchId: input.initialStockBranchId ?? input.branchId ?? context.branchId ?? null,
+            initialStockBranchId:
+              input.initialStockBranchId ?? input.branchId ?? context.branchId ?? null,
           }),
         ],
       );
-    return created;
+    return this.get(context, created.id as string);
   }
 
   async update(context: TenantContext, id: string, input: ProductUpdateInput) {
     const existing = (await this.get(context, id)) as Record<string, unknown>;
     ensureBranchAccess(context, input.branchId ?? (existing.branch_id as string | null));
 
-    const result = await this.database.tenantQuery(
-      context.tenantId,
-      `
-      UPDATE products
-      SET
-        branch_id = COALESCE($3, branch_id),
-        category_id = COALESCE($4, category_id),
-        name = COALESCE($5, name),
-        sku = COALESCE($6, sku),
-        barcode = COALESCE($7, barcode),
-        description = COALESCE($8, description),
-        unit = COALESCE($9, unit),
-        cost_price = COALESCE($10, cost_price),
-        sale_price = COALESCE($11, sale_price),
-        promotional_price = COALESCE($12, promotional_price),
-        min_stock = COALESCE($13, min_stock),
-        is_active = COALESCE($14, is_active),
-        updated_at = now()
-      WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
-      RETURNING *
-      `,
-      [
-        context.tenantId,
-        id,
-        input.branchId ?? null,
-        input.categoryId ?? null,
-        input.name ?? null,
-        input.sku ?? null,
-        input.barcode ?? null,
-        input.description ?? null,
-        input.unit ?? null,
-        input.costPrice ?? null,
-        input.salePrice ?? null,
-        input.promotionalPrice ?? null,
-        input.minStock ?? null,
-        input.isActive ?? null,
-      ],
-    );
-
-    const updated = ensureFound(result.rows[0], "Produto") as Record<string, unknown>;
-    if (input.imageData !== undefined || input.imageUrl !== undefined) await this.setPrimaryImage(context, id, input.imageData ?? input.imageUrl!);
+    const updated = await this.database.tenantTransaction(context.tenantId, async (client) => {
+      const result = await client.query(
+        `
+        UPDATE products
+        SET
+          branch_id = COALESCE($3, branch_id),
+          category_id = COALESCE($4, category_id),
+          name = COALESCE($5, name),
+          sku = COALESCE($6, sku),
+          barcode = COALESCE($7, barcode),
+          description = COALESCE($8, description),
+          unit = COALESCE($9, unit),
+          cost_price = COALESCE($10, cost_price),
+          sale_price = COALESCE($11, sale_price),
+          promotional_price = COALESCE($12, promotional_price),
+          min_stock = COALESCE($13, min_stock),
+          is_active = COALESCE($14, is_active),
+          updated_at = now()
+        WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+        RETURNING *
+        `,
+        [
+          context.tenantId,
+          id,
+          input.branchId ?? null,
+          input.categoryId ?? null,
+          input.name ?? null,
+          input.sku ?? null,
+          input.barcode ?? null,
+          input.description ?? null,
+          input.unit ?? null,
+          input.costPrice ?? null,
+          input.salePrice ?? null,
+          input.promotionalPrice ?? null,
+          input.minStock ?? null,
+          input.isActive ?? null,
+        ],
+      );
+      const product = ensureFound(result.rows[0], "Produto") as Record<string, unknown>;
+      if (input.fiscal) {
+        await this.upsertFiscalProfile(client, context.tenantId, id, input.fiscal);
+      }
+      return product;
+    });
+    if (input.imageData !== undefined || input.imageUrl !== undefined)
+      await this.setPrimaryImage(context, id, input.imageData ?? input.imageUrl!);
     await this.database.tenantQuery(
       context.tenantId,
       `INSERT INTO audit_logs (tenant_id,actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,$2,'product.updated','product',$3,$4)`,
@@ -246,6 +321,17 @@ export class ProductsService {
             salePrice: existing.sale_price,
             minStock: existing.min_stock,
             isActive: existing.is_active,
+            fiscal: {
+              ncm: existing.fiscalNcm,
+              cest: existing.fiscalCest,
+              taxOrigin: existing.fiscalTaxOrigin,
+              cfopDomestic: existing.fiscalCfopDomestic,
+              cfopInterstate: existing.fiscalCfopInterstate,
+              icmsTaxCode: existing.fiscalIcmsTaxCode,
+              pisTaxCode: existing.fiscalPisTaxCode,
+              cofinsTaxCode: existing.fiscalCofinsTaxCode,
+              subjectToIcmsSt: existing.fiscalSubjectToIcmsSt,
+            },
           },
           after: {
             name: updated.name,
@@ -255,17 +341,119 @@ export class ProductsService {
             salePrice: updated.sale_price,
             minStock: updated.min_stock,
             isActive: updated.is_active,
+            fiscal: input.fiscal ?? undefined,
           },
         }),
       ],
     );
-    return updated;
+    return this.get(context, id);
+  }
+
+  async fiscalSummary(context: TenantContext) {
+    const result = await this.database.tenantQuery<Record<string, unknown>>(
+      context.tenantId,
+      `SELECT pf.ncm AS "fiscalNcm",pf.cest AS "fiscalCest",pf.tax_origin AS "fiscalTaxOrigin",
+        pf.cfop_domestic AS "fiscalCfopDomestic",pf.cfop_interstate AS "fiscalCfopInterstate",
+        pf.icms_tax_code AS "fiscalIcmsTaxCode",pf.pis_tax_code AS "fiscalPisTaxCode",
+        pf.cofins_tax_code AS "fiscalCofinsTaxCode",pf.subject_to_icms_st AS "fiscalSubjectToIcmsSt",
+        pf.accountant_approved_at AS "fiscalAccountantApprovedAt"
+       FROM products p LEFT JOIN product_fiscal_profiles pf ON pf.product_id=p.id AND pf.tenant_id=p.tenant_id
+       WHERE p.tenant_id=$1 AND p.deleted_at IS NULL AND p.is_active=true
+       ${context.branchId ? "AND (p.branch_id=$2 OR p.branch_id IS NULL)" : ""}`,
+      context.branchId ? [context.tenantId, context.branchId] : [context.tenantId],
+    );
+    const summary = { total: result.rows.length, ready: 0, pending: 0, blocked: 0, reviewed: 0 };
+    for (const row of result.rows) {
+      const readiness = fiscalReadiness(this.toFiscalReadinessInput(row));
+      summary[readiness.status] += 1;
+      if (readiness.reviewedByAccountant) summary.reviewed += 1;
+    }
+    return summary;
+  }
+
+  private toFiscalReadinessInput(row: Record<string, unknown>): FiscalReadinessInput {
+    return {
+      ncm: row.fiscalNcm as string | null,
+      cest: row.fiscalCest as string | null,
+      taxOrigin: row.fiscalTaxOrigin as string | null,
+      cfopDomestic: row.fiscalCfopDomestic as string | null,
+      cfopInterstate: row.fiscalCfopInterstate as string | null,
+      icmsTaxCode: row.fiscalIcmsTaxCode as string | null,
+      pisTaxCode: row.fiscalPisTaxCode as string | null,
+      cofinsTaxCode: row.fiscalCofinsTaxCode as string | null,
+      subjectToIcmsSt: row.fiscalSubjectToIcmsSt as boolean | null,
+      accountantApprovedAt: row.fiscalAccountantApprovedAt as string | null,
+    };
+  }
+
+  private async upsertFiscalProfile(
+    executor: { query: (query: string, values?: unknown[]) => Promise<unknown> },
+    tenantId: string,
+    productId: string,
+    fiscal: ProductFiscalInput,
+  ) {
+    await executor.query(
+      `INSERT INTO product_fiscal_profiles(
+        tenant_id,product_id,ncm,cest,tax_origin,cfop_domestic,cfop_interstate,icms_tax_code,
+        pis_tax_code,cofins_tax_code,ipi_tax_code,subject_to_icms_st,icms_rate,icms_st_rate,
+        icms_st_mva_rate,fcp_rate,pis_rate,cofins_rate,ipi_rate,tax_benefit_code,fiscal_notes
+       ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,COALESCE($12::boolean,false),$13,$14,$15,$16,$17,$18,$19,$20,$21)
+       ON CONFLICT(product_id) DO UPDATE SET
+        ncm=COALESCE(EXCLUDED.ncm,product_fiscal_profiles.ncm),
+        cest=COALESCE(EXCLUDED.cest,product_fiscal_profiles.cest),
+        tax_origin=COALESCE(EXCLUDED.tax_origin,product_fiscal_profiles.tax_origin),
+        cfop_domestic=COALESCE(EXCLUDED.cfop_domestic,product_fiscal_profiles.cfop_domestic),
+        cfop_interstate=COALESCE(EXCLUDED.cfop_interstate,product_fiscal_profiles.cfop_interstate),
+        icms_tax_code=COALESCE(EXCLUDED.icms_tax_code,product_fiscal_profiles.icms_tax_code),
+        pis_tax_code=COALESCE(EXCLUDED.pis_tax_code,product_fiscal_profiles.pis_tax_code),
+        cofins_tax_code=COALESCE(EXCLUDED.cofins_tax_code,product_fiscal_profiles.cofins_tax_code),
+        ipi_tax_code=COALESCE(EXCLUDED.ipi_tax_code,product_fiscal_profiles.ipi_tax_code),
+        subject_to_icms_st=CASE WHEN $12::boolean IS NULL THEN product_fiscal_profiles.subject_to_icms_st ELSE EXCLUDED.subject_to_icms_st END,
+        icms_rate=COALESCE(EXCLUDED.icms_rate,product_fiscal_profiles.icms_rate),
+        icms_st_rate=COALESCE(EXCLUDED.icms_st_rate,product_fiscal_profiles.icms_st_rate),
+        icms_st_mva_rate=COALESCE(EXCLUDED.icms_st_mva_rate,product_fiscal_profiles.icms_st_mva_rate),
+        fcp_rate=COALESCE(EXCLUDED.fcp_rate,product_fiscal_profiles.fcp_rate),
+        pis_rate=COALESCE(EXCLUDED.pis_rate,product_fiscal_profiles.pis_rate),
+        cofins_rate=COALESCE(EXCLUDED.cofins_rate,product_fiscal_profiles.cofins_rate),
+        ipi_rate=COALESCE(EXCLUDED.ipi_rate,product_fiscal_profiles.ipi_rate),
+        tax_benefit_code=COALESCE(EXCLUDED.tax_benefit_code,product_fiscal_profiles.tax_benefit_code),
+        fiscal_notes=COALESCE(EXCLUDED.fiscal_notes,product_fiscal_profiles.fiscal_notes),
+        accountant_approved_at=NULL,accountant_approved_by_user_id=NULL,updated_at=now()`,
+      [
+        tenantId,
+        productId,
+        fiscal.ncm ?? null,
+        fiscal.cest ?? null,
+        fiscal.taxOrigin ?? null,
+        fiscal.cfopDomestic ?? null,
+        fiscal.cfopInterstate ?? null,
+        fiscal.icmsTaxCode ?? null,
+        fiscal.pisTaxCode ?? null,
+        fiscal.cofinsTaxCode ?? null,
+        fiscal.ipiTaxCode ?? null,
+        fiscal.subjectToIcmsSt ?? null,
+        fiscal.icmsRate ?? null,
+        fiscal.icmsStRate ?? null,
+        fiscal.icmsStMvaRate ?? null,
+        fiscal.fcpRate ?? null,
+        fiscal.pisRate ?? null,
+        fiscal.cofinsRate ?? null,
+        fiscal.ipiRate ?? null,
+        fiscal.taxBenefitCode ?? null,
+        fiscal.fiscalNotes ?? null,
+      ],
+    );
   }
 
   private async setPrimaryImage(context: TenantContext, productId: string, source: string) {
-    const imageUrl = source.startsWith("data:image/") ? await this.persistUpload(context.tenantId, source) : source;
+    const imageUrl = source.startsWith("data:image/")
+      ? await this.persistUpload(context.tenantId, source)
+      : source;
     await this.database.tenantTransaction(context.tenantId, async (client) => {
-      await client.query("DELETE FROM product_images WHERE tenant_id=$1 AND product_id=$2", [context.tenantId, productId]);
+      await client.query("DELETE FROM product_images WHERE tenant_id=$1 AND product_id=$2", [
+        context.tenantId,
+        productId,
+      ]);
       const asset = await client.query<{ id: string }>(
         `INSERT INTO media_assets (tenant_id,storage_provider,bucket,object_key,original_name,mime_type,size_bytes)
          VALUES ($1,'external-url','product-images',$2,'Imagem do produto','image/*',0) RETURNING id`,
@@ -312,14 +500,23 @@ export class ProductsService {
 
     let result: Record<string, unknown> = { source: "manual", found: false, barcode };
     try {
-      const response = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json`, {
-        signal: AbortSignal.timeout(3500),
-        headers: { "User-Agent": "OrienCatalog/1.0" },
-      });
+      const response = await fetch(
+        `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json`,
+        {
+          signal: AbortSignal.timeout(3500),
+          headers: { "User-Agent": "OrienCatalog/1.0" },
+        },
+      );
       if (response.ok) {
-        const payload = (await response.json()) as { status?: number; product?: Record<string, unknown> };
+        const payload = (await response.json()) as {
+          status?: number;
+          product?: Record<string, unknown>;
+        };
         const product = payload.product;
-        const name = typeof product?.product_name_pt === "string" ? product.product_name_pt : product?.product_name;
+        const name =
+          typeof product?.product_name_pt === "string"
+            ? product.product_name_pt
+            : product?.product_name;
         if (payload.status === 1 && typeof name === "string" && name.trim()) {
           result = {
             source: "catalog",
@@ -328,8 +525,14 @@ export class ProductsService {
               name: name.trim(),
               barcode,
               brand: typeof product?.brands === "string" ? product.brands : undefined,
-              category: typeof product?.categories_tags === "string" ? product.categories_tags.split(",")[0] : undefined,
-              imageUrl: typeof product?.image_front_small_url === "string" ? product.image_front_small_url : undefined,
+              category:
+                typeof product?.categories_tags === "string"
+                  ? product.categories_tags.split(",")[0]
+                  : undefined,
+              imageUrl:
+                typeof product?.image_front_small_url === "string"
+                  ? product.image_front_small_url
+                  : undefined,
               unit: "un",
             },
           };
@@ -343,13 +546,25 @@ export class ProductsService {
   }
 
   private async nextSku(
-    client: { query: (query: string, values?: unknown[]) => Promise<{ rows: Array<{ next?: string }> }> } | undefined,
+    client:
+      | {
+          query: (query: string, values?: unknown[]) => Promise<{ rows: Array<{ next?: string }> }>;
+        }
+      | undefined,
     tenantId: string,
     requestedPrefix?: string,
   ) {
-    const prefix = (requestedPrefix || "ORI").replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 12) || "ORI";
-    const run = async (executor: { query: (query: string, values?: unknown[]) => Promise<{ rows: Array<{ next?: string }> }> }) => {
-      await executor.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`product-sku:${tenantId}:${prefix}`]);
+    const prefix =
+      (requestedPrefix || "ORI")
+        .replace(/[^A-Za-z0-9]/g, "")
+        .toUpperCase()
+        .slice(0, 12) || "ORI";
+    const run = async (executor: {
+      query: (query: string, values?: unknown[]) => Promise<{ rows: Array<{ next?: string }> }>;
+    }) => {
+      await executor.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+        `product-sku:${tenantId}:${prefix}`,
+      ]);
       const sequence = await executor.query(
         `SELECT COALESCE(MAX(NULLIF(regexp_replace(sku, '^.*-', ''), sku)::int), 0) + 1 AS next
          FROM products WHERE tenant_id=$1 AND sku ~ $2`,
@@ -365,7 +580,8 @@ export class ProductsService {
     const match = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
     if (!match) throw new Error("Arquivo de imagem inválido. Use PNG, JPEG ou WebP.");
     const content = Buffer.from(match[2]!, "base64");
-    if (!content.length || content.length > 5 * 1024 * 1024) throw new Error("A imagem deve ter no máximo 5 MB.");
+    if (!content.length || content.length > 5 * 1024 * 1024)
+      throw new Error("A imagem deve ter no máximo 5 MB.");
     const extension = match[1] === "jpeg" ? "jpg" : match[1]!;
     const folder = resolve(this.config.UPLOAD_DIR, "products", tenantId);
     await mkdir(folder, { recursive: true });
@@ -427,7 +643,7 @@ export class ProductsService {
               includetext: true,
               textxalign: "center",
             })
-          : "<div class='missing'>SEM CODIGO</div>";
+          : "<div class='missing'>SEM CÓDIGO</div>";
         const label = `<article><strong>${escapeHtml(product.name)}</strong><div class="barcode">${barcode}</div><div class="price">${Number(product.salePrice).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</div></article>`;
         const quantity = requested.find((item) => item.id === product.id)?.quantity ?? 1;
         return Array.from({ length: quantity }, () => label);

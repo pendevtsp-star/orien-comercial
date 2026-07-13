@@ -132,6 +132,39 @@ export const branchCreateSchema = z.object({
 
 export const branchUpdateSchema = branchCreateSchema.partial();
 
+const optionalFiscalCode = (length: number, label: string) =>
+  z
+    .string()
+    .trim()
+    .regex(new RegExp(`^\\d{${length}}$`), `${label} deve ter ${length} dígitos.`)
+    .optional();
+
+export const productFiscalSchema = z.object({
+  ncm: optionalFiscalCode(8, "NCM"),
+  cest: optionalFiscalCode(7, "CEST"),
+  taxOrigin: z.enum(["0", "1", "2", "3", "4", "5", "6", "7", "8"]).optional(),
+  cfopDomestic: optionalFiscalCode(4, "CFOP interno"),
+  cfopInterstate: optionalFiscalCode(4, "CFOP interestadual"),
+  icmsTaxCode: z
+    .string()
+    .trim()
+    .regex(/^\d{2,4}$/, "CST/CSOSN deve ter entre 2 e 4 dígitos.")
+    .optional(),
+  pisTaxCode: optionalFiscalCode(2, "CST PIS"),
+  cofinsTaxCode: optionalFiscalCode(2, "CST COFINS"),
+  ipiTaxCode: optionalFiscalCode(2, "CST IPI"),
+  subjectToIcmsSt: z.boolean().optional(),
+  icmsRate: z.coerce.number().min(0).max(100).optional(),
+  icmsStRate: z.coerce.number().min(0).max(100).optional(),
+  icmsStMvaRate: z.coerce.number().min(0).max(1000).optional(),
+  fcpRate: z.coerce.number().min(0).max(100).optional(),
+  pisRate: z.coerce.number().min(0).max(100).optional(),
+  cofinsRate: z.coerce.number().min(0).max(100).optional(),
+  ipiRate: z.coerce.number().min(0).max(100).optional(),
+  taxBenefitCode: z.string().trim().max(20).optional(),
+  fiscalNotes: z.string().trim().max(2000).optional(),
+});
+
 export const productCreateSchema = z.object({
   branchId: uuidSchema.optional(),
   categoryId: uuidSchema.optional(),
@@ -148,6 +181,7 @@ export const productCreateSchema = z.object({
   initialStockBranchId: uuidSchema.optional(),
   imageUrl: z.string().url().max(2048).optional(),
   imageData: z.string().max(7_000_000).optional(),
+  fiscal: productFiscalSchema.optional(),
   isActive: z.boolean().default(true),
 });
 
@@ -575,6 +609,7 @@ export type BranchCreateInput = z.infer<typeof branchCreateSchema>;
 export type BranchUpdateInput = z.infer<typeof branchUpdateSchema>;
 export type ProductCreateInput = z.infer<typeof productCreateSchema>;
 export type ProductUpdateInput = z.infer<typeof productUpdateSchema>;
+export type ProductFiscalInput = z.infer<typeof productFiscalSchema>;
 export type CustomerCreateInput = z.infer<typeof customerCreateSchema>;
 export type CustomerUpdateInput = z.infer<typeof customerUpdateSchema>;
 export type StockAdjustmentInput = z.infer<typeof stockAdjustmentSchema>;

@@ -13,7 +13,13 @@ import {
 } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { permissions } from "@sgc/auth";
-import { productBarcodeLookupSchema, productCreateSchema, productSkuSuggestionSchema, productUpdateSchema, resourceListQuerySchema } from "@sgc/types";
+import {
+  productBarcodeLookupSchema,
+  productCreateSchema,
+  productSkuSuggestionSchema,
+  productUpdateSchema,
+  resourceListQuerySchema,
+} from "@sgc/types";
 import { JwtAuthGuard } from "../../shared/auth.guard";
 import { CurrentTenant } from "../../shared/current-user.decorator";
 import { PermissionsGuard } from "../../shared/permissions.guard";
@@ -76,6 +82,12 @@ export class ProductsController {
     @Query(new ZodValidationPipe(productSkuSuggestionSchema)) query: never,
   ) {
     return this.productsService.suggestSku(tenant, (query as { prefix?: string }).prefix);
+  }
+
+  @RequirePermissions(permissions.products.read)
+  @Get("fiscal/summary")
+  fiscalSummary(@CurrentTenant() tenant: TenantContext) {
+    return this.productsService.fiscalSummary(tenant);
   }
 
   @RequirePermissions(permissions.products.read)

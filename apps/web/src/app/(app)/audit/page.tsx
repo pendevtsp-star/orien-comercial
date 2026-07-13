@@ -1,6 +1,16 @@
 "use client";
 
-import { Badge, Button, Card, CardContent, DataTable, EmptyState, Input, PageHeader, Select } from "@sgc/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  DataTable,
+  EmptyState,
+  Input,
+  PageHeader,
+  Select,
+} from "@sgc/ui";
 import { History, RefreshCw, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PaginationFooter } from "../../../components/pagination-footer";
@@ -178,11 +188,7 @@ export default function AuditPage() {
             />
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button
-              variant="secondary"
-              icon={<Search size={16} />}
-              onClick={() => void load()}
-            >
+            <Button variant="secondary" icon={<Search size={16} />} onClick={() => void load()}>
               Filtrar auditoria
             </Button>
             <Button
@@ -260,7 +266,9 @@ function metadataSummary(metadata?: Record<string, unknown>) {
     const changes = Object.keys(after)
       .filter((key) => before[key] !== after[key])
       .slice(0, 3)
-      .map((key) => `${labelize(key)} de ${formatValue(before[key])} para ${formatValue(after[key])}`);
+      .map(
+        (key) => `${labelize(key)} de ${formatValue(before[key])} para ${formatValue(after[key])}`,
+      );
     if (changes.length) return changes.join(" · ");
   }
   const entries = Object.entries(metadata)
@@ -278,10 +286,12 @@ function labelize(value: string) {
 }
 
 function formatValue(value: unknown) {
-  if (typeof value === "number" && /price|amount|total|cost/i.test(String(value))) return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  if (typeof value === "number" && /price|amount|total|cost/i.test(`${value}`))
+    return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   if (typeof value === "number") return value.toLocaleString("pt-BR");
   if (typeof value === "boolean") return value ? "sim" : "não";
+  if (value == null) return "-";
   if (typeof value === "object") return "detalhes registrados";
   if (typeof value === "string") return value;
-  return String(value);
+  return "valor registrado";
 }

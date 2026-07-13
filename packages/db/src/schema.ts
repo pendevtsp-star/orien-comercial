@@ -12,13 +12,13 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
-  varchar
+  varchar,
 } from "drizzle-orm/pg-core";
 
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  deletedAt: timestamp("deleted_at", { withTimezone: true })
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
 };
 
 export const tenantStatusEnum = pgEnum("tenant_status", [
@@ -26,7 +26,7 @@ export const tenantStatusEnum = pgEnum("tenant_status", [
   "active",
   "past_due",
   "suspended",
-  "cancelled"
+  "cancelled",
 ]);
 
 export const membershipStatusEnum = pgEnum("membership_status", ["active", "invited", "disabled"]);
@@ -40,11 +40,11 @@ export const tenants = pgTable(
     slug: varchar("slug", { length: 80 }).notNull(),
     status: tenantStatusEnum("status").notNull().default("trial"),
     planSlug: varchar("plan_slug", { length: 80 }),
-    ...timestamps
+    ...timestamps,
   },
   (table) => ({
-    slugIdx: uniqueIndex("tenants_slug_idx").on(table.slug)
-  })
+    slugIdx: uniqueIndex("tenants_slug_idx").on(table.slug),
+  }),
 );
 
 export const tenantDomains = pgTable(
@@ -57,12 +57,12 @@ export const tenantDomains = pgTable(
     hostname: varchar("hostname", { length: 255 }).notNull(),
     isPrimary: boolean("is_primary").notNull().default(false),
     verifiedAt: timestamp("verified_at", { withTimezone: true }),
-    ...timestamps
+    ...timestamps,
   },
   (table) => ({
     hostnameIdx: uniqueIndex("tenant_domains_hostname_idx").on(table.hostname),
-    tenantIdx: index("tenant_domains_tenant_idx").on(table.tenantId)
-  })
+    tenantIdx: index("tenant_domains_tenant_idx").on(table.tenantId),
+  }),
 );
 
 export const users = pgTable(
@@ -74,11 +74,11 @@ export const users = pgTable(
     name: varchar("name", { length: 160 }).notNull(),
     isEmailVerified: boolean("is_email_verified").notNull().default(false),
     lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
-    ...timestamps
+    ...timestamps,
   },
   (table) => ({
-    emailIdx: uniqueIndex("users_email_idx").on(table.email)
-  })
+    emailIdx: uniqueIndex("users_email_idx").on(table.email),
+  }),
 );
 
 export const roles = pgTable(
@@ -89,11 +89,11 @@ export const roles = pgTable(
     slug: varchar("slug", { length: 80 }).notNull(),
     name: varchar("name", { length: 120 }).notNull(),
     isSystem: boolean("is_system").notNull().default(false),
-    ...timestamps
+    ...timestamps,
   },
   (table) => ({
-    tenantSlugIdx: uniqueIndex("roles_tenant_slug_idx").on(table.tenantId, table.slug)
-  })
+    tenantSlugIdx: uniqueIndex("roles_tenant_slug_idx").on(table.tenantId, table.slug),
+  }),
 );
 
 export const permissions = pgTable(
@@ -101,11 +101,11 @@ export const permissions = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     slug: varchar("slug", { length: 120 }).notNull(),
-    description: varchar("description", { length: 255 }).notNull()
+    description: varchar("description", { length: 255 }).notNull(),
   },
   (table) => ({
-    slugIdx: uniqueIndex("permissions_slug_idx").on(table.slug)
-  })
+    slugIdx: uniqueIndex("permissions_slug_idx").on(table.slug),
+  }),
 );
 
 export const rolePermissions = pgTable(
@@ -116,11 +116,11 @@ export const rolePermissions = pgTable(
       .references(() => roles.id, { onDelete: "cascade" }),
     permissionId: uuid("permission_id")
       .notNull()
-      .references(() => permissions.id, { onDelete: "cascade" })
+      .references(() => permissions.id, { onDelete: "cascade" }),
   },
   (table) => ({
-    pk: primaryKey({ columns: [table.roleId, table.permissionId] })
-  })
+    pk: primaryKey({ columns: [table.roleId, table.permissionId] }),
+  }),
 );
 
 export const memberships = pgTable(
@@ -138,13 +138,13 @@ export const memberships = pgTable(
       .references(() => roles.id, { onDelete: "restrict" }),
     branchId: uuid("branch_id"),
     status: membershipStatusEnum("status").notNull().default("active"),
-    ...timestamps
+    ...timestamps,
   },
   (table) => ({
     tenantUserIdx: uniqueIndex("memberships_tenant_user_idx").on(table.tenantId, table.userId),
     tenantIdx: index("memberships_tenant_idx").on(table.tenantId),
-    userIdx: index("memberships_user_idx").on(table.userId)
-  })
+    userIdx: index("memberships_user_idx").on(table.userId),
+  }),
 );
 
 export const sessions = pgTable(
@@ -160,11 +160,11 @@ export const sessions = pgTable(
     isPersistent: boolean("is_persistent").notNull().default(false),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    userIdx: index("sessions_user_idx").on(table.userId)
-  })
+    userIdx: index("sessions_user_idx").on(table.userId),
+  }),
 );
 
 export const passwordResetTokens = pgTable("password_reset_tokens", {
@@ -175,7 +175,7 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
   tokenHash: text("token_hash").notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   usedAt: timestamp("used_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const emailVerificationTokens = pgTable("email_verification_tokens", {
@@ -186,7 +186,7 @@ export const emailVerificationTokens = pgTable("email_verification_tokens", {
   tokenHash: text("token_hash").notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   usedAt: timestamp("used_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const invites = pgTable("invites", {
@@ -202,7 +202,7 @@ export const invites = pgTable("invites", {
   tokenHash: text("token_hash").notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   acceptedAt: timestamp("accepted_at", { withTimezone: true }),
-  ...timestamps
+  ...timestamps,
 });
 
 export const legalEntities = pgTable(
@@ -215,11 +215,14 @@ export const legalEntities = pgTable(
     name: varchar("name", { length: 180 }).notNull(),
     document: varchar("document", { length: 20 }).notNull(),
     documentType: varchar("document_type", { length: 12 }).notNull().default("cnpj"),
-    ...timestamps
+    ...timestamps,
   },
   (table) => ({
-    tenantDocumentIdx: uniqueIndex("legal_entities_tenant_document_idx").on(table.tenantId, table.document)
-  })
+    tenantDocumentIdx: uniqueIndex("legal_entities_tenant_document_idx").on(
+      table.tenantId,
+      table.document,
+    ),
+  }),
 );
 
 export const branches = pgTable(
@@ -229,7 +232,9 @@ export const branches = pgTable(
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
-    legalEntityId: uuid("legal_entity_id").references(() => legalEntities.id, { onDelete: "set null" }),
+    legalEntityId: uuid("legal_entity_id").references(() => legalEntities.id, {
+      onDelete: "set null",
+    }),
     name: varchar("name", { length: 140 }).notNull(),
     code: varchar("code", { length: 32 }).notNull(),
     phone: varchar("phone", { length: 30 }),
@@ -239,12 +244,12 @@ export const branches = pgTable(
     state: varchar("state", { length: 2 }),
     zipCode: varchar("zip_code", { length: 16 }),
     isActive: boolean("is_active").notNull().default(true),
-    ...timestamps
+    ...timestamps,
   },
   (table) => ({
     tenantCodeIdx: uniqueIndex("branches_tenant_code_idx").on(table.tenantId, table.code),
-    tenantIdx: index("branches_tenant_idx").on(table.tenantId)
-  })
+    tenantIdx: index("branches_tenant_idx").on(table.tenantId),
+  }),
 );
 
 export const tenantSettings = pgTable("tenant_settings", {
@@ -254,7 +259,7 @@ export const tenantSettings = pgTable("tenant_settings", {
     .references(() => tenants.id, { onDelete: "cascade" }),
   key: varchar("key", { length: 120 }).notNull(),
   value: jsonb("value").notNull().default({}),
-  ...timestamps
+  ...timestamps,
 });
 
 export const branchSettings = pgTable("branch_settings", {
@@ -267,7 +272,7 @@ export const branchSettings = pgTable("branch_settings", {
     .references(() => branches.id, { onDelete: "cascade" }),
   key: varchar("key", { length: 120 }).notNull(),
   value: jsonb("value").notNull().default({}),
-  ...timestamps
+  ...timestamps,
 });
 
 export const productCategories = pgTable(
@@ -278,11 +283,11 @@ export const productCategories = pgTable(
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
     name: varchar("name", { length: 120 }).notNull(),
-    ...timestamps
+    ...timestamps,
   },
   (table) => ({
-    tenantNameIdx: uniqueIndex("product_categories_tenant_name_idx").on(table.tenantId, table.name)
-  })
+    tenantNameIdx: uniqueIndex("product_categories_tenant_name_idx").on(table.tenantId, table.name),
+  }),
 );
 
 export const products = pgTable(
@@ -293,7 +298,9 @@ export const products = pgTable(
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
     branchId: uuid("branch_id").references(() => branches.id, { onDelete: "set null" }),
-    categoryId: uuid("category_id").references(() => productCategories.id, { onDelete: "set null" }),
+    categoryId: uuid("category_id").references(() => productCategories.id, {
+      onDelete: "set null",
+    }),
     name: varchar("name", { length: 180 }).notNull(),
     sku: varchar("sku", { length: 64 }),
     barcode: varchar("barcode", { length: 64 }),
@@ -304,14 +311,54 @@ export const products = pgTable(
     promotionalPrice: numeric("promotional_price", { precision: 12, scale: 2 }),
     minStock: numeric("min_stock", { precision: 12, scale: 3 }).notNull().default("0"),
     isActive: boolean("is_active").notNull().default(true),
-    ...timestamps
+    ...timestamps,
   },
   (table) => ({
     tenantSkuIdx: uniqueIndex("products_tenant_sku_idx").on(table.tenantId, table.sku),
     tenantIdx: index("products_tenant_idx").on(table.tenantId),
     branchIdx: index("products_branch_idx").on(table.branchId),
-    nameIdx: index("products_name_idx").on(table.name)
-  })
+    nameIdx: index("products_name_idx").on(table.name),
+  }),
+);
+
+export const productFiscalProfiles = pgTable(
+  "product_fiscal_profiles",
+  {
+    productId: uuid("product_id")
+      .primaryKey()
+      .references(() => products.id, { onDelete: "cascade" }),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    ncm: varchar("ncm", { length: 8 }),
+    cest: varchar("cest", { length: 7 }),
+    taxOrigin: varchar("tax_origin", { length: 1 }),
+    cfopDomestic: varchar("cfop_domestic", { length: 4 }),
+    cfopInterstate: varchar("cfop_interstate", { length: 4 }),
+    icmsTaxCode: varchar("icms_tax_code", { length: 4 }),
+    pisTaxCode: varchar("pis_tax_code", { length: 2 }),
+    cofinsTaxCode: varchar("cofins_tax_code", { length: 2 }),
+    ipiTaxCode: varchar("ipi_tax_code", { length: 2 }),
+    subjectToIcmsSt: boolean("subject_to_icms_st").notNull().default(false),
+    icmsRate: numeric("icms_rate", { precision: 7, scale: 4 }),
+    icmsStRate: numeric("icms_st_rate", { precision: 7, scale: 4 }),
+    icmsStMvaRate: numeric("icms_st_mva_rate", { precision: 8, scale: 4 }),
+    fcpRate: numeric("fcp_rate", { precision: 7, scale: 4 }),
+    pisRate: numeric("pis_rate", { precision: 7, scale: 4 }),
+    cofinsRate: numeric("cofins_rate", { precision: 7, scale: 4 }),
+    ipiRate: numeric("ipi_rate", { precision: 7, scale: 4 }),
+    taxBenefitCode: varchar("tax_benefit_code", { length: 20 }),
+    fiscalNotes: text("fiscal_notes"),
+    accountantApprovedAt: timestamp("accountant_approved_at", { withTimezone: true }),
+    accountantApprovedByUserId: uuid("accountant_approved_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    ...timestamps,
+  },
+  (table) => ({
+    tenantIdx: index("product_fiscal_profiles_tenant_idx").on(table.tenantId),
+    ncmIdx: index("product_fiscal_profiles_ncm_idx").on(table.tenantId, table.ncm),
+  }),
 );
 
 export const customers = pgTable(
@@ -337,14 +384,17 @@ export const customers = pgTable(
     notes: text("notes"),
     communicationOptIn: boolean("communication_opt_in").notNull().default(false),
     isActive: boolean("is_active").notNull().default(true),
-    ...timestamps
+    ...timestamps,
   },
   (table) => ({
-    tenantDocumentIdx: uniqueIndex("customers_tenant_document_idx").on(table.tenantId, table.document),
+    tenantDocumentIdx: uniqueIndex("customers_tenant_document_idx").on(
+      table.tenantId,
+      table.document,
+    ),
     tenantIdx: index("customers_tenant_idx").on(table.tenantId),
     branchIdx: index("customers_branch_idx").on(table.branchId),
-    nameIdx: index("customers_name_idx").on(table.name)
-  })
+    nameIdx: index("customers_name_idx").on(table.name),
+  }),
 );
 
 export const auditLogs = pgTable(
@@ -357,12 +407,47 @@ export const auditLogs = pgTable(
     entityType: varchar("entity_type", { length: 120 }).notNull(),
     entityId: uuid("entity_id"),
     metadata: jsonb("metadata").notNull().default({}),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
     tenantIdx: index("audit_logs_tenant_idx").on(table.tenantId),
-    actorIdx: index("audit_logs_actor_idx").on(table.actorUserId)
-  })
+    actorIdx: index("audit_logs_actor_idx").on(table.actorUserId),
+  }),
+);
+
+export const releaseNotes = pgTable("release_notes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  version: varchar("version", { length: 32 }).notNull().unique(),
+  title: varchar("title", { length: 180 }).notNull(),
+  summary: text("summary").notNull(),
+  changes: text("changes").array().notNull().default([]),
+  audienceRoles: text("audience_roles").array().notNull().default([]),
+  publishedAt: timestamp("published_at", { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const releaseNoteReads = pgTable(
+  "release_note_reads",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    releaseNoteId: uuid("release_note_id")
+      .notNull()
+      .references(() => releaseNotes.id, { onDelete: "cascade" }),
+    readAt: timestamp("read_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    tenantUserNoteIdx: uniqueIndex("release_note_reads_tenant_user_note_idx").on(
+      table.tenantId,
+      table.userId,
+      table.releaseNoteId,
+    ),
+  }),
 );
 
 export const plans = pgTable("plans", {
@@ -371,5 +456,5 @@ export const plans = pgTable("plans", {
   name: varchar("name", { length: 120 }).notNull(),
   priceCents: integer("price_cents").notNull().default(0),
   isActive: boolean("is_active").notNull().default(true),
-  ...timestamps
+  ...timestamps,
 });

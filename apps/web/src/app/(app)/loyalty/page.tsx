@@ -214,11 +214,11 @@ export default function LoyaltyPage() {
                               Number(form.get("automationPoints") || 0) || undefined,
                             inactivityDays: Number(form.get("inactivityDays") || 0) || undefined,
                             branchId: form.get("branchId") || undefined,
-                            productIds: form.get("productId")
-                              ? [String(form.get("productId"))]
+                            productIds: formText(form, "productId")
+                              ? [formText(form, "productId")!]
                               : undefined,
-                            categoryIds: form.get("categoryId")
-                              ? [String(form.get("categoryId"))]
+                            categoryIds: formText(form, "categoryId")
+                              ? [formText(form, "categoryId")!]
                               : undefined,
                           }),
                           "Campanha criada.",
@@ -604,6 +604,11 @@ export default function LoyaltyPage() {
       />
     </div>
   );
+}
+
+function formText(form: FormData, name: string) {
+  const entry = form.get(name);
+  return typeof entry === "string" && entry ? entry : undefined;
 }
 function Metric({
   label,

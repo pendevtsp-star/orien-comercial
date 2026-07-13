@@ -5,7 +5,7 @@ import {
   buildMockCheckoutUrl,
   normalizeInvoiceStatus,
   normalizeSubscriptionStatus,
-  SubscriptionsService
+  SubscriptionsService,
 } from "./subscriptions.service";
 
 describe("SubscriptionsService helpers", () => {
@@ -24,11 +24,11 @@ describe("SubscriptionsService helpers", () => {
   });
 
   it("builds checkout urls consistently", () => {
-    expect(buildMockCheckoutUrl("https://sandbox.asaas.com/api/v3", "tenant-1", "starter")).toContain(
-      "/checkout/mock?tenant=tenant-1&plan=starter"
-    );
+    expect(
+      buildMockCheckoutUrl("https://sandbox.asaas.com/api/v3", "tenant-1", "starter"),
+    ).toContain("/checkout/mock?tenant=tenant-1&plan=starter");
     expect(buildHostedSubscriptionUrl("https://sandbox.asaas.com/api/v3", "sub-123")).toBe(
-      "https://sandbox.asaas.com/subscription/sub-123"
+      "https://sandbox.asaas.com/subscription/sub-123",
     );
   });
 });
@@ -39,13 +39,14 @@ describe("SubscriptionsService.handleAsaasWebhook", () => {
     const service = new SubscriptionsService(
       { pool, tenantQuery: vi.fn(), tenantTransaction: vi.fn() } as never,
       {
-        ASAAS_WEBHOOK_TOKEN: "expected-token"
-      } as never
+        ASAAS_WEBHOOK_TOKEN: "expected-token",
+      } as never,
+      { hashPassword: vi.fn() } as never,
     );
 
-    await expect(service.handleAsaasWebhook({ id: "evt-1", event: "PAYMENT_RECEIVED" }, "wrong-token")).rejects.toBeInstanceOf(
-      ForbiddenException
-    );
+    await expect(
+      service.handleAsaasWebhook({ id: "evt-1", event: "PAYMENT_RECEIVED" }, "wrong-token"),
+    ).rejects.toBeInstanceOf(ForbiddenException);
     expect(pool.connect).not.toHaveBeenCalled();
   });
 
@@ -61,18 +62,22 @@ describe("SubscriptionsService.handleAsaasWebhook", () => {
     const service = new SubscriptionsService(
       { pool: { connect }, tenantQuery: vi.fn(), tenantTransaction: vi.fn() } as never,
       {
-        ASAAS_WEBHOOK_TOKEN: ""
-      } as never
+        ASAAS_WEBHOOK_TOKEN: "",
+      } as never,
+      { hashPassword: vi.fn() } as never,
     );
 
-    const result = await service.handleAsaasWebhook({ id: "evt-duplicated", event: "PAYMENT_RECEIVED" });
+    const result = await service.handleAsaasWebhook({
+      id: "evt-duplicated",
+      event: "PAYMENT_RECEIVED",
+    });
 
     expect(result).toEqual({ ok: true, duplicated: true });
     expect(query).toHaveBeenNthCalledWith(1, "BEGIN");
     expect(query).toHaveBeenNthCalledWith(
       2,
       "SELECT id, status FROM webhook_events WHERE provider = 'asaas' AND event_id = $1",
-      ["evt-duplicated"]
+      ["evt-duplicated"],
     );
     expect(query).toHaveBeenNthCalledWith(3, "COMMIT");
     expect(release).toHaveBeenCalled();

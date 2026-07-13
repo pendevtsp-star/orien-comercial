@@ -1,8 +1,28 @@
 "use client";
 
-import { Badge, Button, Card, CardContent, ConfirmDialog, DataTable, EmptyState, Input, PageHeader, Select } from "@sgc/ui";
-import { ChevronLeft, ChevronRight, FolderSearch, Pencil, Plus, RefreshCw, Trash2, type LucideIcon } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  ConfirmDialog,
+  DataTable,
+  EmptyState,
+  Input,
+  PageHeader,
+  Select,
+} from "@sgc/ui";
+import {
+  ChevronLeft,
+  ChevronRight,
+  FolderSearch,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Trash2,
+  type LucideIcon,
+} from "lucide-react";
+import { FormEvent, Fragment, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { apiFetch } from "../lib/api";
 
@@ -16,13 +36,27 @@ interface ResourcePageProps<T extends { id: string; isActive?: boolean | null }>
   description: string;
   endpoint: string;
   columns: Array<{ key: string; header: string; render: (row: T) => React.ReactNode }>;
-  fields: Array<{ name: string; label: string; type?: string; required?: boolean }>;
+  fields: Array<{
+    name: string;
+    label: string;
+    type?: string;
+    required?: boolean;
+    section?: string;
+    sectionDescription?: string;
+    options?: Array<{ label: string; value: string }>;
+  }>;
   transform?: (form: FormData) => Record<string, unknown>;
   searchPlaceholder?: string;
   heroTitle?: string;
   heroDescription?: string;
   heroBadge?: string;
-  insights?: Array<{ label: string; value: (rows: T[]) => number | string; detail: string; icon: LucideIcon; accent?: boolean }>;
+  insights?: Array<{
+    label: string;
+    value: (rows: T[]) => number | string;
+    detail: string;
+    icon: LucideIcon;
+    accent?: boolean;
+  }>;
   sortOptions?: Array<{ label: string; value: string }>;
   rowActions?: (row: T) => React.ReactNode;
   formExtras?: React.ReactNode;
@@ -63,7 +97,7 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
       page: String(page),
       pageSize,
       sortBy,
-      sortDirection
+      sortDirection,
     });
     if (search) params.set("search", search);
     if (isActive !== "all") params.set("isActive", isActive);
@@ -104,14 +138,19 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
     const imageFile = form.get("imageFile");
     if (imageFile instanceof File && imageFile.size) {
       if (!imageFile.type.match(/^image\/(png|jpeg|webp)$/) || imageFile.size > 5 * 1024 * 1024) {
-        setError("Selecione uma imagem PNG, JPEG ou WebP de até 5 MB."); setSubmitting(false); return;
+        setError("Selecione uma imagem PNG, JPEG ou WebP de até 5 MB.");
+        setSubmitting(false);
+        return;
       }
       payload.imageData = await fileAsDataUrl(imageFile);
     }
 
     try {
       if (editingRow) {
-        await apiFetch(`${endpoint}/${editingRow.id}`, { method: "PATCH", body: JSON.stringify(payload) });
+        await apiFetch(`${endpoint}/${editingRow.id}`, {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        });
       } else {
         await apiFetch(endpoint, { method: "POST", body: JSON.stringify(payload) });
       }
@@ -130,7 +169,7 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
     try {
       await apiFetch(`${endpoint}/${row.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ isActive: !(row.isActive ?? true) })
+        body: JSON.stringify({ isActive: !(row.isActive ?? true) }),
       });
       await load();
     } catch (err) {
@@ -164,12 +203,23 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
           </Button>
         }
       />
-      {error ? <p className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</p> : null}
+      {error ? (
+        <p className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+          {error}
+        </p>
+      ) : null}
 
       {insights?.length ? (
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {insights.map((item) => (
-            <InsightCard key={item.label} title={item.label} value={item.value(rows)} detail={item.detail} icon={item.icon} accent={item.accent} />
+            <InsightCard
+              key={item.label}
+              title={item.label}
+              value={item.value(rows)}
+              detail={item.detail}
+              icon={item.icon}
+              accent={item.accent}
+            />
           ))}
         </section>
       ) : null}
@@ -177,34 +227,73 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
       <section className="grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1fr)_340px]">
         <Card className="min-w-0 2xl:order-2 2xl:sticky 2xl:top-20 2xl:self-start">
           <CardContent>
-            <form key={editingRow?.id ?? "create"} className="grid gap-3" onSubmit={(event) => void submit(event)}>
+            <form
+              key={editingRow?.id ?? "create"}
+              className="grid gap-3"
+              onSubmit={(event) => void submit(event)}
+            >
               <div>
-                <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Cadastro guiado</p>
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">
+                  Cadastro guiado
+                </p>
                 <h2 className="mt-2 text-base font-semibold text-[var(--brand-primary)]">
                   {editingRow ? "Editar registro" : "Novo registro"}
                 </h2>
                 <p className="text-sm text-slate-500">
-                  {editingRow ? "Atualize os dados e salve para refletir a mudanca na base." : "Validado novamente no backend."}
+                  {editingRow
+                    ? "Atualize os dados e salve para refletir a mudanca na base."
+                    : "Validado novamente no backend."}
                 </p>
               </div>
               {formExtras}
-              {fields.map((field) => (
-                <Input
-                  key={field.name}
-                  name={field.name}
-                  label={field.label}
-                  type={field.type ?? "text"}
-                  required={field.required}
-                  defaultValue={
-                    editingRow
-                      ? fieldValue(editingRow, field.name)
-                      : undefined
-                  }
-                />
-              ))}
+              {fields.map((field, index) => {
+                const startsSection = field.section && field.section !== fields[index - 1]?.section;
+                const defaultValue = editingRow ? fieldValue(editingRow, field.name) : undefined;
+                return (
+                  <Fragment key={field.name}>
+                    {startsSection ? (
+                      <div className="mt-3 border-t border-[var(--brand-border)] pt-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--brand-secondary)]">
+                          {field.section}
+                        </p>
+                        {field.sectionDescription ? (
+                          <p className="mt-1 text-xs leading-5 text-slate-500">
+                            {field.sectionDescription}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {field.type === "select" ? (
+                      <Select
+                        name={field.name}
+                        label={field.label}
+                        required={field.required}
+                        options={field.options ?? []}
+                        defaultValue={defaultValue}
+                      />
+                    ) : (
+                      <Input
+                        name={field.name}
+                        label={field.label}
+                        type={field.type ?? "text"}
+                        required={field.required}
+                        defaultValue={defaultValue}
+                      />
+                    )}
+                  </Fragment>
+                );
+              })}
               <div className="flex flex-wrap gap-2">
-                <Button type="submit" disabled={submitting} icon={editingRow ? <Pencil size={16} /> : <Plus size={16} />}>
-                  {submitting ? "Salvando..." : editingRow ? "Salvar alterações" : "Salvar cadastro"}
+                <Button
+                  type="submit"
+                  disabled={submitting}
+                  icon={editingRow ? <Pencil size={16} /> : <Plus size={16} />}
+                >
+                  {submitting
+                    ? "Salvando..."
+                    : editingRow
+                      ? "Salvar alterações"
+                      : "Salvar cadastro"}
                 </Button>
                 {editingRow ? (
                   <Button
@@ -214,7 +303,7 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
                       setEditingRow(null);
                     }}
                   >
-                    Cancelar edicao
+                    Cancelar edição
                   </Button>
                 ) : null}
               </div>
@@ -222,10 +311,15 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
           </CardContent>
         </Card>
         <div className="grid min-w-0 gap-3 2xl:order-1">
-          <Card variant="brand" className="overflow-hidden shadow-[0_28px_64px_rgba(11,29,61,0.18)]">
+          <Card
+            variant="brand"
+            className="overflow-hidden shadow-[0_28px_64px_rgba(11,29,61,0.18)]"
+          >
             <CardContent className="grid gap-4 p-6">
               <div>
-                <Badge className="border-white/10 bg-white/10 text-white">{heroBadge ?? "Visao operacional"}</Badge>
+                <Badge className="border-white/10 bg-white/10 text-white">
+                  {heroBadge ?? "Visao operacional"}
+                </Badge>
                 <h2 data-brand-display="true" className="mt-4 text-3xl font-semibold text-white">
                   {heroTitle ?? title}
                 </h2>
@@ -250,7 +344,7 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
               options={[
                 { label: "Todos os status", value: "all" },
                 { label: "Somente ativos", value: "true" },
-                { label: "Somente inativos", value: "false" }
+                { label: "Somente inativos", value: "false" },
               ]}
               value={isActive}
               onChange={(event) => {
@@ -271,7 +365,7 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
               aria-label="Direcao"
               options={[
                 { label: "Crescente", value: "asc" },
-                { label: "Decrescente", value: "desc" }
+                { label: "Decrescente", value: "desc" },
               ]}
               value={sortDirection}
               onChange={(event) => {
@@ -284,7 +378,7 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
               options={[
                 { label: "10 por pagina", value: "10" },
                 { label: "20 por pagina", value: "20" },
-                { label: "50 por pagina", value: "50" }
+                { label: "50 por pagina", value: "50" },
               ]}
               value={pageSize}
               onChange={(event) => {
@@ -302,10 +396,19 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
                 render: (row) => (
                   <div className="flex flex-wrap gap-2">
                     {rowActions?.(row)}
-                    <Button type="button" variant="secondary" icon={<Pencil size={14} />} onClick={() => setEditingRow(row)}>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      icon={<Pencil size={14} />}
+                      onClick={() => setEditingRow(row)}
+                    >
                       Editar
                     </Button>
-                    <Button type="button" variant="secondary" onClick={() => void toggleActive(row)}>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => void toggleActive(row)}
+                    >
                       {(row.isActive ?? true) ? "Desativar" : "Reativar"}
                     </Button>
                     <ConfirmDialog
@@ -319,8 +422,8 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
                       onConfirm={() => void remove(row)}
                     />
                   </div>
-                )
-              }
+                ),
+              },
             ]}
             rows={rows}
             empty={
@@ -342,7 +445,7 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
                 <EmptyState
                   eyebrow="Base inicial"
                   title={`Ainda nao ha registros em ${title.toLowerCase()}.`}
-                  description="Use o formulario ao lado para criar o primeiro item deste modulo e iniciar a operacao."
+                  description="Use o formulário ao lado para criar o primeiro item deste módulo e iniciar a operação."
                   icon={<FolderSearch size={20} />}
                 />
               )
@@ -350,12 +453,20 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
           />
           <div className="flex flex-col gap-3 rounded-xl border border-[var(--brand-border)] bg-white px-4 py-3 text-sm text-slate-600 shadow-[0_10px_24px_rgba(11,29,61,0.04)] md:flex-row md:items-center md:justify-between">
             <p>
-              Mostrando <span className="font-medium text-[var(--brand-primary)]">{showingFrom}</span> a{" "}
+              Mostrando{" "}
+              <span className="font-medium text-[var(--brand-primary)]">{showingFrom}</span> a{" "}
               <span className="font-medium text-[var(--brand-primary)]">{showingTo}</span> de{" "}
-              <span className="font-medium text-[var(--brand-primary)]">{pagination.total}</span> registros
+              <span className="font-medium text-[var(--brand-primary)]">{pagination.total}</span>{" "}
+              registros
             </p>
             <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" variant="secondary" icon={<ChevronLeft size={16} />} disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>
+              <Button
+                type="button"
+                variant="secondary"
+                icon={<ChevronLeft size={16} />}
+                disabled={page <= 1}
+                onClick={() => setPage((current) => current - 1)}
+              >
                 Anterior
               </Button>
               <Badge>
@@ -379,12 +490,20 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
 }
 
 function fileAsDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(file); });
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () =>
+      typeof reader.result === "string"
+        ? resolve(reader.result)
+        : reject(new Error("Não foi possível ler a imagem selecionada."));
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 function fieldValue<T extends { id: string }>(row: T, key: string) {
   const value = (row as Record<string, unknown>)[key];
-  if (typeof value === "string" || typeof value === "number") {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     return String(value);
   }
   return "";
@@ -395,7 +514,7 @@ function InsightCard({
   value,
   detail,
   icon: Icon,
-  accent = false
+  accent = false,
 }: {
   title: string;
   value: number | string;
@@ -413,7 +532,9 @@ function InsightCard({
         </div>
         <div
           className={`flex h-11 w-11 items-center justify-center rounded-xl ${
-            accent ? "bg-[rgba(245,195,74,0.18)] text-[#c78b07]" : "bg-[rgba(19,58,124,0.10)] text-[var(--brand-secondary)]"
+            accent
+              ? "bg-[rgba(245,195,74,0.18)] text-[#c78b07]"
+              : "bg-[rgba(19,58,124,0.10)] text-[var(--brand-secondary)]"
           }`}
         >
           <Icon size={20} />
