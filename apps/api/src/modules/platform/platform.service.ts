@@ -461,6 +461,95 @@ export class PlatformService {
     );
     return { data: result.rows };
   }
+  async supportTickets(status?: string) {
+    const allowed = ["open", "waiting_support", "waiting_customer", "resolved", "closed"];
+    const filtered = status && allowed.includes(status);
+    const result = await this.database.pool.query(
+      `SELECT st.id,st.tenant_id AS "tenantId",t.name AS "tenantName",st.subject,st.category,st.priority,st.status,
+        st.request_id AS "requestId",st.page_url AS "pageUrl",st.created_at AS "createdAt",st.updated_at AS "updatedAt",
+        u.name AS "openedByName",
+        (SELECT count(*)::int FROM support_ticket_messages m WHERE m.ticket_id=st.id) AS "messageCount"
+       FROM support_tickets st
+       JOIN tenants t ON t.id=st.tenant_id
+       LEFT JOIN users u ON u.id=st.opened_by_user_id
+       WHERE st.deleted_at IS NULL ${filtered ? "AND st.status=$1" : ""}
+       ORDER BY CASE st.status WHEN 'open' THEN 1 WHEN 'waiting_support' THEN 2 WHEN 'waiting_customer' THEN 3 WHEN 'resolved' THEN 4 ELSE 5 END,
+        CASE st.priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'normal' THEN 3 ELSE 4 END,
+        st.updated_at DESC
+       LIMIT 150`,
+      filtered ? [status] : [],
+    );
+    return { data: result.rows };
+  }
+  async supportTicketDetail(id: string) {
+    const ticket = await this.database.pool.query(
+      `SELECT st.id,st.tenant_id AS "tenantId",t.name AS "tenantName",st.subject,st.description,st.category,st.priority,st.status,
+        st.request_id AS "requestId",st.page_url AS "pageUrl",st.created_at AS "createdAt",st.updated_at AS "updatedAt",
+        u.name AS "openedByName"
+       FROM support_tickets st
+       JOIN tenants t ON t.id=st.tenant_id
+       LEFT JOIN users u ON u.id=st.opened_by_user_id
+       WHERE st.id=$1 AND st.deleted_at IS NULL`,
+      [id],
+    );
+    if (!ticket.rows[0]) throw new BadRequestException("Chamado não encontrado.");
+    const messages = await this.database.pool.query(
+      `SELECT m.id,m.author_kind AS "authorKind",m.body,m.internal_note AS "internalNote",m.created_at AS "createdAt",
+        COALESCE(u.name,u.email,'Orien') AS "authorName"
+       FROM support_ticket_messages m
+       LEFT JOIN users u ON u.id=m.author_user_id
+       WHERE m.ticket_id=$1
+       ORDER BY m.created_at ASC`,
+      [id],
+    );
+    return { ticket: ticket.rows[0], messages: messages.rows };
+  }
+  async addSupportTicketMessage(actor: string, ticketId: string, body: string, internalNote: boolean) {
+    if (!body || body.trim().length < 2) throw new BadRequestException("Mensagem muito curta.");
+    const ticket = await this.database.pool.query<{ tenantId: string; status: string }>(
+      `SELECT tenant_id AS "tenantId",status FROM support_tickets WHERE id=$1 AND deleted_at IS NULL`,
+      [ticketId],
+    );
+    const current = ticket.rows[0];
+    if (!current) throw new BadRequestException("Chamado não encontrado.");
+    if (current.status === "closed") throw new BadRequestException("Reabra o chamado antes de responder.");
+    const client = await this.database.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        `INSERT INTO support_ticket_messages (ticket_id,tenant_id,author_user_id,author_kind,body,internal_note)
+         VALUES ($1,$2,$3,'platform_user',$4,$5)`,
+        [ticketId, current.tenantId, actor, body.trim(), internalNote],
+      );
+      await client.query(
+        "UPDATE support_tickets SET status=CASE WHEN $2 THEN status ELSE 'waiting_customer' END, first_response_at=COALESCE(first_response_at,now()), updated_at=now() WHERE id=$1",
+        [ticketId, internalNote],
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+    await this.audit(actor, internalNote ? "support.ticket.internal_note.created" : "support.ticket.replied", "support_ticket", ticketId, {});
+    return { ok: true };
+  }
+  async updateSupportTicketStatus(actor: string, ticketId: string, status: string) {
+    if (!["open", "waiting_support", "waiting_customer", "resolved", "closed"].includes(status))
+      throw new BadRequestException("Status inválido.");
+    const result = await this.database.pool.query(
+      `UPDATE support_tickets
+       SET status=$2,resolved_at=CASE WHEN $2='resolved' THEN now() ELSE resolved_at END,
+         closed_at=CASE WHEN $2='closed' THEN now() ELSE closed_at END,updated_at=now()
+       WHERE id=$1 AND deleted_at IS NULL
+       RETURNING id`,
+      [ticketId, status],
+    );
+    if (!result.rows[0]) throw new BadRequestException("Chamado não encontrado.");
+    await this.audit(actor, "support.ticket.status.updated", "support_ticket", ticketId, { status });
+    return { ok: true };
+  }
   async audits() {
     const result = await this.database.pool.query(
       `SELECT a.id,a.action,a.entity_type AS "entityType",a.entity_id AS "entityId",a.metadata,a.created_at AS "createdAt",COALESCE(u.name,u.email,'Sistema') AS "actorName" FROM platform_audit_logs a LEFT JOIN users u ON u.id=a.actor_user_id ORDER BY a.created_at DESC LIMIT 100`,

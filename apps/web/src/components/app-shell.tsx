@@ -15,6 +15,7 @@ import {
   CreditCard,
   ChevronDown,
   CircleHelp,
+  Headset,
   LogOut,
   Menu,
   Moon,
@@ -77,6 +78,7 @@ const navigation: NavigationItem[] = [
   },
   { href: "/alerts", label: "Alertas", icon: BellRing, permissions: ["stock.read"] },
   { href: "/tasks", label: "Tarefas", icon: ClipboardList, permissions: ["dashboard.read"] },
+  { href: "/support", label: "Suporte", icon: Headset, permissions: ["dashboard.read"] },
   { href: "/audit", label: "Auditoria", icon: History, permissions: ["users.read"] },
   {
     href: "/operations",
@@ -109,7 +111,7 @@ const navigationGroups = [
   {
     id: "management",
     label: "Gestão",
-    routes: ["/financial", "/reports", "/alerts", "/tasks", "/operations", "/audit"],
+    routes: ["/financial", "/reports", "/alerts", "/tasks", "/support", "/operations", "/audit"],
   },
   {
     id: "administration",

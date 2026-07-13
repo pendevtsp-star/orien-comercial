@@ -26,6 +26,7 @@ import { IntegrationsModule } from "../modules/integrations/integrations.module"
 import { LoyaltyModule } from "../modules/loyalty/loyalty.module";
 import { TrialLifecycleModule } from "../modules/trials/trial-lifecycle.module";
 import { TasksModule } from "../modules/tasks/tasks.module";
+import { SupportModule } from "../modules/support/support.module";
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { TasksModule } from "../modules/tasks/tasks.module";
     LoyaltyModule,
     TrialLifecycleModule,
     TasksModule,
+    SupportModule,
   ],
 })
 export class AppModule {}

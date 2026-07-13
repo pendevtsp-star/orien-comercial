@@ -61,7 +61,7 @@ export default function Admin() {
 
   async function load() {
     try {
-      const [overview, tenants, billing, health, staff, webhooks, sessions, audits, mfaStatus, errors] =
+      const [overview, tenants, billing, health, staff, webhooks, sessions, audits, mfaStatus, errors, supportTickets] =
         await Promise.all([
           call("/platform/overview"),
           call("/platform/tenants"),
@@ -73,6 +73,7 @@ export default function Admin() {
           call("/platform/audits"),
           call("/platform/mfa/status"),
           call("/platform/errors"),
+          call("/platform/support-tickets"),
         ]);
       setDashboard({
         overview,
@@ -85,6 +86,7 @@ export default function Admin() {
         audits,
         mfaStatus,
         errors,
+        supportTickets,
       });
       setError("");
     } catch (cause) {
@@ -456,7 +458,9 @@ export default function Admin() {
           <Billing data={dashboard.billing.data} tenants={dashboard.tenants.data} act={act} />
         )}
         {active === "webhooks" && <Webhooks data={dashboard.webhooks.data} act={act} />}
-        {active === "support" && <Support sessions={dashboard.sessions.data} />}
+        {active === "support" && (
+          <Support tickets={dashboard.supportTickets.data} sessions={dashboard.sessions.data} act={act} />
+        )}
         {active === "staff" && (
           <Staff
             data={dashboard.staff.data}
@@ -885,48 +889,109 @@ function Webhooks({ data, act }: any) {
     </section>
   );
 }
-function Support({ sessions }: any) {
+function Support({ tickets, sessions, act }: any) {
+  const [selectedId, setSelectedId] = useState(tickets[0]?.id ?? "");
+  const [detail, setDetail] = useState<any>(null);
+  const [reply, setReply] = useState("");
+  const [internalNote, setInternalNote] = useState(false);
+  useEffect(() => {
+    if (!selectedId) {
+      setDetail(null);
+      return;
+    }
+    void call(`/platform/support-tickets/${selectedId}`)
+      .then(setDetail)
+      .catch(() => setDetail(null));
+  }, [selectedId]);
   return (
-    <section className="panel">
-      <p className="eyebrow">ATENDIMENTO CONTROLADO</p>
-      <h2>Sessões assistidas</h2>
-      <p className="muted">
-        Toda assistência exige motivo, expira em 30 minutos e permanece registrada. O acesso em nome
-        do cliente ainda depende de aprovação explícita.
-      </p>
-      <table>
-        <thead>
-          <tr>
-            <th>Tenant</th>
-            <th>Operador</th>
-            <th>Motivo</th>
-            <th>Status</th>
-            <th>Expira</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sessions.length ? (
-            sessions.map((item: any) => (
-              <tr key={item.id}>
-                <td>{item.tenantName}</td>
-                <td>{item.operatorName}</td>
-                <td>{item.reason}</td>
-                <td>
-                  <span className="pill">{item.status}</span>
-                </td>
-                <td>{date(item.expiresAt)}</td>
-              </tr>
-            ))
-          ) : (
+    <div className="two-column">
+      <section className="panel">
+        <p className="eyebrow">FILA DE ATENDIMENTO</p>
+        <h2>Chamados dos clientes</h2>
+        <p className="muted">Priorize chamados críticos, responda com histórico e mantenha a trilha auditável.</p>
+        <table>
+          <thead>
             <tr>
-              <td colSpan={5} className="empty">
-                Nenhuma sessão assistida registrada.
-              </td>
+              <th>Tenant</th>
+              <th>Assunto</th>
+              <th>Status</th>
+              <th>Prioridade</th>
+              <th>Atualizado</th>
+              <th />
             </tr>
-          )}
-        </tbody>
-      </table>
-    </section>
+          </thead>
+          <tbody>
+            {tickets.length ? (
+              tickets.map((item: any) => (
+                <tr key={item.id}>
+                  <td>{item.tenantName}</td>
+                  <td>
+                    {item.subject}
+                    <br />
+                    <small>{item.category} · {item.messageCount} mensagens</small>
+                  </td>
+                  <td><span className="pill">{item.status}</span></td>
+                  <td>{item.priority}</td>
+                  <td>{date(item.updatedAt)}</td>
+                  <td><button className="btn small" onClick={() => setSelectedId(item.id)}>Abrir</button></td>
+                </tr>
+              ))
+            ) : (
+              <tr><td colSpan={6} className="empty">Nenhum chamado aberto.</td></tr>
+            )}
+          </tbody>
+        </table>
+        <h3>Sessões assistidas</h3>
+        <table>
+          <thead><tr><th>Tenant</th><th>Operador</th><th>Motivo</th><th>Status</th><th>Expira</th></tr></thead>
+          <tbody>
+            {sessions.length ? sessions.slice(0, 8).map((item: any) => (
+              <tr key={item.id}><td>{item.tenantName}</td><td>{item.operatorName}</td><td>{item.reason}</td><td><span className="pill">{item.status}</span></td><td>{date(item.expiresAt)}</td></tr>
+            )) : <tr><td colSpan={5} className="empty">Nenhuma sessão assistida registrada.</td></tr>}
+          </tbody>
+        </table>
+      </section>
+      <aside className="panel detail">
+        {detail ? (
+          <>
+            <p className="eyebrow">CHAMADO</p>
+            <h2>{detail.ticket.subject}</h2>
+            <p className="muted">{detail.ticket.tenantName} · {detail.ticket.openedByName ?? "Usuário"} · {date(detail.ticket.createdAt)}</p>
+            <div className="inline-actions">
+              {["open", "waiting_support", "waiting_customer", "resolved", "closed"].map((status) => (
+                <button key={status} className="btn small" onClick={() => void act(() => call(`/platform/support-tickets/${detail.ticket.id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }), "Status do chamado atualizado.")}>{status}</button>
+              ))}
+            </div>
+            <div className="notes">
+              {detail.messages.map((message: any) => (
+                <p key={message.id}>
+                  <strong>{message.authorName} {message.internalNote ? "· nota interna" : ""}</strong>
+                  <br />
+                  {message.body}
+                  <br />
+                  <small>{date(message.createdAt)}</small>
+                </p>
+              ))}
+            </div>
+            <textarea placeholder="Responder ao cliente ou registrar nota interna" value={reply} onChange={(event) => setReply(event.target.value)} />
+            <label className="check">
+              <input type="checkbox" checked={internalNote} onChange={(event) => setInternalNote(event.target.checked)} /> Nota interna
+            </label>
+            <button className="btn primary" onClick={() => void act(async () => {
+              await call(`/platform/support-tickets/${detail.ticket.id}/messages`, { method: "POST", body: JSON.stringify({ body: reply, internalNote }) });
+              setReply("");
+              setInternalNote(false);
+              setDetail(await call(`/platform/support-tickets/${detail.ticket.id}`));
+            }, internalNote ? "Nota interna registrada." : "Resposta enviada ao cliente.")}>Enviar</button>
+          </>
+        ) : (
+          <>
+            <h2>Selecione um chamado</h2>
+            <p className="muted">As mensagens, notas internas e ações de status aparecem aqui.</p>
+          </>
+        )}
+      </aside>
+    </div>
   );
 }
 function Staff({ data, email, setEmail, role, setRole, act }: any) {

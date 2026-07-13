@@ -137,6 +137,33 @@ export class PlatformController {
     await this.ok(u);
     return this.p.supportSessions();
   }
+  @Get("support-tickets") async supportTickets(
+    @CurrentUser() u: AuthUser,
+    @Query("status") status?: string,
+  ) {
+    await this.ok(u);
+    return this.p.supportTickets(status);
+  }
+  @Get("support-tickets/:id") async supportTicket(@CurrentUser() u: AuthUser, @Param("id") id: string) {
+    await this.ok(u);
+    return this.p.supportTicketDetail(id);
+  }
+  @Post("support-tickets/:id/messages") async supportTicketMessage(
+    @CurrentUser() u: AuthUser,
+    @Param("id") id: string,
+    @Body() b: { body: string; internalNote?: boolean },
+  ) {
+    await this.ok(u);
+    return this.p.addSupportTicketMessage(u.userId, id, b.body, Boolean(b.internalNote));
+  }
+  @Patch("support-tickets/:id/status") async supportTicketStatus(
+    @CurrentUser() u: AuthUser,
+    @Param("id") id: string,
+    @Body() b: { status: string },
+  ) {
+    await this.ok(u);
+    return this.p.updateSupportTicketStatus(u.userId, id, b.status);
+  }
   @Post("tenants/:id/support-sessions") async startSession(
     @CurrentUser() u: AuthUser,
     @Param("id") id: string,

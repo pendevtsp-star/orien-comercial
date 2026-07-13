@@ -287,6 +287,29 @@ export const rolePermissionsUpdateSchema = z.object({
   permissions: z.array(z.string().trim().min(3).max(120)).max(200),
 });
 
+export const supportTicketListQuerySchema = paginationQuerySchema.extend({
+  status: z.enum(["open", "waiting_support", "waiting_customer", "resolved", "closed"]).optional(),
+  category: z.enum(["general", "billing", "technical", "operation", "integration", "bug", "suggestion"]).optional(),
+});
+
+export const supportTicketCreateSchema = z.object({
+  branchId: uuidSchema.optional(),
+  subject: z.string().trim().min(4).max(180),
+  description: z.string().trim().min(10).max(3000),
+  category: z.enum(["general", "billing", "technical", "operation", "integration", "bug", "suggestion"]).default("general"),
+  priority: z.enum(["low", "normal", "high", "critical"]).default("normal"),
+  pageUrl: z.string().trim().max(500).optional(),
+  requestId: z.string().trim().max(120).optional(),
+});
+
+export const supportTicketMessageSchema = z.object({
+  body: z.string().trim().min(2).max(3000),
+});
+
+export const supportTicketStatusSchema = z.object({
+  status: z.enum(["open", "waiting_support", "waiting_customer", "resolved", "closed"]),
+});
+
 export const stockTransferItemSchema = z.object({
   productId: uuidSchema,
   quantity: z.coerce.number().positive(),
@@ -488,6 +511,10 @@ export type SupplierUpdateInput = z.infer<typeof supplierUpdateSchema>;
 export type FinancialCategoryInput = z.infer<typeof financialCategorySchema>;
 export type FinancialMarkPaidInput = z.infer<typeof financialMarkPaidSchema>;
 export type FinancialReconcileInput = z.infer<typeof financialReconcileSchema>;
+export type SupportTicketListQuery = z.infer<typeof supportTicketListQuerySchema>;
+export type SupportTicketCreateInput = z.infer<typeof supportTicketCreateSchema>;
+export type SupportTicketMessageInput = z.infer<typeof supportTicketMessageSchema>;
+export type SupportTicketStatusInput = z.infer<typeof supportTicketStatusSchema>;
 export type UserInviteInput = z.infer<typeof userInviteSchema>;
 export type MembershipUpdateInput = z.infer<typeof membershipUpdateSchema>;
 export type InviteAcceptInput = z.infer<typeof inviteAcceptSchema>;
