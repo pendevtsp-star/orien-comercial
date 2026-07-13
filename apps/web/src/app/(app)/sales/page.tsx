@@ -1,7 +1,7 @@
 "use client";
 
 import { Badge, Button, Card, CardContent, DataTable, EmptyState, Input, PageHeader, Select } from "@sgc/ui";
-import { Ban, CircleDollarSign, Package2, Plus, RefreshCw, ShoppingCart, Wallet, type LucideIcon } from "lucide-react";
+import { Ban, CircleDollarSign, Package2, Plus, Printer, RefreshCw, ShoppingCart, Wallet, type LucideIcon } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { apiFetch, openApiDocument } from "../../../lib/api";
@@ -453,7 +453,10 @@ export default function SalesPage() {
                 render: (row) => (
                   <div className="flex gap-2">
                     <Button variant="secondary" onClick={() => void openApiDocument(`/sales/${row.id}/document`)}>
-                      Gerar documento
+                      Ver comprovante
+                    </Button>
+                    <Button variant="secondary" icon={<Printer size={14} />} onClick={() => void openApiDocument(`/sales/${row.id}/document`, true)}>
+                      Imprimir
                     </Button>
                     <Button variant="secondary" onClick={() => void toggleHistory(row.id)}>
                       {history[row.id] ? "Ocultar" : "Historico"}

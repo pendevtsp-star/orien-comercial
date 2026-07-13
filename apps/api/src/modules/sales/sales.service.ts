@@ -532,9 +532,11 @@ export class SalesService {
     ]);
 
     return renderDocumentHtml({
-      title: "Comprovante de venda",
-      subtitle: sale.notes ?? "Resumo padronizado da venda para operacao e atendimento.",
-      badge: sale.status,
+      title: "Comprovante de conferência",
+      subtitle:
+        sale.notes ??
+        "Resumo operacional da venda para conferência do cliente. Este documento não substitui cupom ou nota fiscal.",
+      badge: "Sem valor fiscal",
       branding,
       meta: [
         { label: "Venda", value: sale.id.slice(0, 8) },
@@ -545,6 +547,7 @@ export class SalesService {
       sections: [
         {
           title: "Resumo financeiro",
+          subtitle: "Documento simples para conferência. A emissão fiscal será tratada no módulo fiscal quando configurado.",
           metrics: [
             { label: "Total", value: toMoney(sale.total_amount) },
             {

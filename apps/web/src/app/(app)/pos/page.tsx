@@ -68,6 +68,7 @@ export default function PosPage() {
   >([]);
   const [pendingSync, setPendingSync] = useState(0);
   const [printing, setPrinting] = useState<PrintingSettings | null>(null);
+  const [printAfterSale, setPrintAfterSale] = useState(true);
   const [isOnline, setIsOnline] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const scannerRef = useRef<HTMLInputElement>(null);
@@ -325,8 +326,9 @@ export default function PosPage() {
       } else {
         const result = await apiFetch<{ id?: string; sale?: { id?: string } }>("/sales", { method: "POST", headers: { "idempotency-key": createIdempotencyKey() }, body: JSON.stringify(payload) });
         const saleId = result.id ?? result.sale?.id;
-        if (saleId && printing?.receiptMode !== "none") {
-          void openApiDocument(`/sales/${saleId}/document`, printing?.silentPrint ?? false).catch(() => undefined);
+        if (saleId && printAfterSale && printing?.receiptMode !== "none") {
+          const shouldOpenPrint = printing?.receiptMode === "thermal" || printing?.silentPrint;
+          void openApiDocument(`/sales/${saleId}/document`, shouldOpenPrint).catch(() => undefined);
         }
       }
       setCart([]);
@@ -613,6 +615,17 @@ export default function PosPage() {
                 </button>
               </div>
             ) : null}
+            <label className="flex items-start gap-2 rounded-md border border-white/15 bg-white/5 p-3 text-xs leading-5 text-white/75">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={printAfterSale}
+                onChange={(event) => setPrintAfterSale(event.target.checked)}
+              />
+              <span>
+                Abrir comprovante de conferência ao concluir. O documento não tem valor fiscal e usa o padrão salvo em Impressoras.
+              </span>
+            </label>
             <Button
               className="min-h-12 w-full bg-[var(--brand-accent)] text-base text-[var(--brand-primary)] hover:brightness-95"
               disabled={!cash || !cart.length}

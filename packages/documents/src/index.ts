@@ -100,13 +100,18 @@ export function renderDocumentHtml(input: DocumentRenderInput): string {
   <body>
     <main class="page">
       <header class="hero">
-        <div>
+        <div class="hero-copy">
           <p class="eyebrow">${escapeHtml(branding.tradingName || branding.companyName)}</p>
           <h1>${escapeHtml(input.title)}</h1>
           ${input.subtitle ? `<p class="subtitle">${escapeHtml(input.subtitle)}</p>` : ""}
         </div>
         <div class="brand-mark">
-          ${branding.logoUrl ? `<img src="${escapeHtml(branding.logoUrl)}" alt="Logo ${escapeHtml(branding.companyName)}" />` : `<span>${escapeHtml(input.badge || "Documento oficial")}</span>`}
+          ${
+            branding.logoUrl
+              ? `<div class="logo-frame"><img src="${escapeHtml(branding.logoUrl)}" alt="Logo ${escapeHtml(branding.companyName)}" /></div>`
+              : `<span>${escapeHtml(input.badge || "Documento oficial")}</span>`
+          }
+          <small>${escapeHtml(input.badge || "Documento oficial")}</small>
         </div>
       </header>
       <section class="brand-strip">
@@ -250,20 +255,29 @@ function baseStyles(branding: TenantBranding): string {
     .hero {
       display: flex;
       justify-content: space-between;
+      align-items: center;
       gap: 24px;
       padding: 32px;
       border-radius: 20px;
       background:
-        radial-gradient(circle at top right, rgba(245,195,74,0.22), transparent 28%),
+        radial-gradient(circle at 88% 24%, color-mix(in srgb, var(--accent) 34%, transparent), transparent 28%),
+        linear-gradient(90deg, color-mix(in srgb, var(--accent) 22%, transparent), transparent 38%),
         linear-gradient(135deg, var(--primary), var(--secondary));
       color: white;
       box-shadow: 0 28px 60px rgba(11,29,61,0.16);
     }
+    .hero-copy { min-width: 0; }
     .hero.compact { padding: 28px; }
     .hero h1 { margin: 10px 0 0; font-size: 34px; line-height: 1.08; font-family: "Playfair Display", Georgia, serif; font-weight: 600; }
     .subtitle { margin: 10px 0 0; max-width: 620px; color: rgba(255,255,255,0.84); }
     .eyebrow { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.12em; color: rgba(255,255,255,0.72); }
-    .brand-mark { display: flex; align-items: flex-start; }
+    .brand-mark {
+      display: grid;
+      justify-items: end;
+      align-content: center;
+      gap: 10px;
+      min-width: 160px;
+    }
     .brand-mark span {
       padding: 12px 16px;
       border-radius: 999px;
@@ -272,7 +286,36 @@ function baseStyles(branding: TenantBranding): string {
       font-size: 13px;
       font-weight: 600;
     }
-    .brand-mark img { max-width: 140px; max-height: 56px; border-radius: 10px; background: white; object-fit: contain; padding: 6px; }
+    .brand-mark small {
+      max-width: 170px;
+      text-align: right;
+      color: rgba(255,255,255,0.74);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+    .logo-frame {
+      display: grid;
+      place-items: center;
+      width: clamp(96px, 16vw, 184px);
+      min-height: 78px;
+      padding: 12px;
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,0.24);
+      background:
+        linear-gradient(135deg, rgba(255,255,255,0.18), rgba(255,255,255,0.04)),
+        color-mix(in srgb, var(--primary) 82%, black);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.16), 0 18px 36px rgba(0,0,0,0.16);
+    }
+    .brand-mark img {
+      display: block;
+      width: 100%;
+      max-width: 160px;
+      max-height: 70px;
+      object-fit: contain;
+      mix-blend-mode: normal;
+      filter: drop-shadow(0 6px 14px rgba(0,0,0,0.22));
+    }
     .brand-strip, .meta-grid, .metric-grid { display: grid; gap: 16px; }
     .brand-strip {
       grid-template-columns: repeat(2, minmax(0, 1fr));
