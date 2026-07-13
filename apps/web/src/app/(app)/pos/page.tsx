@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, Card, CardContent, DataTable, Input, PageHeader, Select } from "@sgc/ui";
+import { Autocomplete, Badge, Button, Card, CardContent, DataTable, Input, PageHeader, Select } from "@sgc/ui";
 import { Banknote, CreditCard, Minus, Plus, ScanBarcode, WalletCards, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -513,12 +513,25 @@ export default function PosPage() {
                     onChange={(event) => setScanQuantity(Math.max(1, Number(event.target.value || 1)))}
                   />
                 </div>
-                <div className="relative grid gap-3 sm:grid-cols-[minmax(0,1fr)_110px]">
-                  <Input
+                <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_110px]">
+                  <Autocomplete
                     label="Adicionar produto manualmente"
                     value={productSearch}
                     placeholder="Digite nome, SKU ou código"
-                    onChange={(event) => setProductSearch(event.target.value)}
+                    onValueChange={setProductSearch}
+                    options={productSuggestions.map((product) => ({
+                      value: product.id,
+                      label: product.name,
+                      detail: `${[product.sku, product.barcode].filter(Boolean).join(" · ") || "Sem código"} · ${Number(product.salePrice).toLocaleString("pt-BR", {
+                        style: "currency",
+                        currency: "BRL",
+                      })}`,
+                    }))}
+                    emptyText="Nenhum produto encontrado. Confira o nome, SKU ou código."
+                    onOptionSelect={(option) => {
+                      const product = productSuggestions.find((item) => item.id === option.value);
+                      if (product) void addProduct(product, manualQuantity);
+                    }}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
                         event.preventDefault();
@@ -533,29 +546,6 @@ export default function PosPage() {
                     value={manualQuantity}
                     onChange={(event) => setManualQuantity(Math.max(1, Number(event.target.value || 1)))}
                   />
-                  {productSuggestions.length ? (
-                    <div className="absolute left-0 top-full z-20 mt-1 grid w-full overflow-hidden rounded-md border border-[var(--brand-border)] bg-white shadow-xl sm:w-[calc(100%-118px)]">
-                      {productSuggestions.map((product) => (
-                        <button
-                          key={product.id}
-                          type="button"
-                          className="grid gap-0.5 border-b border-[var(--brand-border)] px-3 py-2.5 text-left text-sm last:border-b-0 hover:bg-[var(--brand-surface)]"
-                          onClick={() => void addProduct(product, manualQuantity)}
-                        >
-                          <strong>{product.name}</strong>
-                          <span className="text-xs text-slate-500">
-                            {[product.sku, product.barcode].filter(Boolean).join(" · ") ||
-                              "Sem código"}{" "}
-                            ·{" "}
-                            {Number(product.salePrice).toLocaleString("pt-BR", {
-                              style: "currency",
-                              currency: "BRL",
-                            })}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
                 </div>
               </div>
             )}

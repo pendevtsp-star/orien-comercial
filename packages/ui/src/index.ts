@@ -1,5 +1,6 @@
 export * from "./lib/cn";
 export * from "./components/alert";
+export * from "./components/autocomplete";
 export * from "./components/badge";
 export * from "./components/brand-logo";
 export * from "./components/button";

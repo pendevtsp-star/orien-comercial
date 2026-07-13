@@ -206,6 +206,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [searchResults, setSearchResults] = useState<
     Array<{ label: string; detail: string; href: string }>
   >([]);
+  const [activeSearchIndex, setActiveSearchIndex] = useState(0);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     overview: true,
     operation: true,
@@ -312,6 +313,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }, 180);
     return () => window.clearTimeout(timer);
   }, [searchQuery]);
+  useEffect(() => {
+    setActiveSearchIndex(0);
+  }, [searchResults.length, searchQuery]);
 
   const currentMembership = useMemo(() => {
     const tenantId = getTenantId();
@@ -700,23 +704,63 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   onChange={(event) => setSearchQuery(event.target.value)}
                   placeholder="Buscar produto, cliente, venda ou pedido"
                   className="h-14 flex-1 border-0 bg-transparent outline-none"
+                  role="combobox"
+                  aria-expanded={searchResults.length > 0}
+                  aria-controls="global-search-results"
+                  aria-activedescendant={
+                    searchResults.length ? `global-search-result-${activeSearchIndex}` : undefined
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key === "ArrowDown") {
+                      event.preventDefault();
+                      setActiveSearchIndex((current) =>
+                        Math.min(searchResults.length - 1, current + 1),
+                      );
+                    }
+                    if (event.key === "ArrowUp") {
+                      event.preventDefault();
+                      setActiveSearchIndex((current) => Math.max(0, current - 1));
+                    }
+                    if (event.key === "Enter" && searchResults[activeSearchIndex]) {
+                      event.preventDefault();
+                      router.push(searchResults[activeSearchIndex].href);
+                      setCommandOpen(false);
+                    }
+                    if ((event.ctrlKey || event.metaKey) && event.key === "Backspace") {
+                      event.preventDefault();
+                      setSearchQuery("");
+                    }
+                  }}
                 />
               </div>
-              <div className="max-h-80 overflow-auto p-2">
+              <div id="global-search-results" role="listbox" className="max-h-80 overflow-auto p-2">
                 {searchQuery.trim().length < 2 ? (
                   <p className="p-4 text-sm text-slate-500">Digite ao menos dois caracteres.</p>
                 ) : searchResults.length ? (
-                  searchResults.map((result, index) => (
+                  searchResults.map((result, index) => {
+                    const active = index === activeSearchIndex;
+                    return (
                     <Link
+                      id={`global-search-result-${index}`}
+                      role="option"
+                      aria-selected={active}
                       key={`${result.href}-${index}`}
                       href={result.href}
                       onClick={() => setCommandOpen(false)}
-                      className="grid rounded-md px-3 py-2.5 hover:bg-[var(--brand-surface)]"
+                      onMouseEnter={() => setActiveSearchIndex(index)}
+                      className={`grid rounded-md px-3 py-2.5 ${
+                        active
+                          ? "bg-[var(--brand-highlight)] text-white"
+                          : "hover:bg-[var(--brand-surface)]"
+                      }`}
                     >
                       <strong className="text-sm">{result.label}</strong>
-                      <span className="text-xs text-slate-500">{result.detail}</span>
+                      <span className={`text-xs ${active ? "text-white/75" : "text-slate-500"}`}>
+                        {result.detail}
+                      </span>
                     </Link>
-                  ))
+                    );
+                  })
                 ) : (
                   <p className="p-4 text-sm text-slate-500">Nenhum resultado encontrado.</p>
                 )}

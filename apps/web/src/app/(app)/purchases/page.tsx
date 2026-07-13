@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, Card, CardContent, DataTable, Input, PageHeader, Select } from "@sgc/ui";
+import { Autocomplete, Badge, Button, Card, CardContent, DataTable, Input, PageHeader, Select } from "@sgc/ui";
 import { Check, PackageCheck, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../../lib/api";
@@ -46,6 +46,8 @@ export default function PurchasesPage() {
   const [suppliers, setSuppliers] = useState<OptionRow[]>([]);
   const [products, setProducts] = useState<OptionRow[]>([]);
   const [items, setItems] = useState<DraftItem[]>([]);
+  const [selectedProductId, setSelectedProductId] = useState("");
+  const [productSearch, setProductSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
   const branchOptions = useMemo(
     () => branches.map((row) => ({ label: row.name, value: row.id })),
@@ -59,14 +61,13 @@ export default function PurchasesPage() {
       })),
     [suppliers],
   );
-  const productOptions = useMemo(
-    () =>
-      products.map((row) => ({
-        label: `${row.name}${row.sku ? ` · ${row.sku}` : ""}`,
-        value: row.id,
-      })),
-    [products],
-  );
+  const productSuggestions = useMemo(() => {
+    const search = productSearch.trim().toLowerCase();
+    if (search.length < 2) return [];
+    return products
+      .filter((row) => row.name.toLowerCase().includes(search) || row.sku?.toLowerCase().includes(search))
+      .slice(0, 8);
+  }, [productSearch, products]);
   async function load() {
     try {
       const [o, b, s, p] = await Promise.all([
@@ -90,16 +91,17 @@ export default function PurchasesPage() {
   function addItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const productId = String(form.get("productId") || "");
-    const product = products.find((row) => row.id === productId);
+    const product = products.find((row) => row.id === selectedProductId);
     if (!product) return;
     const quantity = Number(form.get("quantity") || 0);
     const unitCost = Number(form.get("unitCost") || 0);
     setItems((current) => [
       ...current,
-      { productId, productName: product.name, quantity, unitCost },
+      { productId: product.id, productName: product.name, quantity, unitCost },
     ]);
     event.currentTarget.reset();
+    setSelectedProductId("");
+    setProductSearch("");
   }
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -245,7 +247,28 @@ export default function PurchasesPage() {
             <CardContent>
               <form className="grid gap-3" onSubmit={addItem}>
                 <h2 className="text-base font-semibold">Itens do pedido</h2>
-                <Select name="productId" label="Produto" options={productOptions} required />
+                <Autocomplete
+                  label="Produto"
+                  value={productSearch}
+                  placeholder="Digite nome ou SKU"
+                  options={productSuggestions.map((product) => ({
+                    value: product.id,
+                    label: product.name,
+                    detail: product.sku ? `SKU ${product.sku}` : "Sem SKU",
+                  }))}
+                  emptyText="Nenhum produto encontrado."
+                  onValueChange={(value) => {
+                    setProductSearch(value);
+                    setSelectedProductId("");
+                  }}
+                  onOptionSelect={(option) => {
+                    const product = products.find((row) => row.id === option.value);
+                    if (!product) return;
+                    setSelectedProductId(product.id);
+                    setProductSearch(product.name);
+                  }}
+                  required
+                />
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Input name="quantity" label="Quantidade" type="number" step="0.001" required />
                   <Input

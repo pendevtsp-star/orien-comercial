@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, Card, CardContent, DataTable, EmptyState, Input, PageHeader, Select } from "@sgc/ui";
+import { Autocomplete, Badge, Button, Card, CardContent, DataTable, EmptyState, Input, PageHeader, Select } from "@sgc/ui";
 import { Ban, CircleDollarSign, Package2, Plus, Printer, RefreshCw, ShoppingCart, Wallet, type LucideIcon } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -91,18 +91,23 @@ export default function SalesPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [scannerCode, setScannerCode] = useState("");
+  const [draftProductId, setDraftProductId] = useState("");
+  const [draftProductSearch, setDraftProductSearch] = useState("");
   const [pagination, setPagination] = useState({ total: 0, page: 1, pageSize: 10 });
   const scannerInputRef = useRef<HTMLInputElement>(null);
 
   const branchOptions = useMemo(() => branches.map((branch) => ({ label: branch.name, value: branch.id })), [branches]);
-  const productOptions = useMemo(
-    () =>
-      products.map((product) => ({
-        label: `${product.name}${product.sku ? ` · ${product.sku}` : ""}`,
-        value: product.id
-      })),
-    [products]
-  );
+  const productSuggestions = useMemo(() => {
+    const search = draftProductSearch.trim().toLowerCase();
+    if (search.length < 2) return [];
+    return products
+      .filter((product) =>
+        product.name.toLowerCase().includes(search) ||
+        product.sku?.toLowerCase().includes(search) ||
+        product.barcode?.toLowerCase().includes(search),
+      )
+      .slice(0, 8);
+  }, [draftProductSearch, products]);
   const customerOptions = useMemo(
     () => [{ label: "Sem cliente", value: "" }, ...customers.map((customer) => ({ label: customer.name, value: customer.id }))],
     [customers]
@@ -164,15 +169,13 @@ export default function SalesPage() {
   function addItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const productIdValue = form.get("productId");
-    const productId = typeof productIdValue === "string" ? productIdValue : "";
-    const product = products.find((item) => item.id === productId);
+    const product = products.find((item) => item.id === draftProductId);
     if (!product) return;
 
     setDraftItems((current) => [
       ...current,
       {
-        productId,
+        productId: product.id,
         productName: product.name,
         quantity: Number(form.get("quantity") || 1),
         unitPrice: Number(form.get("unitPrice") || product.salePrice || 0),
@@ -180,6 +183,8 @@ export default function SalesPage() {
       }
     ]);
     event.currentTarget.reset();
+    setDraftProductId("");
+    setDraftProductSearch("");
   }
 
   function addScannedProduct() {
@@ -338,7 +343,31 @@ export default function SalesPage() {
               />
               <p className="-mt-2 text-xs text-slate-500">Leitores USB ou Bluetooth em modo teclado adicionam o item automaticamente. F2 posiciona o cursor no leitor.</p>
               <form className="grid gap-3" onSubmit={addItem}>
-                <Select name="productId" label="Produto" options={productOptions} required />
+                <Autocomplete
+                  label="Produto"
+                  value={draftProductSearch}
+                  placeholder="Digite nome, SKU ou código"
+                  options={productSuggestions.map((product) => ({
+                    value: product.id,
+                    label: product.name,
+                    detail: `${[product.sku, product.barcode].filter(Boolean).join(" · ") || "Sem código"} · ${Number(product.salePrice ?? 0).toLocaleString("pt-BR", {
+                      style: "currency",
+                      currency: "BRL",
+                    })}`,
+                  }))}
+                  emptyText="Nenhum produto encontrado."
+                  onValueChange={(value) => {
+                    setDraftProductSearch(value);
+                    setDraftProductId("");
+                  }}
+                  onOptionSelect={(option) => {
+                    const product = products.find((item) => item.id === option.value);
+                    if (!product) return;
+                    setDraftProductId(product.id);
+                    setDraftProductSearch(product.name);
+                  }}
+                  required
+                />
                 <div className="grid gap-3 md:grid-cols-3">
                   <Input name="quantity" label="Qtd" type="number" step="0.001" defaultValue="1" required />
                   <Input name="unitPrice" label="Preco" type="number" step="0.01" required />
