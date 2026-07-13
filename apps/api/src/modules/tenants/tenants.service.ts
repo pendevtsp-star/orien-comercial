@@ -587,6 +587,65 @@ export class TenantsService {
     );
     return { data: result.rows };
   }
+
+  async updateRolePermissions(context: TenantContext, roleId: string, permissionSlugs: string[]) {
+    assertUuid(roleId, "Perfil");
+    const uniquePermissions = Array.from(new Set(permissionSlugs));
+    return this.database.tenantTransaction(context.tenantId, async (client) => {
+      const role = await client.query<{ id: string; slug: string; name: string }>(
+        "SELECT id, slug, name FROM roles WHERE tenant_id=$1 AND id=$2 FOR UPDATE",
+        [context.tenantId, roleId],
+      );
+      const currentRole = ensureFound(role.rows[0], "Perfil");
+      if (currentRole.slug === "owner") {
+        throw new BadRequestException("O perfil Proprietário é fixo e mantém acesso total.");
+      }
+      const permissionsResult = uniquePermissions.length
+        ? await client.query<{ id: string; slug: string }>(
+            "SELECT id, slug FROM permissions WHERE slug = ANY($1::text[])",
+            [uniquePermissions],
+          )
+        : { rows: [] };
+      if (permissionsResult.rows.length !== uniquePermissions.length) {
+        const found = new Set(permissionsResult.rows.map((permission) => permission.slug));
+        const missing = uniquePermissions.filter((permission) => !found.has(permission));
+        throw new BadRequestException(`Permissão inválida: ${missing.join(", ")}.`);
+      }
+      await client.query("DELETE FROM role_permissions WHERE role_id=$1", [roleId]);
+      for (const permission of permissionsResult.rows) {
+        await client.query(
+          "INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+          [roleId, permission.id],
+        );
+      }
+      await client.query(
+        "INSERT INTO audit_logs (tenant_id,actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,$2,'role.permissions.updated','role',$3,$4)",
+        [
+          context.tenantId,
+          currentActor(context),
+          roleId,
+          JSON.stringify({ roleSlug: currentRole.slug, permissions: uniquePermissions }),
+        ],
+      );
+      const refreshed = await client.query(
+        `
+        SELECT
+          r.id AS "roleId",
+          r.name AS "roleName",
+          r.slug AS "roleSlug",
+          COALESCE(array_agg(p.slug ORDER BY p.slug) FILTER (WHERE p.slug IS NOT NULL), '{}') AS permissions
+        FROM roles r
+        LEFT JOIN role_permissions rp ON rp.role_id = r.id
+        LEFT JOIN permissions p ON p.id = rp.permission_id
+        WHERE r.tenant_id = $1
+        GROUP BY r.id
+        ORDER BY r.name ASC
+        `,
+        [context.tenantId],
+      );
+      return { data: refreshed.rows };
+    });
+  }
 }
 
 function hashToken(token: string) {

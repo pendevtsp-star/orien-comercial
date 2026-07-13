@@ -7,6 +7,7 @@ import {
   membershipListQuerySchema,
   membershipUpdateSchema,
   printingSettingsSchema,
+  rolePermissionsUpdateSchema,
   tenantBrandingSchema,
   userInviteSchema
 } from "@sgc/types";
@@ -112,5 +113,16 @@ export class TenantsController {
   @Get("roles")
   roles(@CurrentTenant() tenant: TenantContext) {
     return this.tenantsService.listRoles(tenant);
+  }
+
+  @UseGuards(JwtAuthGuard, TenantContextGuard, PermissionsGuard)
+  @RequirePermissions(permissions.users.manageRoles)
+  @Patch("roles/:id/permissions")
+  updateRolePermissions(
+    @CurrentTenant() tenant: TenantContext,
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(rolePermissionsUpdateSchema)) body: { permissions: string[] }
+  ) {
+    return this.tenantsService.updateRolePermissions(tenant, id, body.permissions);
   }
 }

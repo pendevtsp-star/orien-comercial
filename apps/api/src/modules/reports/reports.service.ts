@@ -1,7 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { TenantContext } from "../../shared/request-context";
 import { DatabaseService } from "../database/database.service";
-import { renderDocumentHtml } from "@sgc/documents";
+import { renderDocumentHtml, renderDocumentPdf, type DocumentRenderInput } from "@sgc/documents";
 import { loadTenantBranding } from "../../shared/tenant-branding";
 
 @Injectable()
@@ -100,6 +100,14 @@ export class ReportsService {
   }
 
   async overviewDocument(context: TenantContext, startDate?: string, endDate?: string) {
+    return renderDocumentHtml(await this.overviewDocumentInput(context, startDate, endDate));
+  }
+
+  async overviewDocumentPdf(context: TenantContext, startDate?: string, endDate?: string) {
+    return renderDocumentPdf(await this.overviewDocumentInput(context, startDate, endDate));
+  }
+
+  private async overviewDocumentInput(context: TenantContext, startDate?: string, endDate?: string): Promise<DocumentRenderInput> {
     const [branding, rawData] = await Promise.all([
       loadTenantBranding(this.database, context.tenantId),
       this.overview(context, startDate, endDate),
@@ -107,7 +115,7 @@ export class ReportsService {
     const data = rawData as Record<string, any> & {
       period: { startDate: string; endDate: string };
     };
-    return renderDocumentHtml({
+    return {
       title: "Relatório gerencial",
       subtitle: "Leitura executiva de vendas e relacionamento no período selecionado.",
       badge: "Orien Relatórios",
@@ -140,7 +148,7 @@ export class ReportsService {
           contentHtml: `<p>Base ativa de clientes: <strong>${data.customers ?? 0}</strong>. Descontos concedidos: <strong>${Number(data.discounts ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong>.</p>`,
         },
       ],
-    });
+    };
   }
 
   async document(
@@ -150,6 +158,25 @@ export class ReportsService {
     endDate?: string,
   ) {
     if (kind === "overview") return this.overviewDocument(context, startDate, endDate);
+    return renderDocumentHtml(await this.documentInput(context, kind, startDate, endDate));
+  }
+
+  async documentPdf(
+    context: TenantContext,
+    kind: "overview" | "sales" | "financial" | "stock",
+    startDate?: string,
+    endDate?: string,
+  ) {
+    if (kind === "overview") return this.overviewDocumentPdf(context, startDate, endDate);
+    return renderDocumentPdf(await this.documentInput(context, kind, startDate, endDate));
+  }
+
+  private async documentInput(
+    context: TenantContext,
+    kind: "sales" | "financial" | "stock",
+    startDate?: string,
+    endDate?: string,
+  ): Promise<DocumentRenderInput> {
     const [branding, data] = await Promise.all([
       loadTenantBranding(this.database, context.tenantId),
       kind === "sales"
@@ -194,7 +221,7 @@ export class ReportsService {
         ],
       },
     }[kind];
-    return renderDocumentHtml({
+    return {
       title: definitions.title,
       subtitle: definitions.subtitle,
       badge: "Orien Relatórios",
@@ -216,7 +243,7 @@ export class ReportsService {
           table: { columns: definitions.columns, rows: rows.map((row) => formatDocumentRow(row)) },
         },
       ],
-    });
+    };
   }
 }
 

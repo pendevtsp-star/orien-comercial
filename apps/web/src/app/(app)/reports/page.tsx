@@ -1,9 +1,9 @@
 "use client";
 
-import { Badge, Button, Card, CardContent, EmptyState, PageHeader } from "@sgc/ui";
+import { Button, Card, CardContent, EmptyState, PageHeader } from "@sgc/ui";
 import { BarChart3, Download, FileText, Landmark, PackageCheck, ShoppingCart } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { apiFetch, openApiDocument } from "../../../lib/api";
+import { apiFetch, downloadApiFile, openApiDocument } from "../../../lib/api";
 
 type Tab = "overview" | "sales" | "financial" | "stock";
 const tabs: Array<{ id: Tab; label: string; icon: typeof BarChart3 }> = [
@@ -47,7 +47,7 @@ export default function ReportsPage() {
     const csv = [
       header.join(";"),
       ...rows.map((row) =>
-        header.map((key) => String(row[key] ?? "").replaceAll(";", ",")).join(";"),
+        header.map((key) => formatCell(row[key]).replaceAll(";", ",")).join(";"),
       ),
     ].join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
@@ -76,13 +76,25 @@ export default function ReportsPage() {
               variant="secondary"
               icon={<FileText size={16} />}
               onClick={() =>
+                void downloadApiFile(
+                  `/reports/${tab}/pdf${tab === "stock" ? "" : query}`,
+                  `orien-relatorio-${tab}-${startDate}.pdf`,
+                )
+              }
+            >
+              Baixar PDF
+            </Button>
+            <Button
+              variant="secondary"
+              icon={<FileText size={16} />}
+              onClick={() =>
                 void openApiDocument(
                   `/reports/${tab}/document${tab === "stock" ? "" : query}`,
                   true,
                 )
               }
             >
-              Gerar PDF
+              Visualizar
             </Button>
             <Button variant="secondary" icon={<Download size={16} />} onClick={exportCsv}>
               Exportar CSV
@@ -184,7 +196,7 @@ export default function ReportsPage() {
                             key.includes("revenue") ||
                             key.includes("stockValue")
                               ? money(value)
-                              : String(value ?? "-")}
+                              : formatCell(value)}
                           </td>
                         ))}
                       </tr>
@@ -212,6 +224,11 @@ function arrayRows(data: Record<string, unknown> | null): Array<Record<string, u
 }
 function money(value: unknown) {
   return Number(value ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+function formatCell(value: unknown) {
+  if (value === undefined || value === null || value === "") return "-";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  return JSON.stringify(value);
 }
 function label(key: string) {
   return (

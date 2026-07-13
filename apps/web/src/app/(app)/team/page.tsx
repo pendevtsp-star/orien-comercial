@@ -62,7 +62,47 @@ const permissionGroups = [
   { label: "Financeiro", permissions: ["financial.read", "financial.receive", "financial.pay", "financial.reconcile", "financial.categories.manage"] },
   { label: "Equipe", permissions: ["users.read", "users.invite", "users.memberships.manage", "users.roles.manage"] },
   { label: "Assinatura", permissions: ["subscriptions.read", "subscriptions.manage"] },
+  { label: "Painel", permissions: ["dashboard.read", "tenants.read", "tenants.update"] },
 ] as const;
+
+const permissionLabels: Record<string, string> = {
+  "branches.read": "Ver",
+  "branches.create": "Criar",
+  "branches.update": "Editar",
+  "branches.delete": "Excluir",
+  "products.read": "Ver",
+  "products.create": "Criar",
+  "products.update": "Editar",
+  "products.delete": "Excluir",
+  "customers.read": "Ver",
+  "customers.create": "Criar",
+  "customers.update": "Editar",
+  "customers.delete": "Excluir",
+  "stock.read": "Ver",
+  "stock.adjust": "Ajustar",
+  "stock.transfer": "Transferir",
+  "stock.inventory": "Inventário",
+  "stock.purchase": "Comprar",
+  "stock.reports": "Relatórios",
+  "sales.read": "Ver",
+  "sales.create": "Vender",
+  "sales.cancel": "Cancelar",
+  "sales.history": "Histórico",
+  "financial.read": "Ver",
+  "financial.receive": "Baixar recebível",
+  "financial.pay": "Pagar",
+  "financial.reconcile": "Conciliar",
+  "financial.categories.manage": "Categorias",
+  "users.read": "Ver",
+  "users.invite": "Convidar",
+  "users.memberships.manage": "Membros",
+  "users.roles.manage": "Perfis",
+  "subscriptions.read": "Ver",
+  "subscriptions.manage": "Gerenciar",
+  "dashboard.read": "Ver painel",
+  "tenants.read": "Ver empresa",
+  "tenants.update": "Editar empresa",
+};
 
 export default function TeamPage() {
   const [activeTab, setActiveTab] = useState("members");
@@ -71,6 +111,8 @@ export default function TeamPage() {
   const [audit, setAudit] = useState<AuditRow[]>([]);
   const [branches, setBranches] = useState<BranchRow[]>([]);
   const [roles, setRoles] = useState<RoleOption[]>([]);
+  const [roleDrafts, setRoleDrafts] = useState<Record<string, string[]>>({});
+  const [savingRoleId, setSavingRoleId] = useState<string | null>(null);
   const [lastInvite, setLastInvite] = useState<{ inviteUrl: string; emailPreviewHtml: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [memberSearch, setMemberSearch] = useState("");
@@ -107,6 +149,7 @@ export default function TeamPage() {
       setInvitePagination(invitesResponse.pagination ?? { total: invitesResponse.data.length, page: invitePage, pageSize: invitePageSize });
       setBranches(branchesResponse.data);
       setRoles(rolesResponse.data);
+      setRoleDrafts(Object.fromEntries(rolesResponse.data.map((role) => [role.roleId, role.permissions ?? []])));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao carregar equipe.");
     }
@@ -209,6 +252,34 @@ export default function TeamPage() {
       await loadMembers();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao atualizar membros selecionados.");
+    }
+  }
+
+  function togglePermission(role: RoleOption, permission: string) {
+    if (role.roleSlug === "owner") return;
+    setRoleDrafts((current) => {
+      const selected = new Set(current[role.roleId] ?? role.permissions ?? []);
+      if (selected.has(permission)) selected.delete(permission);
+      else selected.add(permission);
+      return { ...current, [role.roleId]: Array.from(selected).sort() };
+    });
+  }
+
+  async function saveRole(role: RoleOption) {
+    if (role.roleSlug === "owner") return;
+    setSavingRoleId(role.roleId);
+    try {
+      const response = await apiFetch<ListResponse<RoleOption>>(`/roles/${role.roleId}/permissions`, {
+        method: "PATCH",
+        body: JSON.stringify({ permissions: roleDrafts[role.roleId] ?? [] }),
+      });
+      setRoles(response.data);
+      setRoleDrafts(Object.fromEntries(response.data.map((item) => [item.roleId, item.permissions ?? []])));
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao salvar permissões.");
+    } finally {
+      setSavingRoleId(null);
     }
   }
 
@@ -362,18 +433,32 @@ export default function TeamPage() {
                       O que cada perfil pode acessar
                     </h2>
                     <p className="mt-1 text-sm text-slate-500">
-                      Use esta leitura para confirmar se vendedor, caixa, estoque e financeiro só
-                      enxergam os módulos necessários para a função.
+                      Marque o que cada perfil pode ver ou executar. Proprietário fica bloqueado
+                      como referência de acesso total para evitar perda acidental de administração.
                     </p>
                   </div>
                   <div className="overflow-x-auto rounded-md border border-[var(--brand-border)]">
-                    <table className="min-w-[900px] w-full text-sm">
+                    <table className="min-w-[1120px] w-full text-sm">
                       <thead className="bg-[var(--brand-surface)] text-left text-xs uppercase tracking-[0.14em] text-[var(--brand-secondary)]">
                         <tr>
                           <th className="px-4 py-3">Área</th>
                           {roles.map((role) => (
                             <th key={role.roleId} className="px-4 py-3">
-                              {role.roleName}
+                              <div className="flex items-center justify-between gap-2">
+                                <span>{role.roleName}</span>
+                                {role.roleSlug === "owner" ? (
+                                  <Badge>Total</Badge>
+                                ) : (
+                                  <Button
+                                    className="h-8 px-3 text-xs"
+                                    variant="secondary"
+                                    disabled={savingRoleId === role.roleId || !roleChanged(role, roleDrafts)}
+                                    onClick={() => void saveRole(role)}
+                                  >
+                                    {savingRoleId === role.roleId ? "Salvando" : "Salvar"}
+                                  </Button>
+                                )}
+                              </div>
                             </th>
                           ))}
                         </tr>
@@ -385,15 +470,31 @@ export default function TeamPage() {
                               {group.label}
                             </td>
                             {roles.map((role) => {
+                              const draft = roleDrafts[role.roleId] ?? role.permissions ?? [];
                               const granted = group.permissions.filter((permission) =>
-                                role.permissions?.includes(permission),
+                                draft.includes(permission),
                               ).length;
                               const full = granted === group.permissions.length;
                               return (
-                                <td key={role.roleId} className="px-4 py-3">
-                                  <Badge className={full ? "border-emerald-200 bg-emerald-50 text-emerald-800" : granted ? "border-amber-200 bg-amber-50 text-amber-800" : ""}>
-                                    {granted ? `${granted}/${group.permissions.length}` : "Sem acesso"}
-                                  </Badge>
+                                <td key={role.roleId} className="min-w-48 px-4 py-3 align-top">
+                                  <div className="mb-2">
+                                    <Badge className={full ? "border-emerald-200 bg-emerald-50 text-emerald-800" : granted ? "border-amber-200 bg-amber-50 text-amber-800" : ""}>
+                                      {granted ? `${granted}/${group.permissions.length}` : "Sem acesso"}
+                                    </Badge>
+                                  </div>
+                                  <div className="grid gap-1.5">
+                                    {group.permissions.map((permission) => (
+                                      <label key={permission} className="flex items-center gap-2 text-xs normal-case tracking-normal text-slate-700">
+                                        <input
+                                          type="checkbox"
+                                          disabled={role.roleSlug === "owner"}
+                                          checked={role.roleSlug === "owner" || draft.includes(permission)}
+                                          onChange={() => togglePermission(role, permission)}
+                                        />
+                                        {permissionLabels[permission] ?? permission}
+                                      </label>
+                                    ))}
+                                  </div>
                                 </td>
                               );
                             })}
@@ -579,4 +680,10 @@ function TeamFigure({ label, value, accent = false }: { label: string; value: nu
       <p className={`mt-2 text-2xl font-semibold ${accent ? "text-[var(--brand-accent)]" : "text-white"}`}>{value.toLocaleString("pt-BR")}</p>
     </div>
   );
+}
+
+function roleChanged(role: RoleOption, drafts: Record<string, string[]>) {
+  const original = [...(role.permissions ?? [])].sort().join("|");
+  const draft = [...(drafts[role.roleId] ?? role.permissions ?? [])].sort().join("|");
+  return original !== draft;
 }

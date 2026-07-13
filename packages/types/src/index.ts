@@ -283,6 +283,10 @@ export const alertRuleSchema = z.object({
   isActive: z.boolean().default(true),
 });
 
+export const rolePermissionsUpdateSchema = z.object({
+  permissions: z.array(z.string().trim().min(3).max(120)).max(200),
+});
+
 export const stockTransferItemSchema = z.object({
   productId: uuidSchema,
   quantity: z.coerce.number().positive(),

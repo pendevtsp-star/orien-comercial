@@ -64,6 +64,19 @@ export class ReportsController {
     response.send(await this.reports.overviewDocument(tenant, startDate, endDate));
   }
 
+  @RequirePermissions(permissions.dashboard.read)
+  @Get("overview/pdf")
+  async overviewPdf(
+    @CurrentTenant() tenant: TenantContext,
+    @Query("startDate") startDate: string | undefined,
+    @Query("endDate") endDate: string | undefined,
+    @Res() response: Response,
+  ) {
+    response.type("application/pdf");
+    response.setHeader("content-disposition", 'attachment; filename="orien-relatorio-gerencial.pdf"');
+    response.send(await this.reports.overviewDocumentPdf(tenant, startDate, endDate));
+  }
+
   @RequirePermissions(permissions.sales.read)
   @Get("sales/document")
   async salesDocument(
@@ -74,6 +87,19 @@ export class ReportsController {
   ) {
     response.type("html");
     response.send(await this.reports.document(tenant, "sales", startDate, endDate));
+  }
+
+  @RequirePermissions(permissions.sales.read)
+  @Get("sales/pdf")
+  async salesPdf(
+    @CurrentTenant() tenant: TenantContext,
+    @Query("startDate") startDate: string | undefined,
+    @Query("endDate") endDate: string | undefined,
+    @Res() response: Response,
+  ) {
+    response.type("application/pdf");
+    response.setHeader("content-disposition", 'attachment; filename="orien-relatorio-vendas.pdf"');
+    response.send(await this.reports.documentPdf(tenant, "sales", startDate, endDate));
   }
 
   @RequirePermissions(permissions.financial.read)
@@ -88,10 +114,31 @@ export class ReportsController {
     response.send(await this.reports.document(tenant, "financial", startDate, endDate));
   }
 
+  @RequirePermissions(permissions.financial.read)
+  @Get("financial/pdf")
+  async financialPdf(
+    @CurrentTenant() tenant: TenantContext,
+    @Query("startDate") startDate: string | undefined,
+    @Query("endDate") endDate: string | undefined,
+    @Res() response: Response,
+  ) {
+    response.type("application/pdf");
+    response.setHeader("content-disposition", 'attachment; filename="orien-relatorio-financeiro.pdf"');
+    response.send(await this.reports.documentPdf(tenant, "financial", startDate, endDate));
+  }
+
   @RequirePermissions(permissions.stock.reports)
   @Get("stock/document")
   async stockDocument(@CurrentTenant() tenant: TenantContext, @Res() response: Response) {
     response.type("html");
     response.send(await this.reports.document(tenant, "stock"));
+  }
+
+  @RequirePermissions(permissions.stock.reports)
+  @Get("stock/pdf")
+  async stockPdf(@CurrentTenant() tenant: TenantContext, @Res() response: Response) {
+    response.type("application/pdf");
+    response.setHeader("content-disposition", 'attachment; filename="orien-relatorio-estoque.pdf"');
+    response.send(await this.reports.documentPdf(tenant, "stock"));
   }
 }
