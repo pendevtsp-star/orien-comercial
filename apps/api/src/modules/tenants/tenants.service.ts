@@ -12,6 +12,7 @@ import type {
   MembershipListQuery,
   MembershipUpdateInput,
   PrintingSettingsInput,
+  PrinterProfileInput,
   TenantBrandingInput,
   UserInviteInput,
 } from "@sgc/types";
@@ -261,6 +262,51 @@ export class TenantsService {
       [context.tenantId, JSON.stringify(settings)],
     );
     return this.getPrintingSettings(context);
+  }
+
+  async listPrinterProfiles(context: TenantContext, branchId: string) {
+    assertUuid(branchId, "Filial");
+    ensureBranchAccess(context, branchId);
+    const result = await this.database.tenantQuery<{ value: PrinterProfileInput[] | null }>(
+      context.tenantId,
+      "SELECT value FROM branch_settings WHERE tenant_id=$1 AND branch_id=$2 AND key='printer_profiles' AND deleted_at IS NULL LIMIT 1",
+      [context.tenantId, branchId],
+    );
+    return { data: result.rows[0]?.value ?? [] };
+  }
+
+  async savePrinterProfile(context: TenantContext, input: PrinterProfileInput) {
+    const profile = { ...input, id: input.id ?? randomUUID() } as PrinterProfileInput & { id: string };
+    ensureBranchAccess(context, profile.branchId);
+    return this.database.tenantTransaction(context.tenantId, async (client) => {
+      await assertBranch(client, context.tenantId, profile.branchId);
+      const current = await client.query<{ value: PrinterProfileInput[] | null }>(
+        "SELECT value FROM branch_settings WHERE tenant_id=$1 AND branch_id=$2 AND key='printer_profiles' AND deleted_at IS NULL FOR UPDATE",
+        [context.tenantId, profile.branchId],
+      );
+      const previous = current.rows[0]?.value ?? [];
+      const profiles = [
+        ...previous.filter((item) => item.id !== profile.id).map((item) =>
+          profile.isDefault && item.purpose === profile.purpose ? { ...item, isDefault: false } : item,
+        ),
+        profile,
+      ];
+      await client.query(
+        `INSERT INTO branch_settings (tenant_id,branch_id,key,value) VALUES ($1,$2,'printer_profiles',$3::jsonb)
+         ON CONFLICT (branch_id,key) DO UPDATE SET value=EXCLUDED.value,updated_at=now(),deleted_at=NULL`,
+        [context.tenantId, profile.branchId, JSON.stringify(profiles)],
+      );
+      await insertAuditLog(client, { tenantId: context.tenantId, actorUserId: currentActor(context), action: "branch.printer_profile.saved", entityType: "branch_settings", entityId: profile.branchId, metadata: { profile } });
+      return profile;
+    });
+  }
+
+  async updatePrinterProfile(context: TenantContext, id: string, input: Partial<PrinterProfileInput>) {
+    if (!input.branchId) throw new BadRequestException("Informe a loja do perfil de impressora.");
+    const existing = await this.listPrinterProfiles(context, input.branchId);
+    const profile = existing.data.find((item) => item.id === id);
+    if (!profile) throw new BadRequestException("Perfil de impressora não encontrado.");
+    return this.savePrinterProfile(context, { ...profile, ...input, id });
   }
 
   private async persistBrandingLogo(tenantId: string, dataUrl: string) {

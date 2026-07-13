@@ -3,11 +3,14 @@ import { renderDocumentHtml } from "@sgc/documents";
 import type {
   InventoryCountCreateInput,
   PurchaseEntryCreateInput,
+  PurchaseXmlCommitInput,
+  PurchaseXmlPreviewInput,
   StockListQuery,
   StockMovementListQuery,
   StockAdjustmentInput,
   StockTransferCreateInput
 } from "@sgc/types";
+import { XMLParser } from "fast-xml-parser";
 import type { PoolClient } from "pg";
 import { ensureBranchAccess, ensureFound, pagination, resolveSort } from "../../shared/resource-access";
 import type { TenantContext } from "../../shared/request-context";
@@ -332,6 +335,72 @@ export class StockService {
     ensureBranchAccess(context, input.branchId);
 
     return this.database.tenantTransaction(context.tenantId, async (client) => {
+      return this.createPurchaseEntry(client, context, input);
+    });
+  }
+
+  async previewPurchaseXml(context: TenantContext, input: PurchaseXmlPreviewInput) {
+    ensureBranchAccess(context, input.branchId);
+    const parsed = parseNfeXml(input.xml);
+    if (!parsed.items.length) throw new BadRequestException("Não encontramos itens de produto no XML informado.");
+    const barcodes = parsed.items.map((item) => item.barcode).filter((value): value is string => Boolean(value));
+    const products = barcodes.length
+      ? await this.database.tenantQuery<{ id: string; name: string; sku: string | null; barcode: string | null }>(
+          context.tenantId,
+          "SELECT id,name,sku,barcode FROM products WHERE tenant_id=$1 AND barcode=ANY($2::text[]) AND deleted_at IS NULL",
+          [context.tenantId, barcodes],
+        )
+      : { rows: [] };
+    const byBarcode = new Map(products.rows.filter((item) => item.barcode).map((item) => [item.barcode!, item]));
+    return {
+      document: parsed.document,
+      supplier: parsed.supplier,
+      items: parsed.items.map((item, index) => {
+        const match = item.barcode ? byBarcode.get(item.barcode) : undefined;
+        return {
+          ...item,
+          sourceIndex: index,
+          match: match ? { productId: match.id, name: match.name, sku: match.sku, confidence: "barcode" } : null,
+          suggestedAction: match ? "link" : "create",
+        };
+      }),
+    };
+  }
+
+  async commitPurchaseXml(context: TenantContext, input: PurchaseXmlCommitInput) {
+    ensureBranchAccess(context, input.branchId);
+    return this.database.tenantTransaction(context.tenantId, async (client) => {
+      if (input.documentKey) {
+        const duplicate = await client.query("SELECT id FROM purchase_entries WHERE tenant_id=$1 AND document_key=$2", [context.tenantId, input.documentKey]);
+        if (duplicate.rows[0]) throw new BadRequestException("Esta nota já foi recebida nesta empresa. Confira o histórico de compras.");
+      }
+      const items: PurchaseEntryCreateInput["items"] = [];
+      for (const item of input.items) {
+        if (item.action === "ignore") continue;
+        let productId = item.productId;
+        if (item.action === "create") {
+          const skuBase = item.sku?.trim() || `NF-${Date.now()}-${item.sourceIndex + 1}`;
+          const created = await client.query<{ id: string }>(
+            `INSERT INTO products (tenant_id,branch_id,name,sku,barcode,unit,cost_price,sale_price,min_stock,is_active)
+             VALUES ($1,$2,$3,$4,$5,'un',$6,$7,0,true) RETURNING id`,
+            [context.tenantId, input.branchId, item.name, skuBase, item.barcode ?? null, item.unitCost, item.unitCost],
+          );
+          productId = created.rows[0]!.id;
+        }
+        if (!productId) throw new BadRequestException(`Defina o produto para o item ${item.sourceIndex + 1}.`);
+        items.push({ productId, quantity: item.quantity, unitCost: item.unitCost });
+      }
+      if (!items.length) throw new BadRequestException("Selecione ao menos um item para receber no estoque.");
+      return this.createPurchaseEntry(client, context, { ...input, items }, { documentKey: input.documentKey, sourceType: "nfe_xml", sourcePayload: { importedItemCount: input.items.length } });
+    });
+  }
+
+  private async createPurchaseEntry(
+    client: PoolClient,
+    context: TenantContext,
+    input: PurchaseEntryCreateInput,
+    source: { documentKey?: string; sourceType?: string; sourcePayload?: Record<string, unknown> } = {},
+  ) {
       await assertBranch(client, context.tenantId, input.branchId);
       let supplierName = input.supplierName ?? null;
       if (input.supplierId) {
@@ -341,14 +410,23 @@ export class StockService {
         );
         supplierName = ensureFound(supplier.rows[0], "Fornecedor").name;
       }
+      if (input.documentNumber) {
+        const duplicate = await client.query(
+          `SELECT id FROM purchase_entries
+           WHERE tenant_id=$1 AND document_number=$2 AND COALESCE(supplier_id,'00000000-0000-0000-0000-000000000000'::uuid)=COALESCE($3::uuid,'00000000-0000-0000-0000-000000000000'::uuid)
+           LIMIT 1`,
+          [context.tenantId, input.documentNumber, input.supplierId ?? null],
+        );
+        if (duplicate.rows[0]) throw new BadRequestException("Já existe uma entrada com este fornecedor e número de documento.");
+      }
       const totalAmount = input.items.reduce((sum, item) => sum + item.quantity * item.unitCost, 0);
       const purchase = await client.query<{ id: string }>(
         `
-        INSERT INTO purchase_entries (tenant_id, branch_id, supplier_id, supplier_name, document_number, total_amount, notes)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        INSERT INTO purchase_entries (tenant_id, branch_id, supplier_id, supplier_name, document_number, total_amount, notes, document_key, source_type, source_payload)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
         RETURNING id
         `,
-        [context.tenantId, input.branchId, input.supplierId ?? null, supplierName, input.documentNumber ?? null, totalAmount, input.notes ?? null]
+        [context.tenantId, input.branchId, input.supplierId ?? null, supplierName, input.documentNumber ?? null, totalAmount, input.notes ?? null, source.documentKey ?? null, source.sourceType ?? "manual", JSON.stringify(source.sourcePayload ?? {})]
       );
       const purchaseId = purchase.rows[0]!.id;
 
@@ -361,6 +439,10 @@ export class StockService {
           `,
           [context.tenantId, purchaseId, item.productId, item.quantity, item.unitCost]
         );
+        await client.query(
+          "UPDATE products SET cost_price=$3,updated_at=now() WHERE tenant_id=$1 AND id=$2",
+          [context.tenantId, item.productId, item.unitCost],
+        );
         await updateStockBalance(client, context.tenantId, input.branchId, item.productId, item.quantity);
         await insertMovement(client, {
           tenantId: context.tenantId,
@@ -368,7 +450,7 @@ export class StockService {
           productId: item.productId,
           movementType: "purchase_in",
           quantity: item.quantity,
-          reason: `Entrada de compra ${purchaseId}`,
+          reason: `Entrada de compra ${input.documentNumber ?? purchaseId}`,
           actorUserId: context.userId
         });
       }
@@ -379,11 +461,10 @@ export class StockService {
         action: "stock.purchase.created",
         entityType: "purchase_entry",
         entityId: purchaseId,
-        metadata: { branchId: input.branchId, supplierId: input.supplierId ?? null, supplierName, documentNumber: input.documentNumber ?? null, totalAmount }
+        metadata: { branchId: input.branchId, supplierId: input.supplierId ?? null, supplierName, documentNumber: input.documentNumber ?? null, documentKey: source.documentKey ?? null, sourceType: source.sourceType ?? "manual", totalAmount }
       });
 
       return { id: purchaseId, totalAmount };
-    });
   }
 
   async reports(context: TenantContext) {
@@ -495,6 +576,64 @@ export class StockService {
       ]
     });
   }
+}
+
+function parseNfeXml(xml: string) {
+  let data: Record<string, unknown>;
+  try {
+    data = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "", trimValues: true }).parse(xml) as Record<string, unknown>;
+  } catch {
+    throw new BadRequestException("O XML da nota não pôde ser lido.");
+  }
+  const nfe = objectAt(data, "nfeProc", "NFe", "infNFe") ?? objectAt(data, "NFe", "infNFe");
+  if (!nfe) throw new BadRequestException("O arquivo não parece ser um XML de NF-e válido.");
+  const ide = objectAt(nfe, "ide") ?? {};
+  const emitter = objectAt(nfe, "emit") ?? {};
+  const rawDetails = nfe.det;
+  const details = Array.isArray(rawDetails) ? rawDetails : rawDetails ? [rawDetails] : [];
+  const documentKey = typeof nfe.Id === "string" ? nfe.Id.replace(/^NFe/, "") : undefined;
+  return {
+    document: {
+      key: documentKey && /^\d{44}$/.test(documentKey) ? documentKey : undefined,
+      number: stringValue(ide.nNF) || "Sem número",
+      issuedAt: stringValue(ide.dhEmi) || stringValue(ide.dEmi) || undefined,
+    },
+    supplier: {
+      name: stringValue(emitter.xNome) || "Fornecedor do XML",
+      document: stringValue(emitter.CNPJ) || stringValue(emitter.CPF) || undefined,
+    },
+    items: details.map((detail) => {
+      const product = objectAt(detail, "prod") ?? {};
+      const barcodeValue = stringValue(product.cEAN);
+      const barcode = barcodeValue && !/^SEM\s*GTIN$/i.test(barcodeValue) ? barcodeValue.replace(/\D/g, "") : undefined;
+      return {
+        name: stringValue(product.xProd) || "Produto sem descrição",
+        supplierCode: stringValue(product.cProd),
+        barcode,
+        quantity: numericValue(product.qCom),
+        unitCost: numericValue(product.vUnCom),
+        unit: stringValue(product.uCom) || "un",
+      };
+    }).filter((item) => item.quantity > 0),
+  };
+}
+
+function objectAt(value: unknown, ...path: string[]) {
+  let current: unknown = value;
+  for (const key of path) {
+    if (!current || typeof current !== "object" || Array.isArray(current)) return undefined;
+    current = (current as Record<string, unknown>)[key];
+  }
+  return current && typeof current === "object" && !Array.isArray(current) ? current as Record<string, unknown> : undefined;
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
+}
+
+function numericValue(value: unknown) {
+  const number = Number(String(value ?? "0").replace(",", "."));
+  return Number.isFinite(number) ? number : 0;
 }
 
 async function assertBranchAndProduct(client: PoolClient, tenantId: string, branchId: string, productId: string) {

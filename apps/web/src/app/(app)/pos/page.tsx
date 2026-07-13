@@ -1,7 +1,7 @@
 "use client";
 
 import { Autocomplete, Badge, Button, Card, CardContent, DataTable, Input, PageHeader, Select } from "@sgc/ui";
-import { Banknote, CreditCard, Minus, Plus, ScanBarcode, WalletCards, X } from "lucide-react";
+import { Banknote, CircleDollarSign, CreditCard, Landmark, Minus, Plus, ScanBarcode, WalletCards, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { apiFetch, openApiDocument } from "../../../lib/api";
@@ -668,7 +668,7 @@ export default function PosPage() {
                 <p className="mt-1 text-xs text-white/55">100 pontos equivalem a R$ 1,00 no PDV.</p>
               </div>
             ) : null}
-            <div className="grid gap-2 sm:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
+            <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-2 2xl:grid-cols-3">
               <PaymentButton
                 active={paymentMethod === "cash"}
                 label="Dinheiro F4"
@@ -688,10 +688,34 @@ export default function PosPage() {
                 onClick={() => setPaymentMethod("asaas_pix")}
               />
               <PaymentButton
-                active={paymentMethod === "card"}
-                label="Cartão F8"
+                active={paymentMethod === "credit_card"}
+                label="Crédito F8"
                 icon={<CreditCard size={18} />}
-                onClick={() => setPaymentMethod("card")}
+                onClick={() => setPaymentMethod("credit_card")}
+              />
+              <PaymentButton
+                active={paymentMethod === "debit_card"}
+                label="Débito"
+                icon={<CreditCard size={18} />}
+                onClick={() => setPaymentMethod("debit_card")}
+              />
+              <PaymentButton
+                active={paymentMethod === "store_credit"}
+                label="Crediário"
+                icon={<CircleDollarSign size={18} />}
+                onClick={() => setPaymentMethod("store_credit")}
+              />
+              <PaymentButton
+                active={paymentMethod === "bank_transfer"}
+                label="Transferência"
+                icon={<Landmark size={18} />}
+                onClick={() => setPaymentMethod("bank_transfer")}
+              />
+              <PaymentButton
+                active={paymentMethod === "other"}
+                label="Outra forma"
+                icon={<WalletCards size={18} />}
+                onClick={() => setPaymentMethod("other")}
               />
             </div>
             <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
@@ -711,7 +735,7 @@ export default function PosPage() {
               <div className="grid gap-1 text-xs text-white/75">
                 {paymentParts.map((part, index) => (
                   <div key={index} className="flex justify-between">
-                    <span>{part.method}</span>
+                    <span>{paymentMethodLabel(part.method)}</span>
                     <span>
                       {part.amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                     </span>
@@ -862,6 +886,10 @@ function receiptModeLabel(mode: string) {
   if (mode === "none") return "não imprimir";
   if (mode === "thermal") return "térmico";
   return "navegador";
+}
+
+function paymentMethodLabel(method: string) {
+  return ({ cash: "Dinheiro", pix: "Pix", asaas_pix: "Pix Asaas", credit_card: "Cartão de crédito", debit_card: "Cartão de débito", store_credit: "Crediário", bank_transfer: "Transferência", other: "Outra forma", card: "Cartão" } as Record<string, string>)[method] ?? method;
 }
 
 function PaymentButton({

@@ -6,6 +6,7 @@ import {
   inviteListQuerySchema,
   membershipListQuerySchema,
   membershipUpdateSchema,
+  printerProfileSchema,
   printingSettingsSchema,
   rolePermissionsUpdateSchema,
   tenantBrandingSchema,
@@ -67,6 +68,27 @@ export class TenantsController {
     @Body(new ZodValidationPipe(printingSettingsSchema)) body: never
   ) {
     return this.tenantsService.updatePrintingSettings(tenant, body);
+  }
+
+  @UseGuards(JwtAuthGuard, TenantContextGuard, PermissionsGuard)
+  @RequirePermissions(permissions.branches.read)
+  @Get("printer-profiles")
+  printerProfiles(@CurrentTenant() tenant: TenantContext, @Query("branchId") branchId: string) {
+    return this.tenantsService.listPrinterProfiles(tenant, branchId);
+  }
+
+  @UseGuards(JwtAuthGuard, TenantContextGuard, PermissionsGuard)
+  @RequirePermissions(permissions.branches.update)
+  @Post("printer-profiles")
+  savePrinterProfile(@CurrentTenant() tenant: TenantContext, @Body(new ZodValidationPipe(printerProfileSchema)) body: never) {
+    return this.tenantsService.savePrinterProfile(tenant, body);
+  }
+
+  @UseGuards(JwtAuthGuard, TenantContextGuard, PermissionsGuard)
+  @RequirePermissions(permissions.branches.update)
+  @Patch("printer-profiles/:id")
+  updatePrinterProfile(@CurrentTenant() tenant: TenantContext, @Param("id") id: string, @Body(new ZodValidationPipe(printerProfileSchema.partial())) body: never) {
+    return this.tenantsService.updatePrinterProfile(tenant, id, body);
   }
 
   @UseGuards(JwtAuthGuard, TenantContextGuard, PermissionsGuard)

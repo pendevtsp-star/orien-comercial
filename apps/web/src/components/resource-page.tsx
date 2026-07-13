@@ -25,6 +25,7 @@ interface ResourcePageProps<T extends { id: string; isActive?: boolean | null }>
   insights?: Array<{ label: string; value: (rows: T[]) => number | string; detail: string; icon: LucideIcon; accent?: boolean }>;
   sortOptions?: Array<{ label: string; value: string }>;
   rowActions?: (row: T) => React.ReactNode;
+  formExtras?: React.ReactNode;
 }
 
 export function ResourcePage<T extends { id: string; isActive?: boolean | null }>({
@@ -41,6 +42,7 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
   insights,
   sortOptions,
   rowActions,
+  formExtras,
 }: ResourcePageProps<T>) {
   const searchParams = useSearchParams();
   const [rows, setRows] = useState<T[]>([]);
@@ -185,6 +187,7 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
                   {editingRow ? "Atualize os dados e salve para refletir a mudanca na base." : "Validado novamente no backend."}
                 </p>
               </div>
+              {formExtras}
               {fields.map((field) => (
                 <Input
                   key={field.name}

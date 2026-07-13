@@ -3,6 +3,8 @@ import { ApiTags } from "@nestjs/swagger";
 import { permissions } from "@sgc/auth";
 import {
   inventoryCountCreateSchema,
+  purchaseXmlCommitSchema,
+  purchaseXmlPreviewSchema,
   purchaseEntryCreateSchema,
   stockAdjustmentSchema,
   stockListQuerySchema,
@@ -59,6 +61,18 @@ export class StockController {
   @Post("purchase-entries")
   purchaseEntry(@CurrentTenant() tenant: TenantContext, @Body(new ZodValidationPipe(purchaseEntryCreateSchema)) body: never) {
     return this.stockService.purchaseEntry(tenant, body);
+  }
+
+  @RequirePermissions(permissions.stock.purchase)
+  @Post("purchase-imports/xml/preview")
+  previewPurchaseXml(@CurrentTenant() tenant: TenantContext, @Body(new ZodValidationPipe(purchaseXmlPreviewSchema)) body: never) {
+    return this.stockService.previewPurchaseXml(tenant, body);
+  }
+
+  @RequirePermissions(permissions.stock.purchase)
+  @Post("purchase-imports/xml/commit")
+  commitPurchaseXml(@CurrentTenant() tenant: TenantContext, @Body(new ZodValidationPipe(purchaseXmlCommitSchema)) body: never) {
+    return this.stockService.commitPurchaseXml(tenant, body);
   }
 
   @RequirePermissions(permissions.stock.reports)

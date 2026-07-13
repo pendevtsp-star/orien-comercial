@@ -1,7 +1,7 @@
 "use client";
 
 import { Badge, Button, Card, CardContent, Input, PageHeader, Select } from "@sgc/ui";
-import { CheckCircle2, Printer, ScanBarcode, Usb } from "lucide-react";
+import { CheckCircle2, Plus, Printer, ScanBarcode, Usb } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../../lib/api";
 
@@ -26,6 +26,9 @@ export default function PrintersPage() {
   const [silentPrint, setSilentPrint] = useState(false);
   const [autoCut, setAutoCut] = useState(true);
   const [openCashDrawer, setOpenCashDrawer] = useState(false);
+  const [profiles, setProfiles] = useState<Array<{ id: string; name: string; purpose: string; width: string; copies: number; isDefault: boolean; deviceHint?: string }>>([]);
+  const [profileName, setProfileName] = useState("Comprovante do caixa");
+  const [profilePurpose, setProfilePurpose] = useState("sale_receipt");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -75,6 +78,8 @@ export default function PrintersPage() {
       setSilentPrint(settings.silentPrint);
       setAutoCut(settings.autoCut ?? true);
       setOpenCashDrawer(settings.openCashDrawer ?? false);
+      const profileResult = await apiFetch<{ data: typeof profiles }>(`/printer-profiles?branchId=${nextBranchId}`);
+      setProfiles(profileResult.data);
       setError("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível carregar a configuração.");
@@ -107,6 +112,35 @@ export default function PrintersPage() {
       setMessage("Configuração de impressão salva para esta loja.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível salvar a configuração.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveProfile() {
+    if (!branchId || !profileName.trim()) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      await apiFetch("/printer-profiles", {
+        method: "POST",
+        body: JSON.stringify({
+          branchId,
+          name: profileName.trim(),
+          purpose: profilePurpose,
+          width: profilePurpose === "labels" ? "a4" : receiptWidth,
+          copies,
+          showLogo: receiptShowLogo,
+          showDocument: receiptShowDocument,
+          footer: receiptFooter || undefined,
+          deviceHint: printerName || undefined,
+          isDefault: true,
+        }),
+      });
+      setMessage("Perfil salvo. Ele fica disponível como padrão desta finalidade na loja.");
+      await loadSettings(branchId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível salvar o perfil.");
     } finally {
       setSaving(false);
     }
@@ -153,10 +187,10 @@ export default function PrintersPage() {
           <CardContent className="grid gap-4">
             <div>
               <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">
-                Perfil de impressão por loja
+                Perfis de impressão por loja
               </p>
               <h2 className="mt-2 text-lg font-semibold text-[var(--brand-primary)]">
-                Padrão salvo para etiquetas e comprovantes
+                Configure mais de uma impressora sem misturar finalidades
               </h2>
             </div>
             {message ? (
@@ -175,6 +209,33 @@ export default function PrintersPage() {
               onChange={(event) => setBranchId(event.target.value)}
               options={branches.map((branch) => ({ label: branch.name, value: branch.id }))}
             />
+            <div className="grid gap-3 rounded-md border border-[var(--brand-border)] bg-[var(--brand-surface)] p-3 sm:grid-cols-[minmax(0,1fr)_180px_auto] sm:items-end">
+              <Input label="Nome do perfil" value={profileName} onChange={(event) => setProfileName(event.target.value)} placeholder="Ex.: Térmica do caixa" />
+              <Select
+                label="Finalidade"
+                value={profilePurpose}
+                onChange={(event) => setProfilePurpose(event.target.value)}
+                options={[
+                  { label: "Comprovante de venda", value: "sale_receipt" },
+                  { label: "Via do cliente", value: "customer_receipt" },
+                  { label: "Etiquetas", value: "labels" },
+                  { label: "Documentos A4", value: "documents" },
+                  { label: "Fiscal/NFC-e", value: "fiscal" },
+                ]}
+              />
+              <Button type="button" variant="secondary" icon={<Plus size={15} />} onClick={() => void saveProfile()} disabled={saving || !branchId}>Salvar perfil</Button>
+            </div>
+            {profiles.length ? (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {profiles.map((profile) => (
+                  <div key={profile.id} className="rounded-md border border-[var(--brand-border)] bg-white p-3 text-sm">
+                    <div className="flex items-center justify-between gap-2"><strong className="truncate text-[var(--brand-primary)]">{profile.name}</strong>{profile.isDefault ? <Badge>Padrão</Badge> : null}</div>
+                    <p className="mt-1 text-xs text-slate-500">{purposeLabel(profile.purpose)} · {profile.width === "a4" ? "A4" : `${profile.width} mm`} · {profile.copies} via(s)</p>
+                    {profile.deviceHint ? <p className="mt-1 truncate text-xs text-slate-500">Dispositivo: {profile.deviceHint}</p> : null}
+                  </div>
+                ))}
+              </div>
+            ) : <p className="rounded-md border border-dashed border-[var(--brand-border)] p-3 text-xs text-slate-500">Nenhum perfil salvo ainda. Crie um para a térmica do caixa, outro para etiquetas ou documentos.</p>}
             <div className="grid gap-3 sm:grid-cols-3">
               <Select
                 label="Etiqueta"
@@ -344,7 +405,7 @@ export default function PrintersPage() {
         <CardContent className="grid gap-3">
           <h2 className="font-semibold text-[var(--brand-primary)]">Próximo nível</h2>
           <p className="text-sm leading-6 text-slate-600">
-            Depois do beta, podemos adicionar um agente local opcional para impressão silenciosa,
+            O Orien salva perfis lógicos por loja. A impressora física é escolhida no diálogo do Windows, macOS ou Linux, o que permite ter uma térmica para venda e outra para etiquetas. Depois do beta, podemos adicionar um agente local opcional para impressão silenciosa,
             corte automático e descoberta de impressoras. Esse agente precisa de instalação no
             computador da loja e deve ser tratado como módulo separado por segurança.
           </p>
@@ -352,6 +413,10 @@ export default function PrintersPage() {
       </Card>
     </div>
   );
+}
+
+function purposeLabel(value: string) {
+  return ({ sale_receipt: "Comprovante de venda", customer_receipt: "Via do cliente", labels: "Etiquetas", documents: "Documentos", fiscal: "Fiscal/NFC-e" } as Record<string, string>)[value] ?? value;
 }
 
 function Step({ number, label, accent = false }: { number: string; label: string; accent?: boolean }) {

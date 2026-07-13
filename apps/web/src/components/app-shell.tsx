@@ -5,9 +5,9 @@ import {
   BarChart3,
   BellRing,
   BriefcaseBusiness,
-  Layers3,
   FileBarChart,
   FileText,
+  Tag,
   Gift,
   Boxes,
   Building2,
@@ -62,6 +62,8 @@ const navigation: NavigationItem[] = [
   { href: "/sales", label: "Vendas", icon: ShoppingCart, permissions: ["sales.read"] },
   { href: "/pos", label: "PDV", icon: ScanBarcode, permissions: ["sales.create"] },
   { href: "/operations?section=quotes", label: "Orçamentos e pedidos", icon: FileText, permissions: ["sales.create"] },
+  { href: "/operations?section=pricing", label: "Promoções e preços", icon: Tag, permissions: ["sales.create"] },
+  { href: "/operations?section=credit", label: "Crediário", icon: CircleDollarSign, permissions: ["financial.read"] },
   { href: "/customers", label: "Clientes", icon: UsersRound, permissions: ["customers.read"] },
   { href: "/loyalty", label: "Fidelidade", icon: Gift, permissions: ["customers.read"] },
   { href: "/catalog-tools", label: "Ferramentas", icon: Wrench, permissions: ["products.read"] },
@@ -82,12 +84,6 @@ const navigation: NavigationItem[] = [
   { href: "/tasks", label: "Tarefas", icon: ClipboardList, permissions: ["dashboard.read"] },
   { href: "/support", label: "Suporte", icon: Headset, permissions: ["dashboard.read"] },
   { href: "/audit", label: "Auditoria", icon: History, permissions: ["users.read"] },
-  {
-    href: "/operations",
-    label: "Estratégia comercial",
-    icon: Layers3,
-    permissions: ["dashboard.read"],
-  },
   { href: "/team", label: "Equipe", icon: ShieldCheck, permissions: ["users.read"] },
   {
     href: "/subscription",
@@ -113,7 +109,7 @@ const navigationGroups = [
   {
     id: "management",
     label: "Gestão",
-    routes: ["/financial", "/reports", "/alerts", "/tasks", "/support", "/operations", "/audit"],
+    routes: ["/financial", "/reports", "/alerts", "/tasks", "/support", "/operations?section=pricing", "/operations?section=credit", "/audit"],
   },
   {
     id: "administration",

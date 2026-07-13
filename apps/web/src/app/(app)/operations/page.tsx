@@ -64,7 +64,8 @@ export default function OperationsPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const requestedSection = searchParams.get("section");
-  const [section, setSection] = useState(requestedSection === "quotes" ? "quotes" : "returns");
+  const validSections = ["returns", "pricing", "quotes", "credit"];
+  const [section, setSection] = useState(validSections.includes(requestedSection ?? "") ? requestedSection! : "returns");
   const [branches, setBranches] = useState<Option[]>([]);
   const [products, setProducts] = useState<Option[]>([]);
   const [customers, setCustomers] = useState<Option[]>([]);
@@ -105,7 +106,7 @@ export default function OperationsPage() {
     void load();
   }, []);
   useEffect(() => {
-    setSection(requestedSection === "quotes" ? "quotes" : "returns");
+    setSection(validSections.includes(requestedSection ?? "") ? requestedSection! : "returns");
   }, [requestedSection]);
   const options = (rows: Option[]) => rows.map((x) => ({ label: x.name, value: x.id }));
   const total = useMemo(
@@ -244,11 +245,17 @@ export default function OperationsPage() {
       ) : null}
     </>
   );
+  const sectionMeta = {
+    returns: { title: "Trocas e devoluções", description: "Registre devoluções, estornos e crédito de cliente com rastreabilidade da venda." },
+    pricing: { title: "Promoções e preços", description: "Defina preços por loja, período, quantidade e grupo de clientes." },
+    quotes: { title: "Orçamentos e pedidos", description: "Crie propostas, reserve estoque quando necessário e converta a negociação em venda." },
+    credit: { title: "Crediário", description: "Acompanhe limites, exposição, bloqueios e renegociações por cliente." },
+  }[section] ?? { title: "Operações comerciais", description: "Fluxos comerciais protegidos e auditáveis." };
   return (
     <div className="grid min-w-0 gap-6">
       <PageHeader
-        title={section === "quotes" ? "Orçamentos e pedidos" : "Estratégia comercial"}
-        description={section === "quotes" ? "Crie propostas, reserve estoque quando necessário e converta a negociação em venda." : "Defina preços, crédito e pós-venda sem misturar rotinas do caixa e alertas operacionais."}
+        title={sectionMeta.title}
+        description={sectionMeta.description}
         actions={
           <Button variant="secondary" icon={<RefreshCw size={16} />} onClick={() => void load()}>
             Atualizar
@@ -261,7 +268,7 @@ export default function OperationsPage() {
         value={section}
         onValueChange={(value) => {
           setSection(value);
-          router.replace(value === "quotes" ? "/operations?section=quotes" : "/operations");
+          router.replace(`/operations?section=${value}`);
         }}
         tabs={[
           {

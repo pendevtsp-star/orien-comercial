@@ -149,6 +149,14 @@ export const productCreateSchema = z.object({
 
 export const productUpdateSchema = productCreateSchema.partial();
 
+export const productBarcodeLookupSchema = z.object({
+  barcode: z.string().trim().min(8).max(64),
+});
+
+export const productSkuSuggestionSchema = z.object({
+  prefix: z.string().trim().toUpperCase().regex(/^[A-Z0-9]{2,12}$/).optional(),
+});
+
 export const customerCreateSchema = z.object({
   branchId: uuidSchema.optional(),
   type: z.enum(["individual", "company"]).default("individual"),
@@ -361,6 +369,32 @@ export const purchaseEntryCreateSchema = z
     message: "supplierId or supplierName is required",
   });
 
+export const purchaseXmlPreviewSchema = z.object({
+  xml: z.string().trim().min(80).max(8_000_000),
+  branchId: uuidSchema,
+});
+
+export const purchaseXmlCommitSchema = z.object({
+  branchId: uuidSchema,
+  supplierId: uuidSchema.optional(),
+  supplierName: z.string().trim().min(2).max(180).optional(),
+  documentKey: z.string().trim().regex(/^\d{44}$/).optional(),
+  documentNumber: z.string().trim().min(1).max(80),
+  notes: z.string().trim().max(500).optional(),
+  items: z.array(z.object({
+    sourceIndex: z.coerce.number().int().min(0),
+    action: z.enum(["link", "create", "ignore"]),
+    productId: uuidSchema.optional(),
+    name: z.string().trim().min(2).max(180),
+    barcode: z.string().trim().max(64).optional(),
+    sku: z.string().trim().max(64).optional(),
+    quantity: z.coerce.number().positive(),
+    unitCost: z.coerce.number().min(0),
+  })).min(1).max(300),
+}).refine((value) => value.supplierId || value.supplierName, {
+  message: "supplierId or supplierName is required",
+});
+
 export const supplierCreateSchema = z.object({
   branchId: uuidSchema.optional(),
   name: z.string().trim().min(2).max(180),
@@ -478,6 +512,20 @@ export const printingSettingsSchema = z.object({
   openCashDrawer: z.boolean().default(false),
 });
 
+export const printerProfileSchema = z.object({
+  id: uuidSchema.optional(),
+  branchId: uuidSchema,
+  name: z.string().trim().min(2).max(80),
+  purpose: z.enum(["sale_receipt", "customer_receipt", "labels", "documents", "fiscal"]),
+  width: z.enum(["58", "80", "a4"]).default("80"),
+  copies: z.coerce.number().int().min(1).max(5).default(1),
+  showLogo: z.boolean().default(true),
+  showDocument: z.boolean().default(true),
+  footer: z.string().trim().max(220).optional(),
+  deviceHint: z.string().trim().max(120).optional(),
+  isDefault: z.boolean().default(false),
+});
+
 export const integrationSettingsSchema = z.object({
   provider: z.enum(["asaas_business", "smtp", "whatsapp_meta", "fiscal"]),
   mode: z.enum(["sandbox", "homologation", "production"]).default("sandbox"),
@@ -516,6 +564,8 @@ export type ImportPreviewInput = z.infer<typeof importPreviewSchema>;
 export type StockTransferCreateInput = z.infer<typeof stockTransferCreateSchema>;
 export type InventoryCountCreateInput = z.infer<typeof inventoryCountCreateSchema>;
 export type PurchaseEntryCreateInput = z.infer<typeof purchaseEntryCreateSchema>;
+export type PurchaseXmlPreviewInput = z.infer<typeof purchaseXmlPreviewSchema>;
+export type PurchaseXmlCommitInput = z.infer<typeof purchaseXmlCommitSchema>;
 export type SupplierCreateInput = z.infer<typeof supplierCreateSchema>;
 export type SupplierUpdateInput = z.infer<typeof supplierUpdateSchema>;
 export type FinancialCategoryInput = z.infer<typeof financialCategorySchema>;
@@ -533,3 +583,4 @@ export type PublicSubscriptionCheckoutInput = z.infer<typeof publicSubscriptionC
 export type AsaasWebhookInput = z.infer<typeof asaasWebhookSchema>;
 export type TenantBrandingInput = z.infer<typeof tenantBrandingSchema>;
 export type PrintingSettingsInput = z.infer<typeof printingSettingsSchema>;
+export type PrinterProfileInput = z.infer<typeof printerProfileSchema>;

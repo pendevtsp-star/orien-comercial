@@ -338,6 +338,13 @@ export default function StockPage() {
                   </div>
                   <Input name="purchaseNotes" label="Observacoes" />
                 </StockFormCard>
+
+                <PurchaseXmlImporter
+                  branches={branchOptions}
+                  suppliers={supplierOptions}
+                  products={productOptions}
+                  onCompleted={() => void load()}
+                />
               </div>
             )
           },
@@ -469,6 +476,87 @@ export default function StockPage() {
         ]}
       />
     </div>
+  );
+}
+
+function PurchaseXmlImporter({
+  branches,
+  suppliers,
+  products,
+  onCompleted,
+}: {
+  branches: Array<{ label: string; value: string }>;
+  suppliers: Array<{ label: string; value: string }>;
+  products: Array<{ label: string; value: string }>;
+  onCompleted: () => void;
+}) {
+  const [branchId, setBranchId] = useState("");
+  const [supplierId, setSupplierId] = useState("");
+  const [xml, setXml] = useState("");
+  const [preview, setPreview] = useState<{ document: { key?: string; number: string }; supplier: { name: string }; items: Array<{ sourceIndex: number; name: string; barcode?: string; supplierCode?: string; quantity: number; unitCost: number; match?: { productId: string; name: string } | null; suggestedAction: "link" | "create" }> } | null>(null);
+  const [choices, setChoices] = useState<Record<number, { action: "link" | "create" | "ignore"; productId?: string }>>({});
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  async function previewXml(file: File) {
+    if (!branchId) return setError("Escolha a loja antes de importar o XML.");
+    setError(null);
+    const text = await file.text();
+    setXml(text);
+    try {
+      const result = await apiFetch<typeof preview>("/stock/purchase-imports/xml/preview", { method: "POST", body: JSON.stringify({ branchId, xml: text }) });
+      setPreview(result);
+      setChoices(Object.fromEntries((result?.items ?? []).map((item) => [item.sourceIndex, { action: item.suggestedAction, productId: item.match?.productId }])));
+      setMessage("XML lido. Revise os vínculos antes de confirmar a entrada.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível ler o XML da nota.");
+    }
+  }
+  async function commit() {
+    if (!preview || !branchId || !xml) return;
+    setError(null);
+    try {
+      await apiFetch("/stock/purchase-imports/xml/commit", {
+        method: "POST",
+        body: JSON.stringify({
+          branchId,
+          supplierId: supplierId || undefined,
+          supplierName: supplierId ? undefined : preview.supplier.name,
+          documentKey: preview.document.key,
+          documentNumber: preview.document.number,
+          items: preview.items.map((item) => ({
+            sourceIndex: item.sourceIndex,
+            action: choices[item.sourceIndex]?.action ?? "create",
+            productId: choices[item.sourceIndex]?.productId,
+            name: item.name,
+            barcode: item.barcode,
+            sku: item.supplierCode,
+            quantity: item.quantity,
+            unitCost: item.unitCost,
+          })),
+        }),
+      });
+      setMessage("Entrada confirmada. Estoque e custos foram atualizados com trilha de auditoria.");
+      setPreview(null);
+      setXml("");
+      onCompleted();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "A entrada não foi concluída.");
+    }
+  }
+  return (
+    <Card>
+      <CardContent className="grid gap-3">
+        <div><p className="text-xs font-medium uppercase tracking-[0.16em] text-[var(--brand-secondary)]">Recebimento assistido</p><h2 className="mt-1 font-semibold text-[var(--brand-primary)]">Importar XML da NF-e</h2><p className="mt-1 text-sm leading-5 text-slate-500">A chave de 44 dígitos identifica a nota, mas é o XML que traz produtos e quantidades. O Orien sugere os vínculos e você confirma antes de movimentar o estoque.</p></div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <Select label="Loja" value={branchId} onChange={(event) => setBranchId(event.target.value)} options={branches} />
+          <Select label="Fornecedor" value={supplierId} onChange={(event) => setSupplierId(event.target.value)} options={[{ label: "Usar fornecedor do XML", value: "" }, ...suppliers]} />
+        </div>
+        <Input label="Arquivo XML da NF-e" type="file" accept=".xml,text/xml,application/xml" onChange={(event) => { const file = event.target.files?.[0]; if (file) void previewXml(file); }} />
+        {error ? <p className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</p> : null}
+        {message ? <p className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{message}</p> : null}
+        {preview ? <div className="grid gap-3 rounded-md border border-[var(--brand-border)] bg-[var(--brand-surface)] p-3"><p className="text-sm font-medium">NF-e {preview.document.number} · {preview.supplier.name}</p>{preview.items.map((item) => { const choice = choices[item.sourceIndex] ?? { action: "create" as const }; return <div key={item.sourceIndex} className="grid gap-2 rounded-md border border-[var(--brand-border)] bg-white p-3 lg:grid-cols-[minmax(0,1fr)_150px_220px]"><div><p className="font-medium">{item.name}</p><p className="text-xs text-slate-500">{item.barcode || item.supplierCode || "Sem código"} · {item.quantity} un. · R$ {item.unitCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p></div><Select aria-label={`Ação para ${item.name}`} value={choice.action} onChange={(event) => setChoices((current) => ({ ...current, [item.sourceIndex]: { ...choice, action: event.target.value as typeof choice.action } }))} options={[{ label: "Vincular", value: "link" }, { label: "Cadastrar produto", value: "create" }, { label: "Ignorar", value: "ignore" }]} />{choice.action === "link" ? <Select aria-label={`Produto de ${item.name}`} value={choice.productId ?? ""} onChange={(event) => setChoices((current) => ({ ...current, [item.sourceIndex]: { ...choice, productId: event.target.value } }))} options={[{ label: item.match?.name ?? "Selecione o produto", value: "" }, ...products]} /> : <p className="self-center text-xs text-slate-500">{choice.action === "create" ? "Será criado com custo da nota." : "Item não entrará no estoque."}</p>}</div>; })}<Button onClick={() => void commit()}>Confirmar entrada da nota</Button></div> : null}
+      </CardContent>
+    </Card>
   );
 }
 

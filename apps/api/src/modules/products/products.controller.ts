@@ -13,7 +13,7 @@ import {
 } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { permissions } from "@sgc/auth";
-import { productCreateSchema, productUpdateSchema, resourceListQuerySchema } from "@sgc/types";
+import { productBarcodeLookupSchema, productCreateSchema, productSkuSuggestionSchema, productUpdateSchema, resourceListQuerySchema } from "@sgc/types";
 import { JwtAuthGuard } from "../../shared/auth.guard";
 import { CurrentTenant } from "../../shared/current-user.decorator";
 import { PermissionsGuard } from "../../shared/permissions.guard";
@@ -61,6 +61,24 @@ export class ProductsController {
   }
 
   @RequirePermissions(permissions.products.read)
+  @Get("barcode-lookup")
+  barcodeLookup(
+    @CurrentTenant() tenant: TenantContext,
+    @Query(new ZodValidationPipe(productBarcodeLookupSchema)) query: never,
+  ) {
+    return this.productsService.lookupBarcode(tenant, (query as { barcode: string }).barcode);
+  }
+
+  @RequirePermissions(permissions.products.create)
+  @Get("sku-suggestion")
+  skuSuggestion(
+    @CurrentTenant() tenant: TenantContext,
+    @Query(new ZodValidationPipe(productSkuSuggestionSchema)) query: never,
+  ) {
+    return this.productsService.suggestSku(tenant, (query as { prefix?: string }).prefix);
+  }
+
+  @RequirePermissions(permissions.products.read)
   @Get(":id")
   get(@CurrentTenant() tenant: TenantContext, @Param("id") id: string) {
     return this.productsService.get(tenant, id);
@@ -89,5 +107,11 @@ export class ProductsController {
   @Delete(":id")
   remove(@CurrentTenant() tenant: TenantContext, @Param("id") id: string) {
     return this.productsService.remove(tenant, id);
+  }
+
+  @RequirePermissions(permissions.products.update)
+  @Delete(":id/image")
+  removeImage(@CurrentTenant() tenant: TenantContext, @Param("id") id: string) {
+    return this.productsService.removePrimaryImage(tenant, id);
   }
 }

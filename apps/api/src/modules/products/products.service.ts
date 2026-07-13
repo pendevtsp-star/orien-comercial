@@ -17,6 +17,7 @@ import bwipjs from "bwip-js";
 
 @Injectable()
 export class ProductsService {
+  private readonly catalogCache = new Map<string, { expiresAt: number; value: Record<string, unknown> }>();
   constructor(@Inject(DatabaseService) private readonly database: DatabaseService, @Inject(APP_CONFIG) private readonly config: AppConfig) {}
 
   async list(context: TenantContext, query: ResourceListQuery) {
@@ -113,35 +114,35 @@ export class ProductsService {
 
   async create(context: TenantContext, input: ProductCreateInput) {
     ensureBranchAccess(context, input.branchId);
-
-    const result = await this.database.tenantQuery(
-      context.tenantId,
-      `
-      INSERT INTO products (
-        tenant_id, branch_id, category_id, name, sku, barcode, description, unit,
-        cost_price, sale_price, promotional_price, min_stock, is_active
-      )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-      RETURNING *
-      `,
-      [
-        context.tenantId,
-        context.branchId ?? input.branchId ?? null,
-        input.categoryId ?? null,
-        input.name,
-        input.sku ?? null,
-        input.barcode ?? null,
-        input.description ?? null,
-        input.unit,
-        input.costPrice,
-        input.salePrice,
-        input.promotionalPrice ?? null,
-        input.minStock,
-        input.isActive,
-      ],
-    );
-
-    const created = result.rows[0];
+    const created = await this.database.tenantTransaction(context.tenantId, async (client) => {
+      const sku = input.sku?.trim() || (await this.nextSku(client, context.tenantId));
+      const result = await client.query(
+        `
+        INSERT INTO products (
+          tenant_id, branch_id, category_id, name, sku, barcode, description, unit,
+          cost_price, sale_price, promotional_price, min_stock, is_active
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+        RETURNING *
+        `,
+        [
+          context.tenantId,
+          context.branchId ?? input.branchId ?? null,
+          input.categoryId ?? null,
+          input.name,
+          sku,
+          input.barcode ?? null,
+          input.description ?? null,
+          input.unit,
+          input.costPrice,
+          input.salePrice,
+          input.promotionalPrice ?? null,
+          input.minStock,
+          input.isActive,
+        ],
+      );
+      return result.rows[0] as Record<string, unknown>;
+    });
     if (created && (input.imageData || input.imageUrl)) await this.setPrimaryImage(context, created.id as string, input.imageData ?? input.imageUrl!);
     if (created)
       await this.database.tenantQuery(
@@ -153,7 +154,7 @@ export class ProductsService {
           created.id,
           JSON.stringify({
             name: input.name,
-            sku: input.sku ?? null,
+            sku: created.sku,
             barcode: input.barcode ?? null,
             costPrice: input.costPrice,
             salePrice: input.salePrice,
@@ -255,6 +256,89 @@ export class ProductsService {
         [context.tenantId, productId, asset.rows[0]!.id],
       );
     });
+  }
+
+  async removePrimaryImage(context: TenantContext, productId: string) {
+    await this.get(context, productId);
+    await this.database.tenantQuery(
+      context.tenantId,
+      "DELETE FROM product_images WHERE tenant_id=$1 AND product_id=$2",
+      [context.tenantId, productId],
+    );
+    await this.database.tenantQuery(
+      context.tenantId,
+      "INSERT INTO audit_logs (tenant_id,actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,$2,'product.image.removed','product',$3,'{}')",
+      [context.tenantId, context.userId ?? null, productId],
+    );
+    return { ok: true };
+  }
+
+  async suggestSku(context: TenantContext, prefix?: string) {
+    return { sku: await this.nextSku(undefined, context.tenantId, prefix) };
+  }
+
+  async lookupBarcode(context: TenantContext, barcodeInput: string) {
+    const barcode = barcodeInput.replace(/\D/g, "");
+    const local = await this.database.tenantQuery<Record<string, unknown>>(
+      context.tenantId,
+      `SELECT id,name,sku,barcode,unit,sale_price::text AS "salePrice",cost_price::text AS "costPrice"
+       FROM products WHERE tenant_id=$1 AND barcode=$2 AND deleted_at IS NULL LIMIT 1`,
+      [context.tenantId, barcode],
+    );
+    if (local.rows[0]) return { source: "tenant", found: true, product: local.rows[0] };
+
+    const cached = this.catalogCache.get(barcode);
+    if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+    let result: Record<string, unknown> = { source: "manual", found: false, barcode };
+    try {
+      const response = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json`, {
+        signal: AbortSignal.timeout(3500),
+        headers: { "User-Agent": "OrienCatalog/1.0" },
+      });
+      if (response.ok) {
+        const payload = (await response.json()) as { status?: number; product?: Record<string, unknown> };
+        const product = payload.product;
+        const name = typeof product?.product_name_pt === "string" ? product.product_name_pt : product?.product_name;
+        if (payload.status === 1 && typeof name === "string" && name.trim()) {
+          result = {
+            source: "catalog",
+            found: true,
+            product: {
+              name: name.trim(),
+              barcode,
+              brand: typeof product?.brands === "string" ? product.brands : undefined,
+              category: typeof product?.categories_tags === "string" ? product.categories_tags.split(",")[0] : undefined,
+              imageUrl: typeof product?.image_front_small_url === "string" ? product.image_front_small_url : undefined,
+              unit: "un",
+            },
+          };
+        }
+      }
+    } catch {
+      // Catálogo externo é opcional: o cadastro manual continua sempre disponível.
+    }
+    this.catalogCache.set(barcode, { value: result, expiresAt: Date.now() + 6 * 60 * 60 * 1000 });
+    return result;
+  }
+
+  private async nextSku(
+    client: { query: (query: string, values?: unknown[]) => Promise<{ rows: Array<{ next?: string }> }> } | undefined,
+    tenantId: string,
+    requestedPrefix?: string,
+  ) {
+    const prefix = (requestedPrefix || "ORI").replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 12) || "ORI";
+    const run = async (executor: { query: (query: string, values?: unknown[]) => Promise<{ rows: Array<{ next?: string }> }> }) => {
+      await executor.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`product-sku:${tenantId}:${prefix}`]);
+      const sequence = await executor.query(
+        `SELECT COALESCE(MAX(NULLIF(regexp_replace(sku, '^.*-', ''), sku)::int), 0) + 1 AS next
+         FROM products WHERE tenant_id=$1 AND sku ~ $2`,
+        [tenantId, `^${prefix}-[0-9]+$`],
+      );
+      return `${prefix}-${String(Number(sequence.rows[0]?.next ?? 1)).padStart(6, "0")}`;
+    };
+    if (client) return run(client);
+    return this.database.tenantTransaction(tenantId, async (transaction) => run(transaction));
   }
 
   private async persistUpload(tenantId: string, dataUrl: string) {
