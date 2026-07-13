@@ -10,8 +10,9 @@ import {
   Select,
   Tabs,
 } from "@sgc/ui";
-import { BellRing, FileText, RefreshCw, RotateCcw, Tags, WalletCards } from "lucide-react";
+import { FileText, RefreshCw, RotateCcw, Tags, WalletCards } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch, openApiDocument } from "../../../lib/api";
 type List<T> = { data: T[] };
 type Option = { id: string; name: string; salePrice?: string };
@@ -50,25 +51,6 @@ type Credit = {
   storeCredit: string;
   blocked: boolean;
 };
-type Abc = {
-  id: string;
-  name: string;
-  sku?: string;
-  quantity: string;
-  revenue: string;
-  margin: string;
-  stock: string;
-  class: string;
-  suggestion: string;
-};
-type Notification = {
-  id: string;
-  title: string;
-  message: string;
-  severity: string;
-  readAt?: string;
-  createdAt: string;
-};
 type SaleItem = {
   id: string;
   description: string;
@@ -79,6 +61,10 @@ type SaleItem = {
 const money = (value: string | number) =>
   Number(value).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 export default function OperationsPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const requestedSection = searchParams.get("section");
+  const [section, setSection] = useState(requestedSection === "quotes" ? "quotes" : "returns");
   const [branches, setBranches] = useState<Option[]>([]);
   const [products, setProducts] = useState<Option[]>([]);
   const [customers, setCustomers] = useState<Option[]>([]);
@@ -86,8 +72,6 @@ export default function OperationsPage() {
   const [prices, setPrices] = useState<PriceRow[]>([]);
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [credits, setCredits] = useState<Credit[]>([]);
-  const [abc, setAbc] = useState<Abc[]>([]);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [saleItems, setSaleItems] = useState<SaleItem[]>([]);
   const [quoteItems, setQuoteItems] = useState<
     Array<{ productId: string; quantity: number; unitPrice: number; discountAmount: number }>
@@ -96,7 +80,7 @@ export default function OperationsPage() {
   const [error, setError] = useState<string | null>(null);
   async function load() {
     try {
-      const [b, p, c, r, pr, q, cr, a, n] = await Promise.all([
+      const [b, p, c, r, pr, q, cr] = await Promise.all([
         apiFetch<List<Option>>("/branches?pageSize=100&isActive=true"),
         apiFetch<List<Option>>("/products?pageSize=100&isActive=true"),
         apiFetch<List<Option>>("/customers?pageSize=100&isActive=true"),
@@ -104,8 +88,6 @@ export default function OperationsPage() {
         apiFetch<List<PriceRow>>("/operations/prices"),
         apiFetch<List<Quote>>("/operations/quotes"),
         apiFetch<List<Credit>>("/operations/credit"),
-        apiFetch<List<Abc>>("/operations/analytics/abc"),
-        apiFetch<List<Notification>>("/operations/notifications"),
       ]);
       setBranches(b.data);
       setProducts(p.data);
@@ -114,8 +96,6 @@ export default function OperationsPage() {
       setPrices(pr.data);
       setQuotes(q.data);
       setCredits(cr.data);
-      setAbc(a.data);
-      setNotifications(n.data);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao carregar operacoes.");
@@ -124,6 +104,9 @@ export default function OperationsPage() {
   useEffect(() => {
     void load();
   }, []);
+  useEffect(() => {
+    setSection(requestedSection === "quotes" ? "quotes" : "returns");
+  }, [requestedSection]);
   const options = (rows: Option[]) => rows.map((x) => ({ label: x.name, value: x.id }));
   const total = useMemo(
     () => quoteItems.reduce((s, x) => s + x.quantity * x.unitPrice - x.discountAmount, 0),
@@ -264,8 +247,8 @@ export default function OperationsPage() {
   return (
     <div className="grid min-w-0 gap-6">
       <PageHeader
-        title="Operacoes avancadas"
-        description="Devolucoes, precos, orcamentos, crediario, rentabilidade e notificacoes em fluxos auditaveis."
+        title={section === "quotes" ? "Orçamentos e pedidos" : "Estratégia comercial"}
+        description={section === "quotes" ? "Crie propostas, reserve estoque quando necessário e converta a negociação em venda." : "Defina preços, crédito e pós-venda sem misturar rotinas do caixa e alertas operacionais."}
         actions={
           <Button variant="secondary" icon={<RefreshCw size={16} />} onClick={() => void load()}>
             Atualizar
@@ -275,6 +258,11 @@ export default function OperationsPage() {
       {feedback}
       <Tabs
         defaultValue="returns"
+        value={section}
+        onValueChange={(value) => {
+          setSection(value);
+          router.replace(value === "quotes" ? "/operations?section=quotes" : "/operations");
+        }}
         tabs={[
           {
             value: "returns",
@@ -664,80 +652,6 @@ export default function OperationsPage() {
                   </CardContent>
                 </Card>
               </div>
-            ),
-          },
-          {
-            value: "abc",
-            label: "Curva ABC",
-            content: (
-              <Card>
-                <CardContent>
-                  <DataTable
-                    rows={abc}
-                    empty="Sem movimentacao para classificar."
-                    columns={[
-                      { key: "class", header: "Classe", render: (r) => <Badge>{r.class}</Badge> },
-                      { key: "product", header: "Produto", render: (r) => r.name },
-                      { key: "qty", header: "Qtd vendida", render: (r) => r.quantity },
-                      { key: "revenue", header: "Receita", render: (r) => money(r.revenue) },
-                      { key: "margin", header: "Margem", render: (r) => money(r.margin) },
-                      { key: "stock", header: "Estoque", render: (r) => r.stock },
-                      {
-                        key: "suggestion",
-                        header: "Acao",
-                        render: (r) => <Badge>{r.suggestion}</Badge>,
-                      },
-                    ]}
-                  />
-                </CardContent>
-              </Card>
-            ),
-          },
-          {
-            value: "notifications",
-            label: "Notificacoes",
-            content: (
-              <Card>
-                <CardContent className="grid gap-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <BellRing />
-                      <h2 className="font-semibold">Central interna</h2>
-                    </div>
-                    <Button
-                      onClick={() =>
-                        void submit(
-                          "/operations/notifications/refresh",
-                          {},
-                          "Notificacoes atualizadas.",
-                        )
-                      }
-                    >
-                      Verificar agora
-                    </Button>
-                  </div>
-                  <div className="grid gap-2">
-                    {notifications.map((n) => (
-                      <button
-                        key={n.id}
-                        className={`grid gap-1 rounded-md border p-4 text-left ${n.readAt ? "bg-white opacity-65" : "bg-[var(--brand-surface)]"}`}
-                        onClick={() =>
-                          void apiFetch(`/operations/notifications/${n.id}/read`, {
-                            method: "PATCH",
-                            body: "{}",
-                          }).then(load)
-                        }
-                      >
-                        <span className="flex justify-between gap-3">
-                          <strong>{n.title}</strong>
-                          <Badge>{n.severity}</Badge>
-                        </span>
-                        <span className="text-sm text-slate-600">{n.message}</span>
-                      </button>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
             ),
           },
         ]}

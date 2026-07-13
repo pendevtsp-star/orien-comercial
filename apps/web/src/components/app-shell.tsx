@@ -7,6 +7,7 @@ import {
   BriefcaseBusiness,
   Layers3,
   FileBarChart,
+  FileText,
   Gift,
   Boxes,
   Building2,
@@ -51,8 +52,8 @@ type NavigationItem = {
   platformOnly?: boolean;
 };
 const navigation: NavigationItem[] = [
-  { href: "/dashboard", label: "Visão geral", icon: BarChart3, permissions: ["dashboard.read"] },
-  { href: "/store-central", label: "Central da Loja", icon: BriefcaseBusiness, permissions: ["dashboard.read"] },
+  { href: "/dashboard", label: "Visão estratégica", icon: BarChart3, permissions: ["dashboard.read"] },
+  { href: "/store-central", label: "Operação de hoje", icon: BriefcaseBusiness, permissions: ["dashboard.read"] },
   { href: "/branches", label: "Lojas", icon: Building2, permissions: ["branches.read"] },
   { href: "/products", label: "Produtos", icon: Boxes, permissions: ["products.read"] },
   { href: "/stock", label: "Estoque", icon: PackageCheck, permissions: ["stock.read"] },
@@ -60,6 +61,7 @@ const navigation: NavigationItem[] = [
   { href: "/purchases", label: "Compras", icon: ClipboardList, permissions: ["stock.purchase"] },
   { href: "/sales", label: "Vendas", icon: ShoppingCart, permissions: ["sales.read"] },
   { href: "/pos", label: "PDV", icon: ScanBarcode, permissions: ["sales.create"] },
+  { href: "/operations?section=quotes", label: "Orçamentos e pedidos", icon: FileText, permissions: ["sales.create"] },
   { href: "/customers", label: "Clientes", icon: UsersRound, permissions: ["customers.read"] },
   { href: "/loyalty", label: "Fidelidade", icon: Gift, permissions: ["customers.read"] },
   { href: "/catalog-tools", label: "Ferramentas", icon: Wrench, permissions: ["products.read"] },
@@ -82,7 +84,7 @@ const navigation: NavigationItem[] = [
   { href: "/audit", label: "Auditoria", icon: History, permissions: ["users.read"] },
   {
     href: "/operations",
-    label: "Operações avançadas",
+    label: "Estratégia comercial",
     icon: Layers3,
     permissions: ["dashboard.read"],
   },
@@ -100,8 +102,8 @@ const navigation: NavigationItem[] = [
   { href: "/platform", label: "Gestão Orien", icon: MonitorCog, platformOnly: true },
 ];
 const navigationGroups = [
-  { id: "overview", label: "Visão geral", routes: ["/dashboard", "/store-central"] },
-  { id: "operation", label: "Operação", routes: ["/sales", "/pos"] },
+  { id: "overview", label: "Visão executiva", routes: ["/dashboard"] },
+  { id: "operation", label: "Operação diária", routes: ["/store-central", "/pos", "/sales", "/operations?section=quotes"] },
   {
     id: "catalog",
     label: "Catálogo e estoque",
@@ -207,6 +209,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     Array<{ label: string; detail: string; href: string }>
   >([]);
   const [activeSearchIndex, setActiveSearchIndex] = useState(0);
+  const [currentSearch, setCurrentSearch] = useState("");
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     overview: true,
     operation: true,
@@ -330,6 +333,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       ? `Orien | ${currentMembership.tenantName}`
       : "Orien | Gestão inteligente";
   }, [currentMembership?.tenantName]);
+  useEffect(() => {
+    setCurrentSearch(window.location.search.slice(1));
+  }, [pathname]);
   const allowedNavigation = useMemo(() => {
     const granted = currentMembership?.permissions ?? [];
     return navigation.filter(
@@ -415,7 +421,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   function navigationLink(item: NavigationItem, compactMode: boolean, closeMobile = false) {
     const Icon = item.icon;
-    const active = pathname === item.href;
+    const active = item.href.includes("?")
+      ? pathname === item.href.split("?")[0] && currentSearch === item.href.split("?")[1]
+      : pathname === item.href;
     return (
       <div key={item.href} className="relative flex items-center">
       <Link

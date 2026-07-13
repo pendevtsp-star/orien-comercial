@@ -61,6 +61,14 @@ interface OperationalStatus {
   onboarding?: { dismissed: boolean; completedKeys: string[] };
 }
 
+interface AbcItem {
+  id: string;
+  name: string;
+  revenue: string;
+  class: "A" | "B" | "C";
+  suggestion: string;
+}
+
 type ChecklistItem = { key: string; label: string; done: boolean; autoDone?: boolean; href: string };
 
 const onboardingFallback: ChecklistItem[] = [
@@ -73,15 +81,16 @@ const onboardingFallback: ChecklistItem[] = [
 ];
 
 const cards = [
-  { key: "branches", label: "Lojas ativas", icon: Building2, tone: "secondary" },
-  { key: "products", label: "Produtos", icon: Boxes, tone: "primary" },
-  { key: "customers", label: "Clientes", icon: UsersRound, tone: "highlight" },
-  { key: "lowStockProducts", label: "Alerta de estoque", icon: AlertCircle, tone: "accent" },
+  { key: "branches", label: "Lojas ativas", icon: Building2, tone: "secondary", href: "/branches" },
+  { key: "products", label: "Produtos", icon: Boxes, tone: "primary", href: "/products" },
+  { key: "customers", label: "Clientes", icon: UsersRound, tone: "highlight", href: "/customers" },
+  { key: "lowStockProducts", label: "Alerta de estoque", icon: AlertCircle, tone: "accent", href: "/stock" },
 ] as const;
 
 export default function DashboardPage() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [status, setStatus] = useState<OperationalStatus | null>(null);
+  const [abc, setAbc] = useState<AbcItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showSetupWizard, setShowSetupWizard] = useState(false);
@@ -99,6 +108,9 @@ export default function DashboardPage() {
       setSummary(
         await apiFetch<Summary>(`/dashboard/summary?startDate=${startDate}&endDate=${endDate}`),
       );
+      void apiFetch<{ data: AbcItem[] }>("/operations/analytics/abc")
+        .then((result) => setAbc(result.data))
+        .catch(() => setAbc([]));
       void apiFetch<OperationalStatus>("/dashboard/operational-status")
         .then(setStatus)
         .catch(() => {
@@ -231,8 +243,8 @@ export default function DashboardPage() {
         </div>
       ) : null}
       <PageHeader
-        title="Dashboard"
-        description="Indicadores iniciais do tenant e alertas de operacao."
+        title="Visão estratégica"
+        description="Acompanhe crescimento, margem, metas e decisões de compra sem misturar a rotina do caixa."
         actions={
           <div className="grid gap-2 sm:grid-cols-[150px_150px_auto]">
             <Input
@@ -271,18 +283,16 @@ export default function DashboardPage() {
         <Card
           data-dashboard-widget="executive"
           variant="brand"
-          className="overflow-hidden shadow-[0_30px_70px_rgba(11,29,61,0.18)]"
+          className="overflow-hidden"
         >
-          <CardContent className="relative grid gap-6 p-6 lg:grid-cols-[1.2fr_0.8fr]">
-            <div className="absolute inset-y-0 right-0 hidden w-1/2 bg-[radial-gradient(circle_at_top_right,rgba(245,195,74,0.16),transparent_42%)] lg:block" />
+          <CardContent className="relative grid gap-5 p-5 lg:grid-cols-[1.2fr_0.8fr]">
             <div className="relative">
-              <Badge className="border-white/10 bg-white/10 text-white">Visao geral Orien</Badge>
-              <h2 data-brand-display="true" className="mt-4 text-4xl font-semibold text-white">
-                Operacao comercial, estoque e caixa em uma leitura so.
+              <Badge className="border-white/10 bg-white/10 text-white">Leitura executiva</Badge>
+              <h2 data-brand-display="true" className="mt-3 text-2xl font-semibold text-white">
+                Decisões melhores a partir do que sua operação já registrou.
               </h2>
               <p className="mt-3 max-w-xl text-sm leading-6 text-white/72">
-                Este painel prioriza o que exige acao rapida: vendas do periodo, exposicao
-                financeira e pontos de reposicao por loja.
+                Compare períodos, acompanhe metas e identifique o que merece atenção estratégica.
               </p>
             </div>
             <div className="relative grid gap-3 rounded-2xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur">
@@ -415,18 +425,22 @@ export default function DashboardPage() {
           <CardContent className="grid gap-4">
             <div>
               <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">
-                Status operacional por loja
+                Curva ABC
               </p>
               <h2 className="mt-2 text-lg font-semibold text-[var(--brand-primary)]">
-                Pendências que merecem atenção
+                Produtos que sustentam o faturamento
               </h2>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Metric label="Caixas abertos" value={status?.counts.openCash ?? 0} loading={loading} />
-              <Metric label="Estoque crítico" value={status?.counts.criticalStock ?? 0} loading={loading} />
-              <Metric label="Recebíveis vencidos" value={status?.counts.overdueReceivables ?? 0} loading={loading} />
-              <Metric label="Tarefas abertas" value={status?.counts.pendingTasks ?? 0} loading={loading} />
+            <div className="grid gap-2">
+              {abc.slice(0, 4).map((item) => (
+                <div key={item.id} className="flex items-center justify-between gap-3 rounded-md border border-[var(--brand-border)] px-3 py-2 text-sm">
+                  <span className="min-w-0 truncate font-medium text-[var(--brand-primary)]">{item.name}</span>
+                  <span className="flex shrink-0 items-center gap-2"><Badge>Classe {item.class}</Badge><strong>{Number(item.revenue).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong></span>
+                </div>
+              ))}
+              {!abc.length ? <p className="text-sm text-slate-500">Registre vendas para classificar os produtos por relevância.</p> : null}
             </div>
+            <Link href="/stock" className="text-sm font-medium text-[var(--brand-secondary)]">Abrir análise de estoque</Link>
           </CardContent>
         </Card>
       </section>
@@ -435,19 +449,21 @@ export default function DashboardPage() {
         {cards.map((card) => {
           const Icon = card.icon;
           return (
-            <Card key={card.key}>
-              <CardContent className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-sm text-slate-500">{card.label}</p>
-                  <p className="mt-2 text-3xl font-semibold text-[var(--brand-primary)]">
-                    {loading ? "..." : summary ? summary[card.key] : 0}
-                  </p>
-                </div>
-                <div className={iconToneClass(card.tone)}>
-                  <Icon size={22} />
-                </div>
-              </CardContent>
-            </Card>
+            <Link key={card.key} href={card.href} className="block">
+              <Card className="transition hover:-translate-y-0.5 hover:shadow-lg">
+                <CardContent className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm text-slate-500">{card.label}</p>
+                    <p className="mt-2 text-3xl font-semibold text-[var(--brand-primary)]">
+                      {loading ? "..." : summary ? summary[card.key] : 0}
+                    </p>
+                  </div>
+                  <div className={iconToneClass(card.tone)}>
+                    <Icon size={22} />
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
           );
         })}
       </div>

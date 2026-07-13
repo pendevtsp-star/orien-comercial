@@ -6,7 +6,6 @@ import {
   Banknote,
   Boxes,
   CalendarCheck2,
-  CheckCircle2,
   ClipboardList,
   RefreshCw,
   Store,
@@ -110,8 +109,8 @@ export default function StoreCentralPage() {
   return (
     <div className="grid gap-6">
       <PageHeader
-        title="Central da Loja"
-        description="Leitura diária para gerente acompanhar caixa, vendas, estoque e pendências."
+        title="Operação de hoje"
+        description="Acompanhe a rotina da loja: caixa, vendas do dia, estoque crítico e pendências que pedem ação."
         actions={
           <Button variant="secondary" icon={<RefreshCw size={16} />} onClick={() => void load()}>
             Atualizar central
@@ -124,22 +123,22 @@ export default function StoreCentralPage() {
         </p>
       ) : null}
 
-      <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+      <section className="grid gap-4">
         <Card variant="brand">
-          <CardContent className="grid gap-5 p-6">
+          <CardContent className="grid gap-5 p-5 lg:grid-cols-[1fr_auto] lg:items-center">
             <Badge className="w-fit border-white/10 bg-white/10 text-white">
               Rotina do gerente
             </Badge>
             <div>
-              <h2 data-brand-display="true" className="text-3xl font-semibold text-white">
-                O que precisa de atenção hoje.
+              <h2 data-brand-display="true" className="text-2xl font-semibold text-white">
+                Resolva o que impacta a loja agora.
               </h2>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-white/72">
                 Comece pelo caixa, resolva rupturas, confira contas abertas e conclua tarefas antes
                 de encerrar a operação da loja.
               </p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[480px]">
               <Figure label="Vendas hoje" value={summary?.salesToday ?? 0} loading={loading} />
               <Figure
                 label="A receber"
@@ -158,43 +157,6 @@ export default function StoreCentralPage() {
                 loading={loading}
                 accent
               />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="grid gap-4">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">
-                Implantação
-              </p>
-              <h2 className="mt-2 text-lg font-semibold text-[var(--brand-primary)]">
-                Checklist de prontidão
-              </h2>
-            </div>
-            <div className="h-2 overflow-hidden rounded-full bg-[var(--brand-surface)]">
-              <div
-                className="h-full rounded-full bg-[var(--brand-highlight)]"
-                style={{ width: `${status?.progressPercent ?? 0}%` }}
-              />
-            </div>
-            <div className="grid gap-2">
-              {(status?.checklist ?? []).map((item) => (
-                <Link
-                  key={item.key}
-                  href={item.href}
-                  className="flex items-center justify-between gap-3 rounded-md border border-[var(--brand-border)] px-3 py-2 text-sm hover:bg-[var(--brand-surface)]"
-                >
-                  <span className="flex min-w-0 items-center gap-2">
-                    <CheckCircle2
-                      size={16}
-                      className={item.done ? "text-emerald-600" : "text-slate-400"}
-                    />
-                    {item.label}
-                  </span>
-                  <Badge>{item.done ? "feito" : "pendente"}</Badge>
-                </Link>
-              ))}
             </div>
           </CardContent>
         </Card>

@@ -1,9 +1,10 @@
 "use client";
 
 import { Autocomplete, Badge, Button, Card, CardContent, DataTable, EmptyState, Input, PageHeader, Select } from "@sgc/ui";
-import { Ban, CircleDollarSign, Package2, Plus, Printer, RefreshCw, ShoppingCart, Wallet, type LucideIcon } from "lucide-react";
+import { Ban, ChevronDown, CircleDollarSign, Package2, Plus, RefreshCw, ShoppingCart, Wallet, type LucideIcon } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { apiFetch, openApiDocument } from "../../../lib/api";
 import { PaginationFooter } from "../../../components/pagination-footer";
 
@@ -93,6 +94,8 @@ export default function SalesPage() {
   const [scannerCode, setScannerCode] = useState("");
   const [draftProductId, setDraftProductId] = useState("");
   const [draftProductSearch, setDraftProductSearch] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("pix");
+  const [manualSaleOpen, setManualSaleOpen] = useState(false);
   const [pagination, setPagination] = useState({ total: 0, page: 1, pageSize: 10 });
   const scannerInputRef = useRef<HTMLInputElement>(null);
 
@@ -302,11 +305,13 @@ export default function SalesPage() {
     <div className="grid gap-6">
       <PageHeader
         title="Vendas"
-        description="Venda com multiplos itens, pagamento parcial, cancelamento e historico operacional."
+        description="Gerencie vendas, recebimentos, orçamentos e pós-venda. Para balcão e scanner, use o PDV rápido."
         actions={
-          <Button variant="secondary" onClick={() => void load()} icon={<RefreshCw size={16} />}>
-            Atualizar dados
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/pos" className="inline-flex min-h-10 items-center rounded-md bg-[var(--brand-primary)] px-4 text-sm font-medium text-white">Abrir PDV</Link>
+            <Button variant="secondary" onClick={() => setManualSaleOpen((value) => !value)}>{manualSaleOpen ? "Fechar venda administrativa" : "Nova venda administrativa"}</Button>
+            <Button variant="secondary" onClick={() => void load()} icon={<RefreshCw size={16} />}>Atualizar dados</Button>
+          </div>
         }
       />
       {error ? <p className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</p> : null}
@@ -319,8 +324,8 @@ export default function SalesPage() {
         <InsightCard title="Em aberto" value={openTotal} detail="Saldo a receber das vendas" icon={CircleDollarSign} money accent />
       </section>
 
-      <section className="grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1fr)_400px]">
-        <div className="grid min-w-0 gap-4 2xl:order-2 2xl:sticky 2xl:top-20 2xl:self-start">
+      <section className={`grid min-w-0 gap-4 ${manualSaleOpen ? "2xl:grid-cols-[minmax(0,1fr)_400px]" : ""}`}>
+        {manualSaleOpen ? <div className="grid min-w-0 gap-4 2xl:order-2 2xl:sticky 2xl:top-20 2xl:self-start">
           <Card>
             <CardContent className="grid gap-4">
               <div>
@@ -424,30 +429,31 @@ export default function SalesPage() {
                 <Input name="notes" label="Observacoes" />
                 <div className="grid gap-3 md:grid-cols-2">
                   <Input name="paidAmount" label="Valor pago agora" type="number" step="0.01" defaultValue="0" />
-                  <Input name="paymentMethod" label="Forma de pagamento" defaultValue="pix" />
+                  <Select
+                    name="paymentMethod"
+                    label="Forma de pagamento"
+                    value={paymentMethod}
+                    onChange={(event) => setPaymentMethod(event.target.value)}
+                    options={paymentOptions}
+                  />
                 </div>
                 <Button type="submit">Registrar venda</Button>
               </form>
             </CardContent>
           </Card>
-        </div>
+        </div> : null}
 
         <div className="grid min-w-0 gap-4 2xl:order-1">
-          <Card variant="brand" className="overflow-hidden shadow-[0_28px_64px_rgba(11,29,61,0.18)]">
-            <CardContent className="grid gap-4 p-6 lg:grid-cols-[1.1fr_0.9fr]">
+          <Card className="border-[var(--brand-border)] bg-[var(--brand-surface)]">
+            <CardContent className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <Badge className="border-white/10 bg-white/10 text-white">Operacao comercial</Badge>
-                <h2 data-brand-display="true" className="mt-4 text-3xl font-semibold text-white">
-                  Vendas com historico, saldo aberto e documento emitido no mesmo fluxo.
-                </h2>
-                <p className="mt-3 max-w-2xl text-sm leading-6 text-white/72">
-                  O painel combina fechamento de venda, cancelamento controlado, recebimentos parciais e trilha operacional por movimento.
-                </p>
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Gestão de vendas</p>
+                <h2 className="mt-1 text-xl font-semibold text-[var(--brand-primary)]">Histórico, recebimentos e pós-venda em um só lugar.</h2>
               </div>
-              <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/6 p-4">
-                <QuickFigure label="Total das vendas abertas" value={paidTotal + openTotal} money />
-                <QuickFigure label="Media por venda" value={openSales.length ? (paidTotal + openTotal) / openSales.length : 0} money />
-                <QuickFigure label="Saldo pendente" value={openTotal} money accent />
+              <div className="grid grid-cols-3 gap-2">
+                <QuickFigure label="Em aberto" value={paidTotal + openTotal} money />
+                <QuickFigure label="Ticket médio" value={openSales.length ? (paidTotal + openTotal) / openSales.length : 0} money />
+                <QuickFigure label="Pendente" value={openTotal} money accent />
               </div>
             </CardContent>
           </Card>
@@ -478,6 +484,12 @@ export default function SalesPage() {
             <div className="flex items-center">
               <Badge>{pagination.total} registros na leitura atual</Badge>
             </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant={statusFilter === "all" ? "primary" : "secondary"} onClick={() => { setStatusFilter("all"); setPage(1); }}>Todas</Button>
+            <Button variant={statusFilter === "sold" ? "primary" : "secondary"} onClick={() => { setStatusFilter("sold"); setPage(1); }}>Concluídas</Button>
+            <Button variant={statusFilter === "cancelled" ? "primary" : "secondary"} onClick={() => { setStatusFilter("cancelled"); setPage(1); }}>Canceladas</Button>
+            <Link href="/operations?section=quotes" className="inline-flex min-h-10 items-center rounded-md border border-[var(--brand-border)] px-4 text-sm font-medium text-[var(--brand-primary)]">Orçamentos e pedidos</Link>
           </div>
 
           <DataTable
@@ -516,7 +528,7 @@ export default function SalesPage() {
                   </div>
                 )
               },
-              { key: "status", header: "Status", render: (row) => <Badge>{row.status}</Badge> },
+              { key: "status", header: "Status", render: (row) => <Badge>{saleStatusLabel(row.status)}</Badge> },
               {
                 key: "fiscal",
                 header: "Fiscal",
@@ -526,36 +538,24 @@ export default function SalesPage() {
                 key: "actions",
                 header: "Acoes",
                 render: (row) => (
-                  <div className="flex gap-2">
-                    <Button variant="secondary" onClick={() => void openApiDocument(`/sales/${row.id}/document`)}>
-                      Ver comprovante
-                    </Button>
-                    <Button variant="secondary" icon={<Printer size={14} />} onClick={() => void openApiDocument(`/sales/${row.id}/document`, true)}>
-                      Imprimir
-                    </Button>
-                    <Button variant="secondary" onClick={() => void openApiDocument(`/sales/${row.id}/receipt`, true)}>
-                      Térmico
-                    </Button>
-                    <Button variant="secondary" onClick={() => void issueFiscal(row.id)}>
-                      Emitir NFC-e
-                    </Button>
-                    <Button variant="secondary" onClick={() => void loadFiscal(row.id)}>
-                      Status fiscal
-                    </Button>
-                    <a
-                      className="inline-flex min-h-10 items-center justify-center rounded-md border border-[var(--brand-border)] px-4 py-2 text-sm font-medium text-[var(--brand-primary)]"
-                      href={`/operations?sale=${row.id}`}
-                    >
-                      Troca/devolução
-                    </a>
+                  <div className="flex flex-wrap items-center gap-2">
                     <Button variant="secondary" onClick={() => void toggleHistory(row.id)}>
-                      {history[row.id] ? "Ocultar" : "Historico"}
+                      {history[row.id] ? "Fechar" : "Ver venda"}
                     </Button>
-                    {row.status !== "cancelled" ? (
-                      <Button variant="danger" icon={<Ban size={14} />} onClick={() => void cancelSale(row.id)}>
-                        Cancelar
-                      </Button>
-                    ) : null}
+                    <details className="relative">
+                      <summary className="flex min-h-10 cursor-pointer list-none items-center gap-2 rounded-md border border-[var(--brand-border)] px-3 text-sm font-medium text-[var(--brand-primary)]">
+                        Mais ações <ChevronDown size={15} />
+                      </summary>
+                      <div className="absolute right-0 z-20 mt-2 grid min-w-52 gap-1 rounded-md border border-[var(--brand-border)] bg-white p-2 shadow-xl">
+                        <button className="rounded px-3 py-2 text-left text-sm hover:bg-[var(--brand-surface)]" onClick={() => void openApiDocument(`/sales/${row.id}/document`)}>Ver comprovante</button>
+                        <button className="rounded px-3 py-2 text-left text-sm hover:bg-[var(--brand-surface)]" onClick={() => void openApiDocument(`/sales/${row.id}/document`, true)}>Imprimir relatório</button>
+                        <button className="rounded px-3 py-2 text-left text-sm hover:bg-[var(--brand-surface)]" onClick={() => void openApiDocument(`/sales/${row.id}/receipt`, true)}>Imprimir térmico</button>
+                        <button className="rounded px-3 py-2 text-left text-sm hover:bg-[var(--brand-surface)]" onClick={() => void issueFiscal(row.id)}>Emitir NFC-e</button>
+                        <button className="rounded px-3 py-2 text-left text-sm hover:bg-[var(--brand-surface)]" onClick={() => void loadFiscal(row.id)}>Consultar fiscal</button>
+                        <a className="rounded px-3 py-2 text-left text-sm hover:bg-[var(--brand-surface)]" href={`/operations?sale=${row.id}`}>Troca ou devolução</a>
+                      </div>
+                    </details>
+                    {row.status !== "cancelled" ? <Button variant="danger" icon={<Ban size={14} />} onClick={() => void cancelSale(row.id)}>Cancelar</Button> : null}
                   </div>
                 )
               }
@@ -583,10 +583,16 @@ export default function SalesPage() {
                     {sale.cancelledReason ? <Badge>{sale.cancelledReason}</Badge> : null}
                   </div>
                   <div className="grid gap-4 lg:grid-cols-4">
-                    <HistoryList title="Pagamentos" items={saleHistory.payments.map((item) => `${item.method} · ${item.status} · ${Number(item.amount).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`)} />
+                    <HistoryList title="Pagamentos" items={saleHistory.payments.map((item) => `${paymentMethodLabel(item.method)} · ${paymentStatusLabel(item.status)} · ${Number(item.amount).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`)} />
                     <HistoryList title="Recebiveis" items={saleHistory.receivables.map((item) => `${item.status} · ${new Date(`${item.dueDate}T00:00:00`).toLocaleDateString("pt-BR")} · ${Number(item.amount).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`)} />
                     <HistoryList title="Estoque" items={saleHistory.movements.map((item) => `${item.movementType} · ${item.quantity}`)} />
                     <HistoryList title="Auditoria" items={saleHistory.audit.map((item) => `${item.action} · ${new Date(item.createdAt).toLocaleString("pt-BR")}`)} />
+                  </div>
+                  <div className="rounded-md border-l-2 border-[var(--brand-highlight)] bg-[var(--brand-surface)] p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--brand-secondary)]">Linha do tempo</p>
+                    <div className="mt-3 grid gap-2 text-sm text-slate-700">
+                      {saleHistory.audit.length ? saleHistory.audit.map((item, index) => <p key={`${item.action}-${index}`}>{new Date(item.createdAt).toLocaleString("pt-BR")} · {auditLabel(item.action)}</p>) : <p className="text-slate-500">Nenhuma alteração adicional registrada.</p>}
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -637,6 +643,42 @@ function fiscalLabel(status?: string | null) {
     cancelled: "Cancelada",
   };
   return labels[status] ?? status;
+}
+
+const paymentOptions = [
+  { label: "Pix", value: "pix" },
+  { label: "Dinheiro", value: "cash" },
+  { label: "Cartão de crédito", value: "credit_card" },
+  { label: "Cartão de débito", value: "debit_card" },
+  { label: "Boleto", value: "bank_slip" },
+  { label: "Crediário da loja", value: "store_credit" },
+  { label: "Transferência", value: "bank_transfer" },
+  { label: "Outro", value: "other" },
+];
+
+function paymentMethodLabel(method?: string | null) {
+  return paymentOptions.find((option) => option.value === method)?.label ?? method ?? "Não informado";
+}
+
+function paymentStatusLabel(status?: string | null) {
+  const labels: Record<string, string> = { paid: "Pago", pending: "Pendente", cancelled: "Cancelado", refunded: "Estornado" };
+  return labels[status ?? ""] ?? status ?? "Não informado";
+}
+
+function saleStatusLabel(status: string) {
+  const labels: Record<string, string> = { sold: "Concluída", cancelled: "Cancelada", draft: "Rascunho", open: "Em aberto" };
+  return labels[status] ?? status;
+}
+
+function auditLabel(action: string) {
+  const labels: Record<string, string> = {
+    "sale.created": "Venda registrada",
+    "sale.cancelled": "Venda cancelada",
+    "sale.returned": "Devolução concluída",
+    "payment.created": "Pagamento registrado",
+    "fiscal.requested": "Emissão fiscal solicitada",
+  };
+  return labels[action] ?? action;
 }
 
 function InsightCard({
