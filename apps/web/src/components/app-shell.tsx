@@ -95,7 +95,6 @@ const navigation: NavigationItem[] = [
   { href: "/integrations", label: "Integrações", icon: PlugZap, permissions: ["tenants.read"] },
   { href: "/preferences", label: "Preferências", icon: Palette },
   { href: "/sessions", label: "Dispositivos", icon: ShieldCheck },
-  { href: "/platform", label: "Gestão Orien", icon: MonitorCog, platformOnly: true },
 ];
 const navigationGroups = [
   { id: "overview", label: "Visão executiva", routes: ["/dashboard"] },
@@ -121,7 +120,6 @@ const navigationGroups = [
       "/integrations",
       "/preferences",
       "/sessions",
-      "/platform",
     ],
   },
 ] as const;

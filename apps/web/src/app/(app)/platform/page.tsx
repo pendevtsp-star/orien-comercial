@@ -1,18 +1,24 @@
 "use client";
-import { Card, CardContent, PageHeader } from "@sgc/ui";
-import { useEffect, useState } from "react";
-import { apiFetch } from "../../../lib/api";
 
-type PlatformTenants = { data: Array<Record<string, unknown>> };
+import { Button, Card, CardContent, PageHeader } from "@sgc/ui";
+import { ExternalLink } from "lucide-react";
+
+const backofficeUrl = process.env.NEXT_PUBLIC_ADMIN_URL ?? "https://admin.useorien.com.br";
 
 export default function PlatformPage() {
-  const [overview, setOverview] = useState<Record<string, number> | null>(null);
-  const [tenants, setTenants] = useState<Array<Record<string, unknown>>>([]);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    Promise.all([apiFetch<Record<string, number>>("/platform/overview"), apiFetch<PlatformTenants>("/platform/tenants")])
-      .then(([currentOverview, currentTenants]) => { setOverview(currentOverview); setTenants(currentTenants.data); })
-      .catch((reason) => setError(reason instanceof Error ? reason.message : "Não foi possível carregar a plataforma."));
-  }, []);
-  return <div className="grid gap-6"><PageHeader title="Gestão da plataforma" description="Visão exclusiva da Orien: tenants, usuários e sessões ativas." />{error ? <p className="rounded-md border border-rose-200 bg-rose-50 p-3 text-rose-700">{error}</p> : null}<section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{Object.entries(overview ?? {}).map(([key, value]) => <Card key={key}><CardContent><p className="text-sm text-slate-500">{key.replace(/([A-Z])/g, " $1")}</p><strong className="mt-2 block text-2xl text-[var(--brand-primary)]">{value}</strong></CardContent></Card>)}</section><Card><CardContent><h2 className="text-lg font-semibold">Tenants cadastrados</h2><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[560px] text-left text-sm"><thead><tr><th>Empresa</th><th>Plano</th><th>Status</th><th>Membros</th></tr></thead><tbody>{tenants.map((tenant) => <tr className="border-t" key={String(tenant.id)}><td className="p-3">{String(tenant.name)}</td><td>{String(tenant.planSlug ?? "Trial")}</td><td>{String(tenant.status)}</td><td>{String(tenant.membersCount)}</td></tr>)}</tbody></table></div></CardContent></Card></div>;
+  return (
+    <div className="grid gap-6">
+      <PageHeader
+        title="Backoffice Orien"
+        description="A gestão da plataforma fica separada do ambiente operacional dos clientes."
+      />
+      <Card>
+        <CardContent className="grid max-w-2xl gap-4">
+          <h2 className="text-lg font-semibold text-[var(--brand-primary)]">Acesse o ambiente administrativo separado</h2>
+          <p className="text-sm leading-6 text-slate-600">Tenants, cobrança SaaS, suporte, webhooks e saúde da plataforma não fazem parte do painel da empresa. Abra o backoffice em uma nova aba para manter os contextos separados.</p>
+          <div><Button icon={<ExternalLink size={16} />} onClick={() => window.location.assign(backofficeUrl)}>Abrir backoffice Orien</Button></div>
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
