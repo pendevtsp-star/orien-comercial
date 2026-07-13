@@ -17,7 +17,11 @@ export default function PrintersPage() {
   const [size, setSize] = useState("50x30");
   const [dpi, setDpi] = useState("203");
   const [mode, setMode] = useState("browser");
+  const [receiptWidth, setReceiptWidth] = useState("80");
   const [copies, setCopies] = useState(1);
+  const [receiptShowLogo, setReceiptShowLogo] = useState(true);
+  const [receiptShowDocument, setReceiptShowDocument] = useState(true);
+  const [receiptFooter, setReceiptFooter] = useState("");
   const [printerName, setPrinterName] = useState("");
   const [silentPrint, setSilentPrint] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -47,14 +51,22 @@ export default function PrintersPage() {
         labelSize: string;
         dpi: string;
         receiptMode: string;
+        receiptWidth: string;
         receiptCopies: number;
+        receiptShowLogo: boolean;
+        receiptShowDocument: boolean;
+        receiptFooter?: string;
         defaultPrinterName?: string;
         silentPrint: boolean;
       }>(`/printing-settings?branchId=${nextBranchId}`);
       setSize(settings.labelSize);
       setDpi(settings.dpi);
       setMode(settings.receiptMode);
+      setReceiptWidth(settings.receiptWidth ?? "80");
       setCopies(settings.receiptCopies);
+      setReceiptShowLogo(settings.receiptShowLogo ?? true);
+      setReceiptShowDocument(settings.receiptShowDocument ?? true);
+      setReceiptFooter(settings.receiptFooter ?? "");
       setPrinterName(settings.defaultPrinterName ?? "");
       setSilentPrint(settings.silentPrint);
       setError("");
@@ -75,7 +87,11 @@ export default function PrintersPage() {
           labelSize: size,
           dpi,
           receiptMode: mode,
+          receiptWidth,
           receiptCopies: copies,
+          receiptShowLogo,
+          receiptShowDocument,
+          receiptFooter: receiptFooter || undefined,
           defaultPrinterName: printerName,
           silentPrint,
         }),
@@ -178,6 +194,33 @@ export default function PrintersPage() {
                 ]}
               />
             </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Select
+                label="Largura do comprovante"
+                value={receiptWidth}
+                onChange={(event) => setReceiptWidth(event.target.value)}
+                options={[
+                  { label: "58 mm", value: "58" },
+                  { label: "80 mm", value: "80" },
+                ]}
+              />
+              <label className="flex items-center gap-2 rounded-md border border-[var(--brand-border)] px-3 py-2 text-sm text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={receiptShowLogo}
+                  onChange={(event) => setReceiptShowLogo(event.target.checked)}
+                />
+                Mostrar logo
+              </label>
+              <label className="flex items-center gap-2 rounded-md border border-[var(--brand-border)] px-3 py-2 text-sm text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={receiptShowDocument}
+                  onChange={(event) => setReceiptShowDocument(event.target.checked)}
+                />
+                Mostrar CPF/CNPJ
+              </label>
+            </div>
             <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
               <Input
                 label="Nome da impressora padrão"
@@ -194,6 +237,12 @@ export default function PrintersPage() {
                 onChange={(event) => setCopies(Number(event.target.value || 1))}
               />
             </div>
+            <Input
+              label="Rodapé do comprovante"
+              placeholder="Ex.: Obrigado pela preferência."
+              value={receiptFooter}
+              onChange={(event) => setReceiptFooter(event.target.value)}
+            />
             <label className="flex items-start gap-2 text-sm text-slate-600">
               <input
                 type="checkbox"

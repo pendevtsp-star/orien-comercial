@@ -50,6 +50,19 @@ export class SalesController {
   }
 
   @RequirePermissions(permissions.sales.read)
+  @Get(":id/receipt")
+  async receipt(@CurrentTenant() tenant: TenantContext, @Param("id") id: string, @Res() response: Response) {
+    response.type("html");
+    response.send(await this.salesService.thermalReceipt(tenant, id));
+  }
+
+  @RequirePermissions(permissions.sales.create)
+  @Post(":id/fiscal/issue")
+  fiscalIssue(@CurrentTenant() tenant: TenantContext, @Param("id") id: string) {
+    return this.salesService.requestFiscalIssue(tenant, id);
+  }
+
+  @RequirePermissions(permissions.sales.read)
   @Get(":id")
   get(@CurrentTenant() tenant: TenantContext, @Param("id") id: string) {
     return this.salesService.get(tenant, id);

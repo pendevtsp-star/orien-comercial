@@ -46,6 +46,7 @@ interface CartItem {
 }
 interface PrintingSettings {
   receiptMode: string;
+  receiptWidth?: string;
   receiptCopies: number;
   defaultPrinterName?: string;
   silentPrint: boolean;
@@ -59,7 +60,9 @@ export default function PosPage() {
   const [cashHistory, setCashHistory] = useState<CashHistory[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [scanner, setScanner] = useState("");
+  const [scanQuantity, setScanQuantity] = useState(1);
   const [productSearch, setProductSearch] = useState("");
+  const [manualQuantity, setManualQuantity] = useState(1);
   const [productSuggestions, setProductSuggestions] = useState<Product[]>([]);
   const [paymentMethod, setPaymentMethod] = useState("pix");
   const [paymentAmount, setPaymentAmount] = useState("");
@@ -182,8 +185,9 @@ export default function PosPage() {
       setError(`Produto não encontrado para ${code}.`);
       return;
     }
-    await addProduct(product);
+    await addProduct(product, scanQuantity);
     setScanner("");
+    setScanQuantity(1);
     scannerRef.current?.focus();
   }
   async function addFirstManualSuggestion() {
@@ -201,15 +205,16 @@ export default function PosPage() {
       setError("Nenhum produto encontrado para a busca informada.");
       return;
     }
-    await addProduct(product);
+    await addProduct(product, manualQuantity);
   }
 
-  async function addProduct(product: Product) {
+  async function addProduct(product: Product, quantity = 1) {
+    const quantityToAdd = Math.max(1, Math.floor(Number(quantity) || 1));
     const currentQuantity = cart.find((item) => item.productId === product.id)?.quantity ?? 0;
     let resolvedPrice = Number(product.salePrice);
     try {
       const pricing = await apiFetch<{ price: number }>(
-        `/operations/prices/resolve?productId=${product.id}&branchId=${branchId}&quantity=${currentQuantity + 1}`,
+        `/operations/prices/resolve?productId=${product.id}&branchId=${branchId}&quantity=${currentQuantity + quantityToAdd}`,
       );
       resolvedPrice = pricing.price;
     } catch {
@@ -219,7 +224,7 @@ export default function PosPage() {
       current.some((item) => item.productId === product.id)
         ? current.map((item) =>
             item.productId === product.id
-              ? { ...item, quantity: item.quantity + 1, unitPrice: resolvedPrice }
+              ? { ...item, quantity: item.quantity + quantityToAdd, unitPrice: resolvedPrice }
               : item,
           )
         : [
@@ -227,7 +232,7 @@ export default function PosPage() {
             {
               productId: product.id,
               name: product.name,
-              quantity: 1,
+              quantity: quantityToAdd,
               unitPrice: resolvedPrice,
               discountAmount: 0,
             },
@@ -235,6 +240,7 @@ export default function PosPage() {
     );
     setProductSearch("");
     setProductSuggestions([]);
+    setManualQuantity(1);
     setError(null);
   }
 
@@ -328,7 +334,9 @@ export default function PosPage() {
         const saleId = result.id ?? result.sale?.id;
         if (saleId && printAfterSale && printing?.receiptMode !== "none") {
           const shouldOpenPrint = printing?.receiptMode === "thermal" || printing?.silentPrint;
-          void openApiDocument(`/sales/${saleId}/document`, shouldOpenPrint).catch(() => undefined);
+          const receiptPath =
+            printing?.receiptMode === "thermal" ? `/sales/${saleId}/receipt` : `/sales/${saleId}/document`;
+          void openApiDocument(receiptPath, shouldOpenPrint).catch(() => undefined);
         }
       }
       setCart([]);
@@ -432,20 +440,29 @@ export default function PosPage() {
               </form>
             ) : (
               <div className="grid gap-3">
-                <Input
-                  ref={scannerRef}
-                  label="Leitor de código de barras · F2"
-                  value={scanner}
-                  placeholder="Leia o código e pressione Enter"
-                  onChange={(event) => setScanner(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      void scan();
-                    }
-                  }}
-                />
-                <div className="relative">
+                <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_110px]">
+                  <Input
+                    ref={scannerRef}
+                    label="Leitor de código de barras · F2"
+                    value={scanner}
+                    placeholder="Leia o código e pressione Enter"
+                    onChange={(event) => setScanner(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void scan();
+                      }
+                    }}
+                  />
+                  <Input
+                    label="Qtd"
+                    type="number"
+                    min={1}
+                    value={scanQuantity}
+                    onChange={(event) => setScanQuantity(Math.max(1, Number(event.target.value || 1)))}
+                  />
+                </div>
+                <div className="relative grid gap-3 sm:grid-cols-[minmax(0,1fr)_110px]">
                   <Input
                     label="Adicionar produto manualmente"
                     value={productSearch}
@@ -458,14 +475,21 @@ export default function PosPage() {
                       }
                     }}
                   />
+                  <Input
+                    label="Qtd"
+                    type="number"
+                    min={1}
+                    value={manualQuantity}
+                    onChange={(event) => setManualQuantity(Math.max(1, Number(event.target.value || 1)))}
+                  />
                   {productSuggestions.length ? (
-                    <div className="absolute z-20 mt-1 grid w-full overflow-hidden rounded-md border border-[var(--brand-border)] bg-white shadow-xl">
+                    <div className="absolute left-0 top-full z-20 mt-1 grid w-full overflow-hidden rounded-md border border-[var(--brand-border)] bg-white shadow-xl sm:w-[calc(100%-118px)]">
                       {productSuggestions.map((product) => (
                         <button
                           key={product.id}
                           type="button"
                           className="grid gap-0.5 border-b border-[var(--brand-border)] px-3 py-2.5 text-left text-sm last:border-b-0 hover:bg-[var(--brand-surface)]"
-                          onClick={() => void addProduct(product)}
+                          onClick={() => void addProduct(product, manualQuantity)}
                         >
                           <strong>{product.name}</strong>
                           <span className="text-xs text-slate-500">
@@ -501,9 +525,9 @@ export default function PosPage() {
                       </p>
                     </div>
                     <div className="flex items-center gap-1">
-                      <Button
-                        variant="secondary"
-                        className="h-8 w-8 px-0"
+                      <button
+                        type="button"
+                        className="grid h-12 w-12 place-items-center rounded-md border border-[var(--brand-border)] bg-white text-[var(--brand-primary)] transition hover:bg-[var(--brand-surface)]"
                         onClick={() =>
                           setCart((current) =>
                             current.map((row) =>
@@ -515,11 +539,25 @@ export default function PosPage() {
                         }
                       >
                         <Minus size={14} />
-                      </Button>
-                      <span className="w-8 text-center">{item.quantity}</span>
-                      <Button
-                        variant="secondary"
-                        className="h-8 w-8 px-0"
+                      </button>
+                      <input
+                        aria-label={`Quantidade de ${item.name}`}
+                        className="h-12 w-20 rounded-md border border-[var(--brand-border)] bg-white text-center text-base font-semibold text-[var(--brand-primary)]"
+                        type="number"
+                        min={1}
+                        value={item.quantity}
+                        onChange={(event) => {
+                          const nextQuantity = Math.max(1, Number(event.target.value || 1));
+                          setCart((current) =>
+                            current.map((row) =>
+                              row.productId === item.productId ? { ...row, quantity: nextQuantity } : row,
+                            ),
+                          );
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="grid h-12 w-12 place-items-center rounded-md border border-[var(--brand-border)] bg-white text-[var(--brand-primary)] transition hover:bg-[var(--brand-surface)]"
                         onClick={() =>
                           setCart((current) =>
                             current.map((row) =>
@@ -531,7 +569,7 @@ export default function PosPage() {
                         }
                       >
                         <Plus size={14} />
-                      </Button>
+                      </button>
                     </div>
                     <Button
                       variant="ghost"

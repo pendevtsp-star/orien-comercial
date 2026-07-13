@@ -70,6 +70,7 @@ export default function SalesPage() {
   const [draftItems, setDraftItems] = useState<DraftItem[]>([]);
   const [history, setHistory] = useState<Record<string, SaleHistory>>({});
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
@@ -95,6 +96,7 @@ export default function SalesPage() {
   async function load() {
     setLoading(true);
     setError(null);
+    setNotice(null);
     try {
       const salesQuery = new URLSearchParams({ page: String(page), pageSize: "10" });
       if (search) salesQuery.set("search", search);
@@ -230,6 +232,18 @@ export default function SalesPage() {
     }
   }
 
+  async function issueFiscal(id: string) {
+    try {
+      const result = await apiFetch<{ message: string }>(`/sales/${id}/fiscal/issue`, {
+        method: "POST",
+        body: "{}",
+      });
+      setNotice(result.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível solicitar a emissão fiscal.");
+    }
+  }
+
   async function toggleHistory(id: string) {
     if (history[id]) {
       setHistory((current) => {
@@ -265,6 +279,7 @@ export default function SalesPage() {
         }
       />
       {error ? <p className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</p> : null}
+      {notice ? <p className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{notice}</p> : null}
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <InsightCard title="Vendas registradas" value={sales.length} detail="Historico do periodo carregado" icon={ShoppingCart} />
@@ -457,6 +472,12 @@ export default function SalesPage() {
                     </Button>
                     <Button variant="secondary" icon={<Printer size={14} />} onClick={() => void openApiDocument(`/sales/${row.id}/document`, true)}>
                       Imprimir
+                    </Button>
+                    <Button variant="secondary" onClick={() => void openApiDocument(`/sales/${row.id}/receipt`, true)}>
+                      Térmico
+                    </Button>
+                    <Button variant="secondary" onClick={() => void issueFiscal(row.id)}>
+                      Emitir NFC-e
                     </Button>
                     <Button variant="secondary" onClick={() => void toggleHistory(row.id)}>
                       {history[row.id] ? "Ocultar" : "Historico"}

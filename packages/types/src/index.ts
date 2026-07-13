@@ -464,7 +464,11 @@ export const printingSettingsSchema = z.object({
   labelSize: z.enum(["50x30", "60x40", "80x40"]).default("50x30"),
   dpi: z.enum(["203", "300"]).default("203"),
   receiptMode: z.enum(["browser", "thermal", "none"]).default("browser"),
+  receiptWidth: z.enum(["58", "80"]).default("80"),
   receiptCopies: z.coerce.number().int().min(1).max(5).default(1),
+  receiptShowLogo: z.boolean().default(true),
+  receiptShowDocument: z.boolean().default(true),
+  receiptFooter: z.string().trim().max(180).optional(),
   defaultPrinterName: z.string().trim().max(120).optional(),
   silentPrint: z.boolean().default(false),
 });

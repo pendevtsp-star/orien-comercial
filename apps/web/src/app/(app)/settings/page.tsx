@@ -24,6 +24,7 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [logoPreview, setLogoPreview] = useState("");
+  const previewLogo = logoPreview || (branding?.logoUrl ? `${process.env.NEXT_PUBLIC_API_URL ?? ""}${branding.logoUrl}` : "");
 
   async function load() {
     setError(null);
@@ -172,13 +173,11 @@ export default function SettingsPage() {
               <Button type="submit" disabled={saving}>
                 {saving ? "Salvando..." : "Salvar identidade"}
               </Button>
-              {logoPreview || branding?.logoUrl ? (
+              {previewLogo ? (
                 <div className="flex items-center gap-3 rounded-md border border-[var(--brand-border)] bg-[var(--brand-surface)] p-3">
                   <img
                     className="h-12 w-12 rounded-md bg-white object-contain p-1"
-                    src={
-                      logoPreview || `${process.env.NEXT_PUBLIC_API_URL ?? ""}${branding?.logoUrl}`
-                    }
+                    src={previewLogo}
                     alt="Prévia do logo"
                   />
                   <span className="text-sm text-slate-600">
@@ -221,6 +220,35 @@ export default function SettingsPage() {
                 <p className="text-sm text-slate-500">
                   Abra um documento real para validar a identidade aplicada.
                 </p>
+              </div>
+              <div
+                className="overflow-hidden rounded-2xl border border-[var(--brand-border)]"
+                style={{
+                  background: `linear-gradient(135deg, ${branding?.primaryColor ?? "#0f172a"}, #133a7c)`,
+                }}
+              >
+                <div className="grid gap-4 p-5 text-white sm:grid-cols-[minmax(0,1fr)_120px] sm:items-center">
+                  <div className="min-w-0">
+                    <p className="text-xs uppercase tracking-[0.18em] text-white/70">
+                      {branding?.tradingName || branding?.companyName || "Empresa"}
+                    </p>
+                    <h3 className="mt-2 text-2xl font-semibold">Comprovante de conferência</h3>
+                    <p className="mt-2 text-sm text-white/72">
+                      Prévia do cabeçalho aplicado em relatórios, comprovantes e e-mails.
+                    </p>
+                  </div>
+                  <div className="grid min-h-20 place-items-center rounded-xl border border-white/20 bg-white/10 p-3">
+                    {previewLogo ? (
+                      <img className="max-h-14 max-w-full object-contain" src={previewLogo} alt="Logo" />
+                    ) : (
+                      <span className="text-center text-xs text-white/70">Sem logo</span>
+                    )}
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 bg-white p-3 text-xs text-slate-600">
+                  <span>{branding?.documentId || "CPF/CNPJ opcional"}</span>
+                  <span className="text-right">{branding?.website || "useorien.com.br"}</span>
+                </div>
               </div>
               <Button
                 variant="secondary"

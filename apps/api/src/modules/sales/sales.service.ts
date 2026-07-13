@@ -597,6 +597,119 @@ export class SalesService {
       ],
     });
   }
+
+  async thermalReceipt(context: TenantContext, saleId: string) {
+    const branding = await loadTenantBranding(this.database, context.tenantId);
+    const saleResult = await this.database.tenantQuery<{
+      id: string;
+      status: string;
+      total_amount: string;
+      notes: string | null;
+      created_at: Date;
+      branch_id: string;
+      branch_name: string;
+      customer_name: string | null;
+    }>(
+      context.tenantId,
+      `
+      SELECT s.id,s.status,s.total_amount::text,s.notes,s.created_at,s.branch_id,
+        b.name AS branch_name,c.name AS customer_name
+      FROM sales s
+      JOIN branches b ON b.id = s.branch_id
+      LEFT JOIN customers c ON c.id = s.customer_id
+      WHERE s.tenant_id = $1 AND s.id = $2 AND s.deleted_at IS NULL
+      LIMIT 1
+      `,
+      [context.tenantId, saleId],
+    );
+    const sale = ensureFound(saleResult.rows[0], "Venda");
+    const [items, payments, settingsResult] = await Promise.all([
+      this.database.tenantQuery<SaleDocumentItemRow>(
+        context.tenantId,
+        `SELECT description,quantity::text AS quantity,unit_price::text AS "unitPrice",discount_amount::text AS "discountAmount"
+         FROM sale_items WHERE tenant_id=$1 AND sale_id=$2 ORDER BY description ASC`,
+        [context.tenantId, saleId],
+      ),
+      this.database.tenantQuery<SaleDocumentPaymentRow>(
+        context.tenantId,
+        `SELECT method,amount::text AS amount,status FROM sale_payments WHERE tenant_id=$1 AND sale_id=$2 ORDER BY created_at ASC`,
+        [context.tenantId, saleId],
+      ),
+      this.database.tenantQuery<{ value: Record<string, unknown> | null }>(
+        context.tenantId,
+        "SELECT value FROM branch_settings WHERE tenant_id=$1 AND branch_id=$2 AND key='printing' AND deleted_at IS NULL LIMIT 1",
+        [context.tenantId, sale.branch_id],
+      ),
+    ]);
+    const settings = settingsResult.rows[0]?.value ?? {};
+    const width = settings.receiptWidth === "58" ? 58 : 80;
+    const showLogo = settings.receiptShowLogo !== false;
+    const showDocument = settings.receiptShowDocument !== false;
+    const copies = Math.max(1, Math.min(5, Number(settings.receiptCopies ?? 1)));
+    const footer = typeof settings.receiptFooter === "string" ? settings.receiptFooter : branding.footerNote;
+    const paid = payments.rows.reduce((sum, payment) => sum + Number(payment.amount), 0);
+    const copyHtml = Array.from({ length: copies }, (_, index) => receiptCopyHtml({
+      branding,
+      sale,
+      items: items.rows,
+      payments: payments.rows,
+      paid,
+      width,
+      showLogo,
+      showDocument,
+      footer,
+      copyIndex: index + 1,
+      copies,
+    })).join("");
+    return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Comprovante ${escapeHtml(sale.id.slice(0, 8))}</title><style>
+      @page{size:${width}mm auto;margin:0}
+      *{box-sizing:border-box}
+      body{margin:0;background:#f8fafc;font-family:Arial,sans-serif;color:#111827}
+      .receipt{width:${width}mm;min-height:120mm;margin:0 auto;padding:4mm;background:#fff;break-after:page}
+      .center{text-align:center}.muted{color:#6b7280}.line{border-top:1px dashed #9ca3af;margin:8px 0}
+      .logo{max-width:${width === 58 ? 34 : 46}mm;max-height:18mm;object-fit:contain;margin:0 auto 5px;display:block}
+      h1{font-size:13px;margin:0 0 4px}p{margin:2px 0;font-size:10px;line-height:1.35}
+      table{width:100%;border-collapse:collapse;font-size:10px}td{padding:2px 0;vertical-align:top}.num{text-align:right;white-space:nowrap}
+      .total{font-size:13px;font-weight:700}.badge{display:inline-block;border:1px solid #111827;border-radius:999px;padding:2px 6px;font-size:9px}
+      @media screen{body{padding:16px}.receipt{box-shadow:0 8px 28px rgba(15,23,42,.14)}}
+    </style></head><body>${copyHtml}<script>window.onload=()=>window.print()</script></body></html>`;
+  }
+
+  async requestFiscalIssue(context: TenantContext, saleId: string) {
+    const sale = await this.database.tenantQuery<{ id: string; status: string }>(
+      context.tenantId,
+      "SELECT id,status FROM sales WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL",
+      [context.tenantId, saleId],
+    );
+    ensureFound(sale.rows[0], "Venda");
+    if (sale.rows[0]!.status === "cancelled") throw new BadRequestException("Venda cancelada não pode emitir NFC-e.");
+    const fiscal = await this.database.tenantQuery<{ status: string; settings: Record<string, string>; has_credential: boolean }>(
+      context.tenantId,
+      `SELECT i.status,COALESCE(i.settings,'{}') settings,
+        EXISTS(SELECT 1 FROM integration_credentials ic WHERE ic.tenant_integration_id=i.id) AS has_credential
+       FROM tenant_integrations i WHERE i.tenant_id=$1 AND i.provider='fiscal' LIMIT 1`,
+      [context.tenantId],
+    );
+    const current = fiscal.rows[0];
+    if (!current || current.status !== "configured" || !current.has_credential) {
+      throw new BadRequestException("Configure a integração fiscal em homologação antes de emitir NFC-e.");
+    }
+    await this.database.tenantQuery(
+      context.tenantId,
+      `INSERT INTO audit_logs (tenant_id,actor_user_id,action,entity_type,entity_id,metadata)
+       VALUES ($1,$2,'fiscal.nfce.issue.requested','sale',$3,$4::jsonb)`,
+      [
+        context.tenantId,
+        context.userId ?? null,
+        saleId,
+        JSON.stringify({ provider: current.settings.provider ?? "pendente", environment: current.settings.environment ?? "homologation" }),
+      ],
+    );
+    return {
+      status: "pending_provider",
+      message: "Solicitação fiscal registrada. A transmissão real será ativada quando o provedor NFC-e for definido.",
+    };
+  }
 }
 
 async function assertBranch(client: PoolClient, tenantId: string, branchId: string) {
@@ -605,6 +718,65 @@ async function assertBranch(client: PoolClient, tenantId: string, branchId: stri
     [tenantId, branchId],
   );
   ensureFound(branch.rows[0], "Filial");
+}
+
+function receiptCopyHtml(input: {
+  branding: Awaited<ReturnType<typeof loadTenantBranding>>;
+  sale: {
+    id: string;
+    total_amount: string;
+    created_at: Date;
+    branch_name: string;
+    customer_name: string | null;
+  };
+  items: SaleDocumentItemRow[];
+  payments: SaleDocumentPaymentRow[];
+  paid: number;
+  width: number;
+  showLogo: boolean;
+  showDocument: boolean;
+  footer?: string;
+  copyIndex: number;
+  copies: number;
+}) {
+  const openAmount = Math.max(0, Number(input.sale.total_amount) - input.paid);
+  return `<main class="receipt">
+    <div class="center">
+      ${input.showLogo && input.branding.logoUrl ? `<img class="logo" src="${escapeHtml(input.branding.logoUrl)}" alt="Logo">` : ""}
+      <h1>${escapeHtml(input.branding.tradingName || input.branding.companyName)}</h1>
+      ${input.showDocument && input.branding.documentId ? `<p>${escapeHtml(input.branding.documentId)}</p>` : ""}
+      ${input.branding.website ? `<p class="muted">${escapeHtml(input.branding.website)}</p>` : ""}
+      <p><span class="badge">COMPROVANTE SEM VALOR FISCAL</span></p>
+    </div>
+    <div class="line"></div>
+    <p><strong>Venda:</strong> ${escapeHtml(input.sale.id.slice(0, 8))}</p>
+    <p><strong>Loja:</strong> ${escapeHtml(input.sale.branch_name)}</p>
+    <p><strong>Cliente:</strong> ${escapeHtml(input.sale.customer_name ?? "Consumidor final")}</p>
+    <p><strong>Emissão:</strong> ${escapeHtml(input.sale.created_at.toLocaleString("pt-BR"))}</p>
+    <div class="line"></div>
+    <table><tbody>
+      ${input.items.map((item) => `<tr><td>${escapeHtml(item.description)}<br><span class="muted">${escapeHtml(item.quantity)} x ${escapeHtml(toMoney(item.unitPrice))}${Number(item.discountAmount) ? ` desc. ${escapeHtml(toMoney(item.discountAmount))}` : ""}</span></td><td class="num">${escapeHtml(toMoney(Number(item.quantity) * Number(item.unitPrice) - Number(item.discountAmount)))}</td></tr>`).join("")}
+    </tbody></table>
+    <div class="line"></div>
+    <table><tbody>
+      ${input.payments.map((payment) => `<tr><td>${escapeHtml(payment.method)} · ${escapeHtml(payment.status)}</td><td class="num">${escapeHtml(toMoney(payment.amount))}</td></tr>`).join("")}
+    </tbody></table>
+    <p class="total">Total <span style="float:right">${escapeHtml(toMoney(input.sale.total_amount))}</span></p>
+    <p>Pago <span style="float:right">${escapeHtml(toMoney(input.paid))}</span></p>
+    <p>Em aberto <span style="float:right">${escapeHtml(toMoney(openAmount))}</span></p>
+    <div class="line"></div>
+    <p class="center muted">${escapeHtml(input.footer || "Obrigado pela preferência.")}</p>
+    <p class="center muted">Via ${input.copyIndex}/${input.copies} · Orien</p>
+  </main>`;
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 async function assertCustomer(client: PoolClient, tenantId: string, customerId: string) {

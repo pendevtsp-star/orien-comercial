@@ -668,7 +668,11 @@ function resolvePrintingSettings(input: Partial<PrintingSettingsInput>): Printin
     labelSize: input.labelSize ?? "50x30",
     dpi: input.dpi ?? "203",
     receiptMode: input.receiptMode ?? "browser",
+    receiptWidth: input.receiptWidth ?? "80",
     receiptCopies: Number(input.receiptCopies ?? 1),
+    receiptShowLogo: input.receiptShowLogo ?? true,
+    receiptShowDocument: input.receiptShowDocument ?? true,
+    receiptFooter: input.receiptFooter ?? "",
     defaultPrinterName: input.defaultPrinterName ?? "",
     silentPrint: Boolean(input.silentPrint),
   };
