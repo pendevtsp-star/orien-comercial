@@ -14,6 +14,9 @@ type Ticket = {
   branchName?: string;
   openedByName?: string;
   messageCount: number;
+  slaDueAt?: string;
+  slaState?: string;
+  metadata?: { attachmentUrls?: string[] };
   createdAt: string;
   updatedAt: string;
 };
@@ -82,6 +85,7 @@ export default function SupportPage() {
     event.preventDefault();
     const form = event.currentTarget;
     const data = new FormData(form);
+    const attachmentUrl = String(data.get("attachmentUrl") ?? "").trim();
     try {
       const response = await apiFetch<{ id: string }>("/support", {
         method: "POST",
@@ -91,6 +95,8 @@ export default function SupportPage() {
           category: data.get("category"),
           priority: data.get("priority"),
           pageUrl: window.location.href,
+          requestId: data.get("requestId") || undefined,
+          attachmentUrls: attachmentUrl ? [attachmentUrl] : [],
         }),
       });
       form.reset();
@@ -153,6 +159,8 @@ export default function SupportPage() {
                   <Select name="category" label="Categoria" options={categories} />
                   <Select name="priority" label="Prioridade" options={[{ label: "Normal", value: "normal" }, { label: "Alta", value: "high" }, { label: "Crítica", value: "critical" }, { label: "Baixa", value: "low" }]} />
                 </div>
+                <Input name="attachmentUrl" label="Link do print/anexo" placeholder="Cole a URL do print, vídeo ou arquivo" />
+                <Input name="requestId" label="ID do erro" placeholder="Opcional: código exibido no erro" />
                 <Button type="submit" icon={<Plus size={16} />}>Abrir chamado</Button>
               </form>
             </CardContent>
@@ -174,7 +182,7 @@ export default function SupportPage() {
                 <button key={ticket.id} className={`rounded-md border p-3 text-left transition hover:bg-[var(--brand-surface)] ${selectedId === ticket.id ? "border-[var(--brand-secondary)] bg-[var(--brand-surface)]" : "border-[var(--brand-border)]"}`} onClick={() => setSelectedId(ticket.id)}>
                   <div className="flex flex-wrap gap-2"><Badge>{ticket.status}</Badge><Badge>{ticket.priority}</Badge></div>
                   <strong className="mt-2 block text-sm text-[var(--brand-primary)]">{ticket.subject}</strong>
-                  <span className="text-xs text-slate-500">{ticket.messageCount} mensagem(ns) · {new Date(ticket.updatedAt).toLocaleString("pt-BR")}</span>
+                  <span className="text-xs text-slate-500">{ticket.messageCount} mensagem(ns) · {slaText(ticket)} · {new Date(ticket.updatedAt).toLocaleString("pt-BR")}</span>
                 </button>
               )) : <EmptyState icon={<Headset size={18} />} title="Nenhum chamado neste filtro." description="Abra um chamado quando precisar de ajuda operacional ou técnica." />}
             </CardContent>
@@ -188,6 +196,7 @@ export default function SupportPage() {
                       <div className="flex flex-wrap gap-2"><Badge>{detail.ticket.status}</Badge><Badge>{detail.ticket.category}</Badge></div>
                       <h2 className="mt-2 text-xl font-semibold text-[var(--brand-primary)]">{detail.ticket.subject}</h2>
                       <p className="text-sm text-slate-500">Aberto por {detail.ticket.openedByName ?? "usuário"} · {new Date(detail.ticket.createdAt).toLocaleString("pt-BR")}</p>
+                      <p className="text-sm text-slate-500">{slaText(detail.ticket)}</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Button variant="secondary" onClick={() => void closeTicket("open")}>Reabrir</Button>
@@ -196,6 +205,13 @@ export default function SupportPage() {
                     </div>
                   </div>
                   <div className="grid gap-3">
+                    {(detail.ticket.requestId || detail.ticket.pageUrl || attachmentUrls(detail.ticket).length) ? (
+                      <div className="rounded-md border border-[var(--brand-border)] bg-[var(--brand-surface)] p-3 text-sm text-[var(--brand-primary)]">
+                        {detail.ticket.requestId ? <p><strong>ID do erro:</strong> {detail.ticket.requestId}</p> : null}
+                        {detail.ticket.pageUrl ? <p><strong>Tela de origem:</strong> {detail.ticket.pageUrl}</p> : null}
+                        {attachmentUrls(detail.ticket).map((url) => <p key={url}><strong>Anexo:</strong> <a className="underline" href={url} target="_blank" rel="noreferrer">{url}</a></p>)}
+                      </div>
+                    ) : null}
                     {detail.messages.map((message) => (
                       <article key={message.id} className={`rounded-md border p-3 ${message.authorKind === "platform_user" ? "border-blue-100 bg-blue-50" : "border-[var(--brand-border)] bg-white"}`}>
                         <div className="flex items-center gap-2 text-xs text-slate-500"><MessageSquare size={14} />{message.authorName} · {new Date(message.createdAt).toLocaleString("pt-BR")}</div>
@@ -222,4 +238,22 @@ export default function SupportPage() {
       </section>
     </div>
   );
+}
+
+function slaText(ticket: Pick<Ticket, "slaDueAt" | "slaState">) {
+  if (!ticket.slaDueAt) return "SLA não calculado";
+  const date = new Date(ticket.slaDueAt).toLocaleString("pt-BR");
+  const labels: Record<string, string> = {
+    ok: "SLA em dia",
+    due_soon: "SLA próximo",
+    overdue: "SLA vencido",
+    resolved: "SLA encerrado",
+  };
+  return `${labels[ticket.slaState ?? "ok"] ?? "SLA"} até ${date}`;
+}
+
+function attachmentUrls(ticket: { metadata?: { attachmentUrls?: unknown } }) {
+  return Array.isArray(ticket.metadata?.attachmentUrls)
+    ? ticket.metadata.attachmentUrls.filter((url): url is string => typeof url === "string")
+    : [];
 }

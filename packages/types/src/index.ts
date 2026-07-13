@@ -300,6 +300,7 @@ export const supportTicketCreateSchema = z.object({
   priority: z.enum(["low", "normal", "high", "critical"]).default("normal"),
   pageUrl: z.string().trim().max(500).optional(),
   requestId: z.string().trim().max(120).optional(),
+  attachmentUrls: z.array(z.string().url().max(800)).max(5).default([]),
 });
 
 export const supportTicketMessageSchema = z.object({

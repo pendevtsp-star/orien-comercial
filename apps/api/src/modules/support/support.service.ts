@@ -12,6 +12,7 @@ type TicketInput = {
   priority: string;
   pageUrl?: string;
   requestId?: string;
+  attachmentUrls?: string[];
 };
 
 @Injectable()
@@ -44,6 +45,7 @@ export class SupportService {
       `
       SELECT t.id,t.subject,t.category,t.priority,t.status,t.page_url AS "pageUrl",
         t.request_id AS "requestId",t.created_at AS "createdAt",t.updated_at AS "updatedAt",
+        ${slaDueSql("t")} AS "slaDueAt",${slaStateSql("t")} AS "slaState",t.metadata,
         b.name AS "branchName",u.name AS "openedByName",
         (SELECT count(*)::int FROM support_ticket_messages m WHERE m.ticket_id=t.id AND m.internal_note=false) AS "messageCount"
       FROM support_tickets t
@@ -71,8 +73,8 @@ export class SupportService {
       const branchId = context.branchId ?? input.branchId ?? null;
       const ticket = await client.query<{ id: string }>(
         `INSERT INTO support_tickets
-          (tenant_id,branch_id,opened_by_user_id,subject,description,category,priority,page_url,request_id,status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'open')
+          (tenant_id,branch_id,opened_by_user_id,subject,description,category,priority,page_url,request_id,metadata,status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,'open')
          RETURNING id`,
         [
           context.tenantId,
@@ -84,6 +86,7 @@ export class SupportService {
           input.priority,
           input.pageUrl ?? null,
           input.requestId ?? null,
+          JSON.stringify({ attachmentUrls: input.attachmentUrls ?? [] }),
         ],
       );
       const ticketId = ticket.rows[0]!.id;
@@ -106,6 +109,7 @@ export class SupportService {
       context.tenantId,
       `SELECT t.id,t.subject,t.description,t.category,t.priority,t.status,t.page_url AS "pageUrl",
         t.request_id AS "requestId",t.created_at AS "createdAt",t.updated_at AS "updatedAt",
+        ${slaDueSql("t")} AS "slaDueAt",${slaStateSql("t")} AS "slaState",t.metadata,
         t.branch_id AS "branchId",b.name AS "branchName",u.name AS "openedByName"
        FROM support_tickets t
        LEFT JOIN branches b ON b.id=t.branch_id
@@ -164,4 +168,23 @@ export class SupportService {
     );
     return ensureFound(result.rows[0], "Chamado");
   }
+}
+
+function slaDueSql(alias: string) {
+  return `CASE ${alias}.priority
+    WHEN 'critical' THEN ${alias}.created_at + interval '4 hours'
+    WHEN 'high' THEN ${alias}.created_at + interval '1 day'
+    WHEN 'normal' THEN ${alias}.created_at + interval '2 days'
+    ELSE ${alias}.created_at + interval '5 days'
+  END`;
+}
+
+function slaStateSql(alias: string) {
+  const due = slaDueSql(alias);
+  return `CASE
+    WHEN ${alias}.status IN ('resolved','closed') THEN 'resolved'
+    WHEN now() > (${due}) THEN 'overdue'
+    WHEN now() > (${due}) - interval '4 hours' THEN 'due_soon'
+    ELSE 'ok'
+  END`;
 }

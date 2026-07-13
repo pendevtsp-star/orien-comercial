@@ -467,6 +467,7 @@ export class PlatformService {
     const result = await this.database.pool.query(
       `SELECT st.id,st.tenant_id AS "tenantId",t.name AS "tenantName",st.subject,st.category,st.priority,st.status,
         st.request_id AS "requestId",st.page_url AS "pageUrl",st.created_at AS "createdAt",st.updated_at AS "updatedAt",
+        ${platformSlaDueSql("st")} AS "slaDueAt",${platformSlaStateSql("st")} AS "slaState",st.metadata,
         u.name AS "openedByName",
         (SELECT count(*)::int FROM support_ticket_messages m WHERE m.ticket_id=st.id) AS "messageCount"
        FROM support_tickets st
@@ -485,6 +486,7 @@ export class PlatformService {
     const ticket = await this.database.pool.query(
       `SELECT st.id,st.tenant_id AS "tenantId",t.name AS "tenantName",st.subject,st.description,st.category,st.priority,st.status,
         st.request_id AS "requestId",st.page_url AS "pageUrl",st.created_at AS "createdAt",st.updated_at AS "updatedAt",
+        ${platformSlaDueSql("st")} AS "slaDueAt",${platformSlaStateSql("st")} AS "slaState",st.metadata,
         u.name AS "openedByName"
        FROM support_tickets st
        JOIN tenants t ON t.id=st.tenant_id
@@ -916,6 +918,25 @@ function totp(secret: string, offset = 0) {
 }
 function hashRecoveryCode(value: string) {
   return createHash("sha256").update(value.replace(/[\s-]/g, "").toUpperCase()).digest("hex");
+}
+
+function platformSlaDueSql(alias: string) {
+  return `CASE ${alias}.priority
+    WHEN 'critical' THEN ${alias}.created_at + interval '4 hours'
+    WHEN 'high' THEN ${alias}.created_at + interval '1 day'
+    WHEN 'normal' THEN ${alias}.created_at + interval '2 days'
+    ELSE ${alias}.created_at + interval '5 days'
+  END`;
+}
+
+function platformSlaStateSql(alias: string) {
+  const due = platformSlaDueSql(alias);
+  return `CASE
+    WHEN ${alias}.status IN ('resolved','closed') THEN 'resolved'
+    WHEN now() > (${due}) THEN 'overdue'
+    WHEN now() > (${due}) - interval '4 hours' THEN 'due_soon'
+    ELSE 'ok'
+  END`;
 }
 
 function stringSetting(value: unknown, fallback: string, maxLength: number) {

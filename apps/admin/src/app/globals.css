@@ -468,6 +468,23 @@ textarea {
   border-radius: 4px;
   padding: 6px 8px;
 }
+.note-box {
+  display: grid;
+  gap: 6px;
+  margin: 14px 0;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 12px;
+  background: rgba(8, 20, 39, 0.68);
+  color: #dbeafe;
+  overflow-wrap: anywhere;
+}
+.note-box p {
+  margin: 0;
+}
+.note-box a {
+  color: #f5c34a;
+}
 @media (max-width: 980px) {
   .admin {
     grid-template-columns: 1fr;

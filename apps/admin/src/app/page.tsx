@@ -37,6 +37,20 @@ function money(value: unknown) {
 function date(value: unknown) {
   return value ? new Date(String(value)).toLocaleString("pt-BR") : "-";
 }
+function supportSlaText(ticket: any) {
+  if (!ticket?.slaDueAt) return "SLA não calculado";
+  const labels: Record<string, string> = {
+    ok: "SLA em dia",
+    due_soon: "SLA próximo",
+    overdue: "SLA vencido",
+    resolved: "SLA encerrado",
+  };
+  return `${labels[ticket.slaState ?? "ok"] ?? "SLA"} até ${date(ticket.slaDueAt)}`;
+}
+function supportAttachmentUrls(ticket: any) {
+  const urls = ticket?.metadata?.attachmentUrls;
+  return Array.isArray(urls) ? urls.filter((url): url is string => typeof url === "string") : [];
+}
 
 export default function Admin() {
   const [dashboard, setDashboard] = useState<any>(null);
@@ -928,7 +942,7 @@ function Support({ tickets, sessions, act }: any) {
                   <td>
                     {item.subject}
                     <br />
-                    <small>{item.category} · {item.messageCount} mensagens</small>
+                    <small>{item.category} · {item.messageCount} mensagens · {supportSlaText(item)}</small>
                   </td>
                   <td><span className="pill">{item.status}</span></td>
                   <td>{item.priority}</td>
@@ -957,6 +971,16 @@ function Support({ tickets, sessions, act }: any) {
             <p className="eyebrow">CHAMADO</p>
             <h2>{detail.ticket.subject}</h2>
             <p className="muted">{detail.ticket.tenantName} · {detail.ticket.openedByName ?? "Usuário"} · {date(detail.ticket.createdAt)}</p>
+            <p className="muted">{supportSlaText(detail.ticket)}</p>
+            {(detail.ticket.requestId || detail.ticket.pageUrl || supportAttachmentUrls(detail.ticket).length) ? (
+              <div className="note-box">
+                {detail.ticket.requestId ? <p><strong>Request ID:</strong> {detail.ticket.requestId}</p> : null}
+                {detail.ticket.pageUrl ? <p><strong>Origem:</strong> <a href={detail.ticket.pageUrl} target="_blank" rel="noreferrer">{detail.ticket.pageUrl}</a></p> : null}
+                {supportAttachmentUrls(detail.ticket).map((url) => (
+                  <p key={url}><strong>Anexo:</strong> <a href={url} target="_blank" rel="noreferrer">{url}</a></p>
+                ))}
+              </div>
+            ) : null}
             <div className="inline-actions">
               {["open", "waiting_support", "waiting_customer", "resolved", "closed"].map((status) => (
                 <button key={status} className="btn small" onClick={() => void act(() => call(`/platform/support-tickets/${detail.ticket.id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }), "Status do chamado atualizado.")}>{status}</button>
