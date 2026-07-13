@@ -124,6 +124,7 @@ export default function PosPage() {
   const [error, setError] = useState<string | null>(null);
   const [productionMode, setProductionMode] = useState(false);
   const scannerRef = useRef<HTMLInputElement>(null);
+  const paymentAmountRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     void Promise.all([
@@ -200,7 +201,7 @@ export default function PosPage() {
     };
   }, []);
   useEffect(() => {
-    const search = productSearch.trim();
+    const search = parseQuantityCode(productSearch).code.trim();
     if (search.length < 2) {
       setProductSuggestions([]);
       return;
@@ -228,21 +229,6 @@ export default function PosPage() {
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Falha ao consultar caixa."));
   }, [branchId]);
-  useEffect(() => {
-    function shortcut(event: KeyboardEvent) {
-      if (event.key === "F2") {
-        event.preventDefault();
-        scannerRef.current?.focus();
-      }
-      if (event.key === "F4") setPaymentMethod("cash");
-      if (event.key === "F6") setPaymentMethod("pix");
-      if (event.key === "F7") setPaymentMethod("asaas_pix");
-      if (event.key === "F8") setPaymentMethod("card");
-    }
-    window.addEventListener("keydown", shortcut);
-    return () => window.removeEventListener("keydown", shortcut);
-  }, []);
-
   const total = useMemo(
     () => cart.reduce((sum, item) => sum + item.quantity * item.unitPrice - item.discountAmount, 0),
     [cart],
@@ -289,10 +275,11 @@ export default function PosPage() {
     scannerRef.current?.focus();
   }
   async function addFirstManualSuggestion() {
+    const parsed = parseQuantityCode(productSearch);
+    const search = parsed.code.trim().toLowerCase();
     const product =
       productSuggestions[0] ??
       products.find((item) => {
-        const search = productSearch.trim().toLowerCase();
         return (
           item.name.toLowerCase().includes(search) ||
           item.sku?.toLowerCase() === search ||
@@ -303,11 +290,11 @@ export default function PosPage() {
       setError("Nenhum produto encontrado para a busca informada.");
       return;
     }
-    await addProduct(product, manualQuantity);
+    await addProduct(product, parsed.quantity ?? manualQuantity);
   }
 
   async function addProduct(product: Product, quantity = 1) {
-    const quantityToAdd = Math.max(1, Math.floor(Number(quantity) || 1));
+    const quantityToAdd = Math.max(0.001, Number(quantity) || 1);
     const currentQuantity = cart.find((item) => item.productId === product.id)?.quantity ?? 0;
     let resolvedPrice = Number(product.salePrice);
     try {
@@ -340,6 +327,7 @@ export default function PosPage() {
     setProductSuggestions([]);
     setManualQuantity(1);
     setError(null);
+    window.setTimeout(() => scannerRef.current?.focus(), 0);
   }
 
   async function openCash(event: FormEvent<HTMLFormElement>) {
@@ -398,6 +386,63 @@ export default function PosPage() {
     setPaymentParts((current) => [...current, { method: paymentMethod, amount, status: "paid" }]);
     setPaymentAmount("");
   }
+  function selectPayment(method: string) {
+    setPaymentMethod(method);
+    setPaymentAmount((current) => current || remainingPayment.toFixed(2));
+    window.setTimeout(() => paymentAmountRef.current?.focus(), 0);
+  }
+  function clearDraft() {
+    if (!cart.length) return;
+    if (!window.confirm("Limpar todos os itens da venda em montagem?")) return;
+    setCart([]);
+    setPaymentParts([]);
+    setPaymentAmount("");
+    setCustomerId("");
+    setCustomerDocument("");
+    setLoyaltyPointsToRedeem(0);
+    setLoyaltyRewardId("");
+    setLoyaltyCouponCode("");
+    setNotice("");
+    setError(null);
+    window.setTimeout(() => scannerRef.current?.focus(), 0);
+  }
+  useEffect(() => {
+    function shortcut(event: KeyboardEvent) {
+      if (event.key === "F2") {
+        event.preventDefault();
+        scannerRef.current?.focus();
+      }
+      if (event.key === "F4") {
+        event.preventDefault();
+        selectPayment("cash");
+      }
+      if (event.key === "F6") {
+        event.preventDefault();
+        selectPayment("pix");
+      }
+      if (event.key === "F7") {
+        event.preventDefault();
+        selectPayment("asaas_pix");
+      }
+      if (event.key === "F8") {
+        event.preventDefault();
+        selectPayment("credit_card");
+      }
+      if (event.key === "F9") {
+        event.preventDefault();
+        selectPayment("debit_card");
+      }
+      if (event.key === "F10") {
+        event.preventDefault();
+        void finishSale();
+      }
+      if (event.key === "Escape" && document.activeElement?.tagName !== "INPUT") {
+        scannerRef.current?.focus();
+      }
+    }
+    window.addEventListener("keydown", shortcut);
+    return () => window.removeEventListener("keydown", shortcut);
+  }, [cash, cart, paymentMethod, paymentParts, payableTotal]);
   async function toggleProductionMode() {
     try {
       if (document.fullscreenElement) await document.exitFullscreen();
@@ -493,6 +538,9 @@ export default function PosPage() {
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={repeatLastSale} disabled={!cash}>
               Repetir última venda
+            </Button>
+            <Button variant="secondary" onClick={clearDraft} disabled={!cart.length}>
+              Limpar venda
             </Button>
             <Button
               variant="secondary"
@@ -609,7 +657,7 @@ export default function PosPage() {
                     ref={scannerRef}
                     label="Leitor de código de barras · F2"
                     value={scanner}
-                    placeholder="Leia o código, use 3*789 ou 789*3 e pressione Enter"
+                    placeholder="Leia o código ou use 3*789 e pressione Enter"
                     onChange={(event) => setScanner(event.target.value)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
@@ -632,7 +680,7 @@ export default function PosPage() {
                   <Autocomplete
                     label="Adicionar produto manualmente"
                     value={productSearch}
-                    placeholder="Digite nome, SKU ou código"
+                    placeholder="Digite nome, SKU, código ou 3*produto"
                     onValueChange={setProductSearch}
                     options={productSuggestions.map((product) => ({
                       value: product.id,
@@ -647,7 +695,8 @@ export default function PosPage() {
                     emptyText="Nenhum produto encontrado. Confira o nome, SKU ou código."
                     onOptionSelect={(option) => {
                       const product = productSuggestions.find((item) => item.id === option.value);
-                      if (product) void addProduct(product, manualQuantity);
+                      const quantity = parseQuantityCode(productSearch).quantity ?? manualQuantity;
+                      if (product) void addProduct(product, quantity);
                     }}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
@@ -655,6 +704,7 @@ export default function PosPage() {
                         void addFirstManualSuggestion();
                       }
                     }}
+                    hint="↑ ↓ navega, Enter adiciona. Use 3*produto para quantidade rápida."
                   />
                   <Input
                     label="Qtd"
@@ -668,6 +718,10 @@ export default function PosPage() {
                 </div>
               </div>
             )}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--brand-border)] pt-3 text-xs text-slate-500">
+              <span>F2 scanner · F4 dinheiro · F6 Pix · F8 crédito · F9 débito · F10 concluir</span>
+              <span>{cart.length ? `${cart.length} item(ns) na venda` : "Venda em montagem"}</span>
+            </div>
             <div className="grid max-h-[42vh] gap-2 overflow-y-auto pr-1">
               {cart.length ? (
                 cart.map((item) => (
@@ -824,53 +878,54 @@ export default function PosPage() {
                 active={paymentMethod === "cash"}
                 label="Dinheiro F4"
                 icon={<Banknote size={18} />}
-                onClick={() => setPaymentMethod("cash")}
+                onClick={() => selectPayment("cash")}
               />
               <PaymentButton
                 active={paymentMethod === "pix"}
                 label="Pix F6"
                 icon={<WalletCards size={18} />}
-                onClick={() => setPaymentMethod("pix")}
+                onClick={() => selectPayment("pix")}
               />
               <PaymentButton
                 active={paymentMethod === "asaas_pix"}
                 label="Pix Asaas F7"
                 icon={<WalletCards size={18} />}
-                onClick={() => setPaymentMethod("asaas_pix")}
+                onClick={() => selectPayment("asaas_pix")}
               />
               <PaymentButton
                 active={paymentMethod === "credit_card"}
                 label="Crédito F8"
                 icon={<CreditCard size={18} />}
-                onClick={() => setPaymentMethod("credit_card")}
+                onClick={() => selectPayment("credit_card")}
               />
               <PaymentButton
                 active={paymentMethod === "debit_card"}
-                label="Débito"
+                label="Débito F9"
                 icon={<CreditCard size={18} />}
-                onClick={() => setPaymentMethod("debit_card")}
+                onClick={() => selectPayment("debit_card")}
               />
               <PaymentButton
                 active={paymentMethod === "store_credit"}
                 label="Crediário"
                 icon={<CircleDollarSign size={18} />}
-                onClick={() => setPaymentMethod("store_credit")}
+                onClick={() => selectPayment("store_credit")}
               />
               <PaymentButton
                 active={paymentMethod === "bank_transfer"}
                 label="Transferência"
                 icon={<Landmark size={18} />}
-                onClick={() => setPaymentMethod("bank_transfer")}
+                onClick={() => selectPayment("bank_transfer")}
               />
               <PaymentButton
                 active={paymentMethod === "other"}
                 label="Outra forma"
                 icon={<WalletCards size={18} />}
-                onClick={() => setPaymentMethod("other")}
+                onClick={() => selectPayment("other")}
               />
             </div>
             <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
               <input
+                ref={paymentAmountRef}
                 className="h-10 min-w-0 rounded-md border border-white/20 bg-white px-3 text-sm text-slate-950"
                 type="number"
                 step="0.01"
@@ -962,7 +1017,7 @@ export default function PosPage() {
               disabled={!cash || !cart.length}
               onClick={() => void finishSale()}
             >
-              Concluir venda
+              Concluir venda · F10
             </Button>
             <p className="text-xs leading-5 text-white/65">
               Fechamento enxuto: adicione produtos, escolha uma ou mais formas de pagamento e
