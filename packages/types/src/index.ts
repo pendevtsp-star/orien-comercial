@@ -49,17 +49,19 @@ export const inviteListQuerySchema = paginationQuerySchema.extend({
   search: z.string().trim().max(120).optional(),
 });
 
-export const auditLogListQuerySchema = paginationQuerySchema.extend({
-  sortBy: z.enum(["createdAt", "action", "entityType"]).optional(),
-  sortDirection: z.enum(["asc", "desc"]).default("desc"),
-  entityType: z.string().trim().min(1).max(120).optional(),
-  entityId: uuidSchema.optional(),
-  actorUserId: uuidSchema.optional(),
-  startDate: z.string().date().optional(),
-  endDate: z.string().date().optional(),
-}).refine((value) => !value.startDate || !value.endDate || value.endDate >= value.startDate, {
-  message: "endDate must be after startDate",
-});
+export const auditLogListQuerySchema = paginationQuerySchema
+  .extend({
+    sortBy: z.enum(["createdAt", "action", "entityType"]).optional(),
+    sortDirection: z.enum(["asc", "desc"]).default("desc"),
+    entityType: z.string().trim().min(1).max(120).optional(),
+    entityId: uuidSchema.optional(),
+    actorUserId: uuidSchema.optional(),
+    startDate: z.string().date().optional(),
+    endDate: z.string().date().optional(),
+  })
+  .refine((value) => !value.startDate || !value.endDate || value.endDate >= value.startDate, {
+    message: "endDate must be after startDate",
+  });
 
 export const dashboardQuerySchema = z
   .object({
@@ -156,7 +158,12 @@ export const productBarcodeLookupSchema = z.object({
 });
 
 export const productSkuSuggestionSchema = z.object({
-  prefix: z.string().trim().toUpperCase().regex(/^[A-Z0-9]{2,12}$/).optional(),
+  prefix: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z0-9]{2,12}$/)
+    .optional(),
 });
 
 export const customerCreateSchema = z.object({
@@ -206,6 +213,7 @@ export const saleCreateSchema = z.object({
   customerId: uuidSchema.optional(),
   customerDocument: z.string().trim().max(20).optional(),
   loyaltyPointsToRedeem: z.coerce.number().int().min(0).default(0),
+  loyaltyRewardId: uuidSchema.optional(),
   fiscalRequested: z.boolean().default(false),
   items: z.array(saleItemSchema).min(1).max(100),
   payments: z.array(salePaymentSchema).max(10).default([]),
@@ -302,14 +310,18 @@ export const rolePermissionsUpdateSchema = z.object({
 
 export const supportTicketListQuerySchema = paginationQuerySchema.extend({
   status: z.enum(["open", "waiting_support", "waiting_customer", "resolved", "closed"]).optional(),
-  category: z.enum(["general", "billing", "technical", "operation", "integration", "bug", "suggestion"]).optional(),
+  category: z
+    .enum(["general", "billing", "technical", "operation", "integration", "bug", "suggestion"])
+    .optional(),
 });
 
 export const supportTicketCreateSchema = z.object({
   branchId: uuidSchema.optional(),
   subject: z.string().trim().min(4).max(180),
   description: z.string().trim().min(10).max(3000),
-  category: z.enum(["general", "billing", "technical", "operation", "integration", "bug", "suggestion"]).default("general"),
+  category: z
+    .enum(["general", "billing", "technical", "operation", "integration", "bug", "suggestion"])
+    .default("general"),
   priority: z.enum(["low", "normal", "high", "critical"]).default("normal"),
   pageUrl: z.string().trim().max(500).optional(),
   requestId: z.string().trim().max(120).optional(),
@@ -376,26 +388,37 @@ export const purchaseXmlPreviewSchema = z.object({
   branchId: uuidSchema,
 });
 
-export const purchaseXmlCommitSchema = z.object({
-  branchId: uuidSchema,
-  supplierId: uuidSchema.optional(),
-  supplierName: z.string().trim().min(2).max(180).optional(),
-  documentKey: z.string().trim().regex(/^\d{44}$/).optional(),
-  documentNumber: z.string().trim().min(1).max(80),
-  notes: z.string().trim().max(500).optional(),
-  items: z.array(z.object({
-    sourceIndex: z.coerce.number().int().min(0),
-    action: z.enum(["link", "create", "ignore"]),
-    productId: uuidSchema.optional(),
-    name: z.string().trim().min(2).max(180),
-    barcode: z.string().trim().max(64).optional(),
-    sku: z.string().trim().max(64).optional(),
-    quantity: z.coerce.number().positive(),
-    unitCost: z.coerce.number().min(0),
-  })).min(1).max(300),
-}).refine((value) => value.supplierId || value.supplierName, {
-  message: "supplierId or supplierName is required",
-});
+export const purchaseXmlCommitSchema = z
+  .object({
+    branchId: uuidSchema,
+    supplierId: uuidSchema.optional(),
+    supplierName: z.string().trim().min(2).max(180).optional(),
+    documentKey: z
+      .string()
+      .trim()
+      .regex(/^\d{44}$/)
+      .optional(),
+    documentNumber: z.string().trim().min(1).max(80),
+    notes: z.string().trim().max(500).optional(),
+    items: z
+      .array(
+        z.object({
+          sourceIndex: z.coerce.number().int().min(0),
+          action: z.enum(["link", "create", "ignore"]),
+          productId: uuidSchema.optional(),
+          name: z.string().trim().min(2).max(180),
+          barcode: z.string().trim().max(64).optional(),
+          sku: z.string().trim().max(64).optional(),
+          quantity: z.coerce.number().positive(),
+          unitCost: z.coerce.number().min(0),
+        }),
+      )
+      .min(1)
+      .max(300),
+  })
+  .refine((value) => value.supplierId || value.supplierName, {
+    message: "supplierId or supplierName is required",
+  });
 
 export const supplierCreateSchema = z.object({
   branchId: uuidSchema.optional(),

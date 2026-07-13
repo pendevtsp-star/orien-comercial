@@ -137,8 +137,16 @@ export class SalesService {
             "SELECT response FROM idempotency_keys WHERE tenant_id=$1 AND scope='sales.create' AND key=$2 FOR UPDATE",
             [context.tenantId, idempotencyKey],
           );
-          if (existing.rows[0]?.response) return existing.rows[0].response as { id: string; totalAmount: number; paidAmount: number; openAmount: number };
-          throw new BadRequestException("Venda em processamento. Aguarde alguns segundos e tente novamente.");
+          if (existing.rows[0]?.response)
+            return existing.rows[0].response as {
+              id: string;
+              totalAmount: number;
+              paidAmount: number;
+              openAmount: number;
+            };
+          throw new BadRequestException(
+            "Venda em processamento. Aguarde alguns segundos e tente novamente.",
+          );
         }
       }
       await assertBranch(client, context.tenantId, input.branchId);
@@ -153,9 +161,14 @@ export class SalesService {
       }
 
       const productIds = input.items.map((item) => item.productId);
-      const products = await client.query<{ id: string; name: string; sale_price: string }>(
+      const products = await client.query<{
+        id: string;
+        name: string;
+        sale_price: string;
+        category_id: string | null;
+      }>(
         `
-        SELECT id, name, sale_price
+        SELECT id, name, sale_price, category_id
         FROM products
         WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NULL AND is_active = true
         `,
@@ -190,9 +203,61 @@ export class SalesService {
       }, 0);
       let loyaltyDiscountAmount = 0;
       let loyaltyWalletId: string | null = null;
-      const loyaltyPointsToRedeem = Math.floor(Number(input.loyaltyPointsToRedeem ?? 0));
+      type LoyaltyRewardRow = {
+        id: string;
+        name: string;
+        reward_type: "discount" | "coupon" | "cashback" | "bonus_product";
+        points_required: number;
+        value_amount: string | null;
+        product_id: string | null;
+        coupon_code: string | null;
+      };
+      let loyaltyReward: LoyaltyRewardRow | null = null;
+      let loyaltyPointsToRedeem = Math.floor(Number(input.loyaltyPointsToRedeem ?? 0));
+      if (input.loyaltyRewardId) {
+        if (!input.customerId)
+          throw new BadRequestException("Informe um cliente para resgatar uma recompensa.");
+        const reward = await client.query<LoyaltyRewardRow>(
+          "SELECT id,name,reward_type,points_required,value_amount::text,product_id,coupon_code FROM loyalty_rewards WHERE tenant_id=$1 AND id=$2 AND is_active=true AND (ends_at IS NULL OR ends_at>=now()) FOR UPDATE",
+          [context.tenantId, input.loyaltyRewardId],
+        );
+        loyaltyReward = reward.rows[0] ?? null;
+        if (!loyaltyReward)
+          throw new BadRequestException("A recompensa selecionada não está disponível.");
+        if (loyaltyReward.reward_type !== "discount")
+          throw new BadRequestException(
+            "Esta recompensa deve ser resgatada no atendimento; use uma recompensa de desconto no PDV.",
+          );
+        loyaltyPointsToRedeem = loyaltyReward.points_required;
+        loyaltyDiscountAmount = Math.min(
+          grossSaleAmount,
+          Number(loyaltyReward.value_amount ?? loyaltyPointsToRedeem * 0.01),
+        );
+      }
       if (loyaltyPointsToRedeem > 0) {
-        if (!input.customerId) throw new BadRequestException("Informe um cliente para resgatar pontos.");
+        if (!input.customerId)
+          throw new BadRequestException("Informe um cliente para resgatar pontos.");
+        const policy = await client.query<{
+          max_redemption_points: number | null;
+          approval_threshold_points: number | null;
+        }>(
+          `SELECT max_redemption_points,approval_threshold_points
+           FROM loyalty_campaigns
+           WHERE tenant_id=$1 AND is_active=true AND (branch_id IS NULL OR branch_id=$2)
+             AND (starts_at IS NULL OR starts_at<=now()) AND (ends_at IS NULL OR ends_at>=now())
+           ORDER BY created_at DESC LIMIT 1`,
+          [context.tenantId, input.branchId],
+        );
+        const maxPoints = policy.rows[0]?.max_redemption_points;
+        if (maxPoints && loyaltyPointsToRedeem > maxPoints)
+          throw new BadRequestException(`O limite desta campanha é ${maxPoints} pontos por venda.`);
+        const approvalThreshold = policy.rows[0]?.approval_threshold_points;
+        if (
+          approvalThreshold &&
+          loyaltyPointsToRedeem >= approvalThreshold &&
+          !context.permissions.includes(permissions.sales.cancel)
+        )
+          throw new ForbiddenException("Este resgate exige aprovação de gerente ou administrador.");
         const wallet = await client.query<{ id: string; points_balance: number }>(
           "SELECT id, points_balance FROM loyalty_wallets WHERE tenant_id=$1 AND customer_id=$2 FOR UPDATE",
           [context.tenantId, input.customerId],
@@ -200,7 +265,7 @@ export class SalesService {
         if (!wallet.rows[0] || wallet.rows[0].points_balance < loyaltyPointsToRedeem)
           throw new BadRequestException("Saldo de pontos insuficiente para o desconto.");
         loyaltyWalletId = wallet.rows[0].id;
-        loyaltyDiscountAmount = Math.min(grossSaleAmount, loyaltyPointsToRedeem * 0.01);
+        loyaltyDiscountAmount ||= Math.min(grossSaleAmount, loyaltyPointsToRedeem * 0.01);
       }
       const totalAmount = Math.max(0, grossSaleAmount - loyaltyDiscountAmount);
 
@@ -306,12 +371,23 @@ export class SalesService {
             context.tenantId,
             loyaltyWalletId,
             -loyaltyPointsToRedeem,
-            JSON.stringify({ saleId, discountAmount: loyaltyDiscountAmount }),
+            JSON.stringify({
+              saleId,
+              discountAmount: loyaltyDiscountAmount,
+              rewardId: loyaltyReward?.id ?? null,
+            }),
           ],
         );
         await client.query(
-          "INSERT INTO loyalty_redemptions (tenant_id,wallet_id,sale_id,amount,status) VALUES ($1,$2,$3,$4,'confirmed')",
-          [context.tenantId, loyaltyWalletId, saleId, loyaltyDiscountAmount],
+          "INSERT INTO loyalty_redemptions (tenant_id,wallet_id,sale_id,reward_id,amount,status,metadata) VALUES ($1,$2,$3,$4,$5,'confirmed',$6::jsonb)",
+          [
+            context.tenantId,
+            loyaltyWalletId,
+            saleId,
+            loyaltyReward?.id ?? null,
+            loyaltyDiscountAmount,
+            JSON.stringify({ rewardName: loyaltyReward?.name ?? null }),
+          ],
         );
       }
 
@@ -334,20 +410,100 @@ export class SalesService {
       }
 
       if (input.customerId && openAmount <= 0) {
-        const campaign = await client.query<{ rule: { pointsPerReal?: number }; expires_in_days: number | null; minimum_sale_amount: string }>(
-          `SELECT lr.rule,lc.expires_in_days,lc.minimum_sale_amount::text FROM loyalty_campaigns lc JOIN loyalty_rules lr ON lr.campaign_id=lc.id WHERE lc.tenant_id=$1 AND lc.is_active=true AND (lc.branch_id IS NULL OR lc.branch_id=$2) AND (lc.starts_at IS NULL OR lc.starts_at<=now()) AND (lc.ends_at IS NULL OR lc.ends_at>=now()) ORDER BY lc.created_at DESC LIMIT 1`,
-          [context.tenantId, input.branchId],
+        const campaign = await client.query<{
+          id: string;
+          rule: { pointsPerReal?: number };
+          expires_in_days: number | null;
+          minimum_sale_amount: string;
+        }>(
+          `SELECT lc.id,lr.rule,lc.expires_in_days,lc.minimum_sale_amount::text FROM loyalty_campaigns lc JOIN loyalty_rules lr ON lr.campaign_id=lc.id WHERE lc.tenant_id=$1 AND lc.is_active=true AND lc.automation_type IS NULL AND (lc.branch_id IS NULL OR lc.branch_id=$2) AND (lc.starts_at IS NULL OR lc.starts_at<=now()) AND (lc.ends_at IS NULL OR lc.ends_at>=now()) AND (cardinality(lc.product_ids)=0 OR lc.product_ids && $3::uuid[]) AND (cardinality(lc.category_ids)=0 OR lc.category_ids && $4::uuid[]) ORDER BY lc.created_at DESC LIMIT 1`,
+          [
+            context.tenantId,
+            input.branchId,
+            productIds,
+            products.rows
+              .map((product) => product.category_id)
+              .filter((value): value is string => Boolean(value)),
+          ],
         );
         const pointsPerReal = Number(campaign.rows[0]?.rule?.pointsPerReal ?? 0);
-        const points = totalAmount >= Number(campaign.rows[0]?.minimum_sale_amount ?? 0) ? Math.floor(totalAmount * pointsPerReal) : 0;
+        const points =
+          totalAmount >= Number(campaign.rows[0]?.minimum_sale_amount ?? 0)
+            ? Math.floor(totalAmount * pointsPerReal)
+            : 0;
         if (points > 0) {
           const wallet = await client.query<{ id: string }>(
             `INSERT INTO loyalty_wallets (tenant_id,customer_id,points_balance) VALUES ($1,$2,0) ON CONFLICT (tenant_id,customer_id) DO UPDATE SET updated_at=now() RETURNING id`,
             [context.tenantId, input.customerId],
           );
-          await client.query("UPDATE loyalty_wallets SET points_balance=points_balance+$2,updated_at=now() WHERE id=$1", [wallet.rows[0]!.id, points]);
-          const ledger = await client.query<{ id: string }>("INSERT INTO loyalty_ledger (tenant_id,wallet_id,movement_type,points,expires_at,metadata) VALUES ($1,$2,'sale_paid',$3,CASE WHEN $4::int IS NULL THEN NULL ELSE now() + ($4::text || ' days')::interval END,$5::jsonb) RETURNING id", [context.tenantId, wallet.rows[0]!.id, points, campaign.rows[0]?.expires_in_days ?? null, JSON.stringify({ saleId, totalAmount })]);
-          await client.query("INSERT INTO loyalty_point_lots (tenant_id,wallet_id,source_ledger_id,original_points,remaining_points,expires_at) VALUES ($1,$2,$3,$4,$4,CASE WHEN $5::int IS NULL THEN NULL ELSE now() + ($5::text || ' days')::interval END)", [context.tenantId, wallet.rows[0]!.id, ledger.rows[0]!.id, points, campaign.rows[0]?.expires_in_days ?? null]);
+          await client.query(
+            "UPDATE loyalty_wallets SET points_balance=points_balance+$2,updated_at=now() WHERE id=$1",
+            [wallet.rows[0]!.id, points],
+          );
+          const ledger = await client.query<{ id: string }>(
+            "INSERT INTO loyalty_ledger (tenant_id,wallet_id,movement_type,points,expires_at,metadata) VALUES ($1,$2,'sale_paid',$3,CASE WHEN $4::int IS NULL THEN NULL ELSE now() + ($4::text || ' days')::interval END,$5::jsonb) RETURNING id",
+            [
+              context.tenantId,
+              wallet.rows[0]!.id,
+              points,
+              campaign.rows[0]?.expires_in_days ?? null,
+              JSON.stringify({ saleId, totalAmount }),
+            ],
+          );
+          await client.query(
+            "INSERT INTO loyalty_point_lots (tenant_id,wallet_id,source_ledger_id,original_points,remaining_points,expires_at) VALUES ($1,$2,$3,$4,$4,CASE WHEN $5::int IS NULL THEN NULL ELSE now() + ($5::text || ' days')::interval END)",
+            [
+              context.tenantId,
+              wallet.rows[0]!.id,
+              ledger.rows[0]!.id,
+              points,
+              campaign.rows[0]?.expires_in_days ?? null,
+            ],
+          );
+        }
+        const firstPurchase = await client.query<{ id: string; automation_points: number }>(
+          `SELECT id,automation_points FROM loyalty_campaigns WHERE tenant_id=$1 AND is_active=true AND automation_type='first_purchase' AND (branch_id IS NULL OR branch_id=$2) AND (starts_at IS NULL OR starts_at<=now()) AND (ends_at IS NULL OR ends_at>=now()) AND (cardinality(product_ids)=0 OR product_ids && $3::uuid[]) AND (cardinality(category_ids)=0 OR category_ids && $4::uuid[]) ORDER BY created_at DESC LIMIT 1`,
+          [
+            context.tenantId,
+            input.branchId,
+            productIds,
+            products.rows
+              .map((product) => product.category_id)
+              .filter((value): value is string => Boolean(value)),
+          ],
+        );
+        const priorSales = await client.query<{ count: string }>(
+          "SELECT count(*)::text FROM sales WHERE tenant_id=$1 AND customer_id=$2 AND status='sold'",
+          [context.tenantId, input.customerId],
+        );
+        if (firstPurchase.rows[0] && Number(priorSales.rows[0]?.count) === 1) {
+          const run = await client.query<{ id: string }>(
+            "INSERT INTO loyalty_automation_runs (tenant_id,campaign_id,customer_id,automation_type,period_key) VALUES ($1,$2,$3,'first_purchase',$4) ON CONFLICT DO NOTHING RETURNING id",
+            [context.tenantId, firstPurchase.rows[0].id, input.customerId, saleId],
+          );
+          if (run.rowCount) {
+            const wallet = await client.query<{ id: string }>(
+              "INSERT INTO loyalty_wallets (tenant_id,customer_id,points_balance) VALUES ($1,$2,0) ON CONFLICT (tenant_id,customer_id) DO UPDATE SET updated_at=now() RETURNING id",
+              [context.tenantId, input.customerId],
+            );
+            await client.query(
+              "UPDATE loyalty_wallets SET points_balance=points_balance+$2,updated_at=now() WHERE id=$1",
+              [wallet.rows[0]!.id, firstPurchase.rows[0].automation_points],
+            );
+            await client.query(
+              "INSERT INTO loyalty_ledger (tenant_id,wallet_id,movement_type,points,metadata) VALUES ($1,$2,'automation',$3,$4::jsonb)",
+              [
+                context.tenantId,
+                wallet.rows[0]!.id,
+                firstPurchase.rows[0].automation_points,
+                JSON.stringify({
+                  saleId,
+                  campaignId: firstPurchase.rows[0].id,
+                  automationType: "first_purchase",
+                }),
+              ],
+            );
+          }
         }
       }
 
@@ -378,7 +534,11 @@ export class SalesService {
       }
 
       const response = { id: saleId, totalAmount, paidAmount, openAmount };
-      if (idempotencyKey) await client.query("UPDATE idempotency_keys SET response=$3::jsonb,completed_at=now() WHERE tenant_id=$1 AND scope='sales.create' AND key=$2", [context.tenantId, idempotencyKey, JSON.stringify(response)]);
+      if (idempotencyKey)
+        await client.query(
+          "UPDATE idempotency_keys SET response=$3::jsonb,completed_at=now() WHERE tenant_id=$1 AND scope='sales.create' AND key=$2",
+          [context.tenantId, idempotencyKey, JSON.stringify(response)],
+        );
       return response;
     });
   }
@@ -609,7 +769,8 @@ export class SalesService {
       sections: [
         {
           title: "Resumo financeiro",
-          subtitle: "Documento simples para conferência. A emissão fiscal será tratada no módulo fiscal quando configurado.",
+          subtitle:
+            "Documento simples para conferência. A emissão fiscal será tratada no módulo fiscal quando configurado.",
           metrics: [
             { label: "Total", value: toMoney(sale.total_amount) },
             {
@@ -709,21 +870,24 @@ export class SalesService {
     const showLogo = settings.receiptShowLogo !== false;
     const showDocument = settings.receiptShowDocument !== false;
     const copies = Math.max(1, Math.min(5, Number(settings.receiptCopies ?? 1)));
-    const footer = typeof settings.receiptFooter === "string" ? settings.receiptFooter : branding.footerNote;
+    const footer =
+      typeof settings.receiptFooter === "string" ? settings.receiptFooter : branding.footerNote;
     const paid = payments.rows.reduce((sum, payment) => sum + Number(payment.amount), 0);
-    const copyHtml = Array.from({ length: copies }, (_, index) => receiptCopyHtml({
-      branding,
-      sale,
-      items: items.rows,
-      payments: payments.rows,
-      paid,
-      width,
-      showLogo,
-      showDocument,
-      footer,
-      copyIndex: index + 1,
-      copies,
-    })).join("");
+    const copyHtml = Array.from({ length: copies }, (_, index) =>
+      receiptCopyHtml({
+        branding,
+        sale,
+        items: items.rows,
+        payments: payments.rows,
+        paid,
+        width,
+        showLogo,
+        showDocument,
+        footer,
+        copyIndex: index + 1,
+        copies,
+      }),
+    ).join("");
     return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Comprovante ${escapeHtml(sale.id.slice(0, 8))}</title><style>
       @page{size:${width}mm auto;margin:0}
       *{box-sizing:border-box}
@@ -740,15 +904,24 @@ export class SalesService {
 
   async requestFiscalIssue(context: TenantContext, saleId: string) {
     return this.database.tenantTransaction(context.tenantId, async (client) => {
-      const sale = await client.query<{ id: string; status: string; branch_id: string; customer_document: string | null }>(
+      const sale = await client.query<{
+        id: string;
+        status: string;
+        branch_id: string;
+        customer_document: string | null;
+      }>(
         "SELECT id,status,branch_id,customer_document FROM sales WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL",
         [context.tenantId, saleId],
       );
       ensureFound(sale.rows[0], "Venda");
       ensureBranchAccess(context, sale.rows[0]!.branch_id);
-      if (sale.rows[0]!.status === "cancelled") throw new BadRequestException("Venda cancelada não pode emitir NFC-e.");
+      if (sale.rows[0]!.status === "cancelled")
+        throw new BadRequestException("Venda cancelada não pode emitir NFC-e.");
       const current = await resolveFiscalIntegration(client, context.tenantId);
-      if (!current.configured) throw new BadRequestException("Configure a integração fiscal em homologação antes de emitir NFC-e.");
+      if (!current.configured)
+        throw new BadRequestException(
+          "Configure a integração fiscal em homologação antes de emitir NFC-e.",
+        );
       const fiscal = await enqueueFiscalDocument(client, context, {
         saleId,
         branchId: sale.rows[0]!.branch_id,
@@ -806,10 +979,16 @@ async function consumeLoyaltyLots(
   for (const lot of lots.rows) {
     if (remaining <= 0) break;
     const consumed = Math.min(remaining, lot.remaining_points);
-    await client.query("UPDATE loyalty_point_lots SET remaining_points=remaining_points-$2 WHERE id=$1", [lot.id, consumed]);
+    await client.query(
+      "UPDATE loyalty_point_lots SET remaining_points=remaining_points-$2 WHERE id=$1",
+      [lot.id, consumed],
+    );
     remaining -= consumed;
   }
-  if (remaining > 0) throw new BadRequestException("O saldo disponível de pontos foi alterado. Atualize e tente novamente.");
+  if (remaining > 0)
+    throw new BadRequestException(
+      "O saldo disponível de pontos foi alterado. Atualize e tente novamente.",
+    );
 }
 
 async function assertBranch(client: PoolClient, tenantId: string, branchId: string) {

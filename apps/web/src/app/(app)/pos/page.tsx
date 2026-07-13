@@ -1,7 +1,29 @@
 "use client";
 
-import { Autocomplete, Badge, Button, Card, CardContent, DataTable, Input, PageHeader, Select } from "@sgc/ui";
-import { Banknote, CircleDollarSign, CreditCard, Landmark, Maximize2, Minimize2, Minus, Plus, ScanBarcode, WalletCards, X } from "lucide-react";
+import {
+  Autocomplete,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  DataTable,
+  Input,
+  PageHeader,
+  Select,
+} from "@sgc/ui";
+import {
+  Banknote,
+  CircleDollarSign,
+  CreditCard,
+  Landmark,
+  Maximize2,
+  Minimize2,
+  Minus,
+  Plus,
+  ScanBarcode,
+  WalletCards,
+  X,
+} from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { apiFetch, openApiDocument } from "../../../lib/api";
@@ -28,6 +50,13 @@ interface Customer {
 interface LoyaltyWallet {
   customerId: string;
   pointsBalance: number;
+}
+interface LoyaltyReward {
+  id: string;
+  name: string;
+  rewardType: "discount" | "coupon" | "cashback" | "bonus_product";
+  pointsRequired: number;
+  valueAmount?: number;
 }
 interface CashSession {
   id: string;
@@ -66,10 +95,12 @@ export default function PosPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [wallets, setWallets] = useState<LoyaltyWallet[]>([]);
+  const [loyaltyRewards, setLoyaltyRewards] = useState<LoyaltyReward[]>([]);
   const [branchId, setBranchId] = useState("");
   const [customerId, setCustomerId] = useState("");
   const [customerDocument, setCustomerDocument] = useState("");
   const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState(0);
+  const [loyaltyRewardId, setLoyaltyRewardId] = useState("");
   const [fiscalRequested, setFiscalRequested] = useState(false);
   const [cash, setCash] = useState<CashSession | null>(null);
   const [cashHistory, setCashHistory] = useState<CashHistory[]>([]);
@@ -115,25 +146,37 @@ export default function PosPage() {
   }, []);
   function repeatLastSale() {
     const last = window.localStorage.getItem("orien.pos.last-cart");
-    if (!last) { setError("Ainda não há uma venda anterior neste dispositivo."); return; }
+    if (!last) {
+      setError("Ainda não há uma venda anterior neste dispositivo.");
+      return;
+    }
     try {
       const saved = JSON.parse(last) as { items: CartItem[]; branchId: string };
       setCart(saved.items);
       if (saved.branchId) setBranchId(saved.branchId);
       setPaymentParts([]);
       setError(null);
-    } catch { setError("Não foi possível recuperar a última composição."); }
+    } catch {
+      setError("Não foi possível recuperar a última composição.");
+    }
   }
   useEffect(() => {
     setIsOnline(navigator.onLine);
     const queueKey = "orien.pos.pending-sales";
     const sync = async () => {
-      const pending = JSON.parse(window.localStorage.getItem(queueKey) ?? "[]") as Array<{ payload: Record<string, unknown>; idempotencyKey: string }>;
+      const pending = JSON.parse(window.localStorage.getItem(queueKey) ?? "[]") as Array<{
+        payload: Record<string, unknown>;
+        idempotencyKey: string;
+      }>;
       if (!pending.length || !navigator.onLine) return setPendingSync(pending.length);
       const remaining: Array<Record<string, unknown>> = [];
       for (const sale of pending) {
         try {
-          await apiFetch("/sales", { method: "POST", headers: { "idempotency-key": sale.idempotencyKey }, body: JSON.stringify(sale.payload) });
+          await apiFetch("/sales", {
+            method: "POST",
+            headers: { "idempotency-key": sale.idempotencyKey },
+            body: JSON.stringify(sale.payload),
+          });
         } catch {
           remaining.push(sale);
         }
@@ -208,7 +251,8 @@ export default function PosPage() {
   const allocatedPayment = paymentParts.reduce((sum, item) => sum + item.amount, 0);
   const remainingPayment = Math.max(0, payableTotal - allocatedPayment);
   const typedPayment = Number(paymentAmount || 0);
-  const estimatedChange = paymentMethod === "cash" ? Math.max(0, typedPayment - remainingPayment) : 0;
+  const estimatedChange =
+    paymentMethod === "cash" ? Math.max(0, typedPayment - remainingPayment) : 0;
   const branchOptions = branches.map((branch) => ({ label: branch.name, value: branch.id }));
   const customerOptions = [
     { label: "Consumidor final", value: "" },
@@ -218,11 +262,23 @@ export default function PosPage() {
     const selected = customers.find((customer) => customer.id === customerId);
     if (selected?.document) setCustomerDocument(selected.document);
     setLoyaltyPointsToRedeem(0);
+    setLoyaltyRewardId("");
+    if (!customerId) {
+      setLoyaltyRewards([]);
+      return;
+    }
+    void apiFetch<{ data: LoyaltyReward[] }>(`/loyalty/rewards/available?customerId=${customerId}`)
+      .then((result) =>
+        setLoyaltyRewards(result.data.filter((reward) => reward.rewardType === "discount")),
+      )
+      .catch(() => setLoyaltyRewards([]));
   }, [customerId, customers]);
 
   async function scan() {
     const parsed = parseQuantityCode(scanner);
-    const product = products.find((item) => item.barcode === parsed.code || item.sku === parsed.code);
+    const product = products.find(
+      (item) => item.barcode === parsed.code || item.sku === parsed.code,
+    );
     if (!product) {
       setError(`Produto não encontrado para ${parsed.code}.`);
       return;
@@ -366,6 +422,7 @@ export default function PosPage() {
         customerId: customerId || undefined,
         customerDocument: customerDocument || undefined,
         loyaltyPointsToRedeem,
+        loyaltyRewardId: loyaltyRewardId || undefined,
         fiscalRequested,
         cashRegisterSessionId: cash.id,
         items: cart.map((item) => ({
@@ -379,23 +436,33 @@ export default function PosPage() {
       window.localStorage.setItem("orien.pos.last-cart", JSON.stringify({ items: cart, branchId }));
       if (!navigator.onLine) {
         const queueKey = "orien.pos.pending-sales";
-        const pending = JSON.parse(window.localStorage.getItem(queueKey) ?? "[]") as Array<{ payload: Record<string, unknown>; idempotencyKey: string }>;
+        const pending = JSON.parse(window.localStorage.getItem(queueKey) ?? "[]") as Array<{
+          payload: Record<string, unknown>;
+          idempotencyKey: string;
+        }>;
         pending.push({ payload, idempotencyKey: createIdempotencyKey() });
         window.localStorage.setItem(queueKey, JSON.stringify(pending));
         setPendingSync(pending.length);
       } else {
-        const result = await apiFetch<{ id?: string; sale?: { id?: string } }>("/sales", { method: "POST", headers: { "idempotency-key": createIdempotencyKey() }, body: JSON.stringify(payload) });
+        const result = await apiFetch<{ id?: string; sale?: { id?: string } }>("/sales", {
+          method: "POST",
+          headers: { "idempotency-key": createIdempotencyKey() },
+          body: JSON.stringify(payload),
+        });
         const saleId = result.id ?? result.sale?.id;
         if (saleId && printAfterSale && printing?.receiptMode !== "none") {
           const shouldOpenPrint = printing?.receiptMode === "thermal" || printing?.silentPrint;
           const receiptPath =
-            printing?.receiptMode === "thermal" ? `/sales/${saleId}/receipt` : `/sales/${saleId}/document`;
+            printing?.receiptMode === "thermal"
+              ? `/sales/${saleId}/receipt`
+              : `/sales/${saleId}/document`;
           void openApiDocument(receiptPath, shouldOpenPrint).catch(() => undefined);
         }
       }
       setCart([]);
       setPaymentParts([]);
       setLoyaltyPointsToRedeem(0);
+      setLoyaltyRewardId("");
       setError(null);
       scannerRef.current?.focus();
     } catch (err) {
@@ -410,8 +477,14 @@ export default function PosPage() {
         description="Scanner sempre disponível, atalhos de pagamento e controle de abertura e fechamento do caixa."
         actions={
           <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" onClick={repeatLastSale} disabled={!cash}>Repetir última venda</Button>
-            <Button variant="secondary" icon={productionMode ? <Minimize2 size={16} /> : <Maximize2 size={16} />} onClick={() => void toggleProductionMode()}>
+            <Button variant="secondary" onClick={repeatLastSale} disabled={!cash}>
+              Repetir última venda
+            </Button>
+            <Button
+              variant="secondary"
+              icon={productionMode ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+              onClick={() => void toggleProductionMode()}
+            >
               {productionMode ? "Sair da tela cheia" : "Modo produção"}
             </Button>
             <Button
@@ -494,6 +567,24 @@ export default function PosPage() {
                   step="0.01"
                   defaultValue="0"
                 />
+                {loyaltyRewards.length ? (
+                  <Select
+                    label="Recompensa disponível"
+                    value={loyaltyRewardId}
+                    onChange={(event) => {
+                      const reward = loyaltyRewards.find((item) => item.id === event.target.value);
+                      setLoyaltyRewardId(event.target.value);
+                      if (reward) setLoyaltyPointsToRedeem(reward.pointsRequired);
+                    }}
+                    options={[
+                      { label: "Usar pontos livremente", value: "" },
+                      ...loyaltyRewards.map((reward) => ({
+                        label: `${reward.name} · ${reward.pointsRequired} pontos`,
+                        value: reward.id,
+                      })),
+                    ]}
+                  />
+                ) : null}
                 <Button type="submit">Abrir caixa</Button>
               </form>
             ) : (
@@ -531,7 +622,9 @@ export default function PosPage() {
                     type="number"
                     min={1}
                     value={scanQuantity}
-                    onChange={(event) => setScanQuantity(Math.max(1, Number(event.target.value || 1)))}
+                    onChange={(event) =>
+                      setScanQuantity(Math.max(1, Number(event.target.value || 1)))
+                    }
                   />
                 </div>
                 <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_110px]">
@@ -543,7 +636,9 @@ export default function PosPage() {
                     options={productSuggestions.map((product) => ({
                       value: product.id,
                       label: product.name,
-                      detail: `${[product.sku, product.barcode].filter(Boolean).join(" · ") || "Sem código"} · ${Number(product.salePrice).toLocaleString("pt-BR", {
+                      detail: `${[product.sku, product.barcode].filter(Boolean).join(" · ") || "Sem código"} · ${Number(
+                        product.salePrice,
+                      ).toLocaleString("pt-BR", {
                         style: "currency",
                         currency: "BRL",
                       })}`,
@@ -565,7 +660,9 @@ export default function PosPage() {
                     type="number"
                     min={1}
                     value={manualQuantity}
-                    onChange={(event) => setManualQuantity(Math.max(1, Number(event.target.value || 1)))}
+                    onChange={(event) =>
+                      setManualQuantity(Math.max(1, Number(event.target.value || 1)))
+                    }
                   />
                 </div>
               </div>
@@ -612,7 +709,9 @@ export default function PosPage() {
                           const nextQuantity = Math.max(1, Number(event.target.value || 1));
                           setCart((current) =>
                             current.map((row) =>
-                              row.productId === item.productId ? { ...row, quantity: nextQuantity } : row,
+                              row.productId === item.productId
+                                ? { ...row, quantity: nextQuantity }
+                                : row,
                             ),
                           );
                         }}
@@ -664,7 +763,8 @@ export default function PosPage() {
               </p>
               {loyaltyDiscount > 0 ? (
                 <p className="mt-2 text-sm text-[var(--brand-accent)]">
-                  Desconto por pontos: {loyaltyDiscount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                  Desconto por pontos:{" "}
+                  {loyaltyDiscount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                 </p>
               ) : null}
             </div>
@@ -682,7 +782,10 @@ export default function PosPage() {
                   value={loyaltyPointsToRedeem}
                   onChange={(event) =>
                     setLoyaltyPointsToRedeem(
-                      Math.min(selectedWallet?.pointsBalance ?? 0, Math.max(0, Number(event.target.value || 0))),
+                      Math.min(
+                        selectedWallet?.pointsBalance ?? 0,
+                        Math.max(0, Number(event.target.value || 0)),
+                      ),
                     )
                   }
                 />
@@ -758,15 +861,32 @@ export default function PosPage() {
                   key={key}
                   type="button"
                   className="h-9 rounded-md border border-white/15 bg-white/10 text-sm font-medium text-white transition hover:bg-white/20"
-                  onClick={() => setPaymentAmount((current) => key === "Limpar" ? "" : `${current}${key}`)}
+                  onClick={() =>
+                    setPaymentAmount((current) => (key === "Limpar" ? "" : `${current}${key}`))
+                  }
                 >
                   {key}
                 </button>
               ))}
             </div>
             <div className="flex flex-wrap justify-between gap-2 rounded-md border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/75">
-              <span>Restante: <strong>{remainingPayment.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong></span>
-              {estimatedChange > 0 ? <span className="text-[var(--brand-accent)]">Troco: <strong>{estimatedChange.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong></span> : null}
+              <span>
+                Restante:{" "}
+                <strong>
+                  {remainingPayment.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                </strong>
+              </span>
+              {estimatedChange > 0 ? (
+                <span className="text-[var(--brand-accent)]">
+                  Troco:{" "}
+                  <strong>
+                    {estimatedChange.toLocaleString("pt-BR", {
+                      style: "currency",
+                      currency: "BRL",
+                    })}
+                  </strong>
+                </span>
+              ) : null}
             </div>
             {paymentParts.length ? (
               <div className="grid gap-1 text-xs text-white/75">
@@ -795,7 +915,8 @@ export default function PosPage() {
                 onChange={(event) => setPrintAfterSale(event.target.checked)}
               />
               <span>
-                Abrir comprovante de conferência ao concluir. O documento não tem valor fiscal e usa o padrão salvo em Impressoras.
+                Abrir comprovante de conferência ao concluir. O documento não tem valor fiscal e usa
+                o padrão salvo em Impressoras.
               </span>
             </label>
             <label className="flex items-start gap-2 rounded-md border border-white/15 bg-white/5 p-3 text-xs leading-5 text-white/75">
@@ -805,7 +926,9 @@ export default function PosPage() {
                 checked={fiscalRequested}
                 onChange={(event) => setFiscalRequested(event.target.checked)}
               />
-              <span>Solicitar NFC-e após a venda quando a integração fiscal estiver configurada.</span>
+              <span>
+                Solicitar NFC-e após a venda quando a integração fiscal estiver configurada.
+              </span>
             </label>
             <Button
               className="min-h-12 w-full bg-[var(--brand-accent)] text-base text-[var(--brand-primary)] hover:brightness-95"
@@ -910,12 +1033,18 @@ export default function PosPage() {
   );
 }
 
-function createIdempotencyKey() { return `pos_${crypto.randomUUID().replaceAll("-", "")}`; }
+function createIdempotencyKey() {
+  return `pos_${crypto.randomUUID().replaceAll("-", "")}`;
+}
 function parseQuantityCode(value: string) {
   const input = value.trim();
   const left = input.match(/^(\d+(?:[,.]\d+)?)\*(.+)$/);
   const right = input.match(/^(.+)\*(\d+(?:[,.]\d+)?)$/);
-  const quantity = left ? Number(left[1]!.replace(",", ".")) : right ? Number(right[2]!.replace(",", ".")) : undefined;
+  const quantity = left
+    ? Number(left[1]!.replace(",", "."))
+    : right
+      ? Number(right[2]!.replace(",", "."))
+      : undefined;
   const code = left ? left[2]!.trim() : right ? right[1]!.trim() : input;
   return { code, quantity: quantity && quantity > 0 ? quantity : undefined };
 }
@@ -926,7 +1055,21 @@ function receiptModeLabel(mode: string) {
 }
 
 function paymentMethodLabel(method: string) {
-  return ({ cash: "Dinheiro", pix: "Pix", asaas_pix: "Pix Asaas", credit_card: "Cartão de crédito", debit_card: "Cartão de débito", store_credit: "Crediário", bank_transfer: "Transferência", other: "Outra forma", card: "Cartão" } as Record<string, string>)[method] ?? method;
+  return (
+    (
+      {
+        cash: "Dinheiro",
+        pix: "Pix",
+        asaas_pix: "Pix Asaas",
+        credit_card: "Cartão de crédito",
+        debit_card: "Cartão de débito",
+        store_credit: "Crediário",
+        bank_transfer: "Transferência",
+        other: "Outra forma",
+        card: "Cartão",
+      } as Record<string, string>
+    )[method] ?? method
+  );
 }
 
 function PaymentButton({

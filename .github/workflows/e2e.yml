@@ -1,0 +1,50 @@
+name: E2E
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 5 * * 1-5"
+  pull_request:
+    paths:
+      - "apps/api/**"
+      - "packages/**"
+      - ".github/workflows/e2e.yml"
+
+jobs:
+  critical-flows:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: orien_e2e
+          POSTGRES_USER: sgc_owner
+          POSTGRES_PASSWORD: sgc_owner_password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U sgc_owner -d orien_e2e"
+          --health-interval 10s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:8-alpine
+        ports: ["6379:6379"]
+    env:
+      DATABASE_URL: postgresql://sgc_owner:sgc_owner_password@localhost:5432/orien_e2e
+      DATABASE_MIGRATION_URL: postgresql://sgc_owner:sgc_owner_password@localhost:5432/orien_e2e
+      REDIS_URL: redis://localhost:6379
+      JWT_ACCESS_SECRET: e2e-access-secret-at-least-thirty-two-chars
+      JWT_REFRESH_SECRET: e2e-refresh-secret-at-least-thirty-two-chars
+      COOKIE_SECRET: e2e-cookie-secret-at-least-thirty-two-chars
+      PASSWORD_PEPPER: e2e-password-pepper
+      INTEGRATIONS_ENCRYPTION_KEY: e2e-integrations-key-at-least-thirty-two
+      PLATFORM_OWNER_EMAIL: e2e@orien.test
+      PLATFORM_OWNER_PASSWORD: E2eOwner123!
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:migrate
+      - run: pnpm test:e2e

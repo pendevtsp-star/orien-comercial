@@ -1,1 +1,2 @@
 17 3 * * * root /srv/apps/orien_comercial/app/ops/backup-postgres.sh >> /srv/apps/orien_comercial/backups/backup.log 2>&1
+45 3 1 * * root latest=$(/bin/ls -1t /srv/apps/orien_comercial/backups/orien-*.dump 2>/dev/null | /usr/bin/head -n1) && /srv/apps/orien_comercial/app/ops/verify-backup-restore.sh "$latest" >> /srv/apps/orien_comercial/backups/restore-check.log 2>&1

@@ -1,24 +1,642 @@
 "use client";
 
-import { Badge, Button, Card, CardContent, DataTable, EmptyState, Input, PageHeader, Select, Tabs } from "@sgc/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  DataTable,
+  EmptyState,
+  Input,
+  PageHeader,
+  Select,
+  Tabs,
+} from "@sgc/ui";
 import { Clock3, Gift, Medal, Minus, Plus, RefreshCw, Sparkles } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../../../lib/api";
 
-type Wallet = { id: string; customerId: string; customerName: string; pointsBalance: number; document?: string; tierName?: string; expiringPoints?: number };
-type Campaign = { id: string; name: string; isActive: boolean; expiresInDays?: number | null; minimumSaleAmount?: number; rule?: { pointsPerReal?: number } };
-type Tier = { id: string; name: string; minimumPoints: number; multiplier: number; benefits?: string; isActive: boolean };
-type Reward = { id: string; name: string; rewardType: string; pointsRequired: number; valueAmount: number; couponCode?: string; isActive: boolean };
-type Overview = { campaigns: Campaign[]; tiers: Tier[]; rewards: Reward[]; metrics: { wallets: number; issued: number; redeemed: number; expiringPoints: number; loyaltySalesMonth: number; recurringCustomersMonth: number } };
+type Wallet = {
+  id: string;
+  customerId: string;
+  customerName: string;
+  pointsBalance: number;
+  document?: string;
+  tierName?: string;
+  expiringPoints?: number;
+};
+type Campaign = {
+  id: string;
+  name: string;
+  isActive: boolean;
+  expiresInDays?: number | null;
+  minimumSaleAmount?: number;
+  maxRedemptionPoints?: number | null;
+  approvalThresholdPoints?: number | null;
+  automationType?: string | null;
+  automationPoints?: number | null;
+  rule?: { pointsPerReal?: number };
+};
+type Tier = {
+  id: string;
+  name: string;
+  minimumPoints: number;
+  multiplier: number;
+  benefits?: string;
+  isActive: boolean;
+};
+type Reward = {
+  id: string;
+  name: string;
+  rewardType: string;
+  pointsRequired: number;
+  valueAmount: number;
+  couponCode?: string;
+  isActive: boolean;
+};
+type Overview = {
+  campaigns: Campaign[];
+  tiers: Tier[];
+  rewards: Reward[];
+  metrics: {
+    wallets: number;
+    issued: number;
+    redeemed: number;
+    expiringPoints: number;
+    loyaltySalesMonth: number;
+    recurringCustomersMonth: number;
+  };
+};
 
 export default function LoyaltyPage() {
-  const [overview, setOverview] = useState<Overview | null>(null); const [wallets, setWallets] = useState<Wallet[]>([]); const [customers, setCustomers] = useState<Array<{ id: string; name: string }>>([]); const [notice, setNotice] = useState(""); const [error, setError] = useState("");
-  async function load() { try { const [summary, walletResult, customerResult] = await Promise.all([apiFetch<Overview>("/loyalty/overview"), apiFetch<{ data: Wallet[] }>("/loyalty/wallets"), apiFetch<{ data: Array<{ id: string; name: string }> }>("/customers?pageSize=100")]); setOverview(summary); setWallets(walletResult.data); setCustomers(customerResult.data); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível carregar fidelidade."); } }
-  useEffect(() => { void load(); }, []); useEffect(() => { if (!notice && !error) return; const timer = window.setTimeout(() => { setNotice(""); setError(""); }, 6500); return () => window.clearTimeout(timer); }, [notice, error]);
-  async function submit(event: FormEvent<HTMLFormElement>, path: string, body: (form: FormData) => unknown, message: string) { event.preventDefault(); try { await apiFetch(path, { method: "POST", body: JSON.stringify(body(new FormData(event.currentTarget))) }); event.currentTarget.reset(); setNotice(message); await load(); } catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível concluir a operação."); } }
-  const money = (value: number) => Number(value).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-  return <div className="grid min-w-0 gap-6"><PageHeader title="Fidelidade e recompensas" description="Transforme recorrência em resultado com regras claras, benefícios e resgates auditáveis." actions={<div className="flex gap-2"><Button variant="secondary" icon={<Clock3 size={16} />} onClick={() => void apiFetch("/loyalty/expire", { method: "POST", body: "{}" }).then(() => { setNotice("Pontos vencidos revisados."); return load(); }).catch((cause) => setError(cause instanceof Error ? cause.message : "Não foi possível revisar expirações."))}>Processar expirações</Button><Button variant="secondary" icon={<RefreshCw size={16} />} onClick={() => void load()}>Atualizar</Button></div>} />{error ? <Banner text={error} tone="error" close={() => setError("")} /> : null}{notice ? <Banner text={notice} tone="success" close={() => setNotice("")} /> : null}<section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Clientes participantes" value={overview?.metrics.wallets ?? 0}/><Metric label="Pontos concedidos" value={overview?.metrics.issued ?? 0}/><Metric label="Pontos vencem em 30 dias" value={overview?.metrics.expiringPoints ?? 0} accent/><Metric label="Receita recorrente no mês" value={money(overview?.metrics.loyaltySalesMonth ?? 0)} detail={`${overview?.metrics.recurringCustomersMonth ?? 0} cliente(s) recorrente(s)`}/></section><Tabs defaultValue="campaigns" tabs={[{ value: "campaigns", label: "Campanhas", content: <div className="grid gap-4 xl:grid-cols-[420px_minmax(0,1fr)]"><Card><CardContent><form className="grid gap-3" onSubmit={(event) => void submit(event, "/loyalty/campaigns", (form) => ({ name: form.get("name"), pointsPerReal: Number(form.get("pointsPerReal")), startsAt: form.get("startsAt") || undefined, endsAt: form.get("endsAt") || undefined, expiresInDays: Number(form.get("expiresInDays") || 0) || undefined, minimumSaleAmount: Number(form.get("minimumSaleAmount") || 0) }), "Campanha criada.")}><Sparkles size={22}/><h2 className="font-semibold">Nova campanha</h2><Input name="name" label="Nome" placeholder="Clube de vantagens" required/><Input name="pointsPerReal" type="number" min="0.01" step="0.01" defaultValue="1" label="Pontos por R$ 1,00" required/><div className="grid gap-3 sm:grid-cols-2"><Input name="startsAt" type="datetime-local" label="Início"/><Input name="endsAt" type="datetime-local" label="Fim"/></div><div className="grid gap-3 sm:grid-cols-2"><Input name="expiresInDays" type="number" min="1" label="Expiração dos pontos (dias)" placeholder="Sem expiração"/><Input name="minimumSaleAmount" type="number" min="0" step="0.01" label="Compra mínima" defaultValue="0"/></div><Button type="submit">Criar campanha</Button></form></CardContent></Card><Card><CardContent><h2 className="font-semibold">Campanhas ativas e históricas</h2><div className="mt-4 grid gap-2">{overview?.campaigns.length ? overview.campaigns.map((campaign) => <div key={campaign.id} className="rounded-md border border-[var(--brand-border)] p-3"><div className="flex flex-wrap justify-between gap-2"><strong>{campaign.name}</strong><Badge>{campaign.isActive ? "Ativa" : "Inativa"}</Badge></div><p className="mt-1 text-sm text-slate-500">{campaign.rule?.pointsPerReal ?? 0} ponto(s) por real · compra mínima {money(Number(campaign.minimumSaleAmount ?? 0))} · {campaign.expiresInDays ? `vence em ${campaign.expiresInDays} dias` : "sem expiração"}</p></div>) : <EmptyState eyebrow="Programa" title="Nenhuma campanha criada." description="Crie uma regra para começar a pontuar compras." icon={<Gift size={20}/>}/>}</div></CardContent></Card></div> },{ value: "benefits", label: "Níveis e recompensas", content: <div className="grid gap-4 xl:grid-cols-2"><Card><CardContent><form className="grid gap-3" onSubmit={(event) => void submit(event, "/loyalty/tiers", (form) => ({ name: form.get("name"), minimumPoints: Number(form.get("minimumPoints")), multiplier: Number(form.get("multiplier")), benefits: form.get("benefits") }), "Nível criado.")}><Medal size={22}/><h2 className="font-semibold">Nível de cliente</h2><Input name="name" label="Nome" placeholder="Ouro" required/><div className="grid gap-3 sm:grid-cols-2"><Input name="minimumPoints" type="number" min="0" label="Pontos mínimos" required/><Input name="multiplier" type="number" min="0.1" step="0.1" defaultValue="1" label="Multiplicador" required/></div><Input name="benefits" label="Benefícios" placeholder="Atendimento prioritário"/><Button type="submit">Adicionar nível</Button></form><div className="mt-5 grid gap-2">{overview?.tiers.map((tier) => <div key={tier.id} className="rounded-md bg-[var(--brand-surface)] p-3 text-sm"><strong>{tier.name}</strong><span className="ml-2 text-slate-500">a partir de {tier.minimumPoints} pontos · {tier.multiplier}x</span>{tier.benefits ? <p className="mt-1 text-slate-500">{tier.benefits}</p> : null}</div>)}</div></CardContent></Card><Card><CardContent><form className="grid gap-3" onSubmit={(event) => void submit(event, "/loyalty/rewards", (form) => ({ name: form.get("name"), rewardType: form.get("rewardType"), pointsRequired: Number(form.get("pointsRequired")), valueAmount: Number(form.get("valueAmount") || 0), couponCode: form.get("couponCode") || undefined }), "Recompensa criada.")}><Gift size={22}/><h2 className="font-semibold">Recompensa disponível</h2><Input name="name" label="Nome" placeholder="R$ 10 de desconto" required/><Select name="rewardType" label="Tipo" options={[{ label: "Desconto", value: "discount" }, { label: "Cupom", value: "coupon" }, { label: "Crédito", value: "cashback" }, { label: "Produto brinde", value: "bonus_product" }]}/><div className="grid gap-3 sm:grid-cols-2"><Input name="pointsRequired" type="number" min="1" label="Pontos necessários" required/><Input name="valueAmount" type="number" min="0" step="0.01" label="Valor (quando houver)"/></div><Input name="couponCode" label="Código do cupom" placeholder="VANTAGEM10"/><Button type="submit">Adicionar recompensa</Button></form><div className="mt-5 grid gap-2">{overview?.rewards.map((reward) => <div key={reward.id} className="rounded-md bg-[var(--brand-surface)] p-3 text-sm"><strong>{reward.name}</strong><p className="mt-1 text-slate-500">{reward.pointsRequired} pontos · {reward.rewardType}{reward.couponCode ? ` · ${reward.couponCode}` : ""}</p></div>)}</div></CardContent></Card></div> },{ value: "wallets", label: "Clientes e resgates", content: <div className="grid gap-4 xl:grid-cols-[.8fr_1.2fr]"><Card><CardContent><div className="grid gap-5 lg:grid-cols-2"><PointsForm title="Conceder pontos" icon={<Plus size={16}/>} kind="award" customers={customers} onSubmit={(event, kind) => submit(event, `/loyalty/${kind}`, (form) => ({ customerId: form.get("customerId"), points: Number(form.get("points")), reason: form.get("reason") }), "Pontos concedidos.")}/><PointsForm title="Registrar resgate" icon={<Minus size={16}/>} kind="redeem" customers={customers} onSubmit={(event, kind) => submit(event, `/loyalty/${kind}`, (form) => ({ customerId: form.get("customerId"), points: Number(form.get("points")), reason: form.get("reason") }), "Resgate registrado.")}/></div></CardContent></Card><Card><CardContent><h2 className="font-semibold">Saldos e vencimentos</h2><DataTable rows={wallets} empty="Ainda não há clientes com pontos." columns={[{key:"customer",header:"Cliente",render:(row)=>row.customerName},{key:"tier",header:"Nível",render:(row)=><Badge>{row.tierName ?? "Sem nível"}</Badge>},{key:"points",header:"Pontos",render:(row)=>row.pointsBalance},{key:"expires",header:"Vencem em 30 dias",render:(row)=>row.expiringPoints ?? 0}]}/></CardContent></Card></div> }]} /></div>;
+  const [overview, setOverview] = useState<Overview | null>(null);
+  const [wallets, setWallets] = useState<Wallet[]>([]);
+  const [customers, setCustomers] = useState<Array<{ id: string; name: string }>>([]);
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+  async function load() {
+    try {
+      const [summary, walletResult, customerResult] = await Promise.all([
+        apiFetch<Overview>("/loyalty/overview"),
+        apiFetch<{ data: Wallet[] }>("/loyalty/wallets"),
+        apiFetch<{ data: Array<{ id: string; name: string }> }>("/customers?pageSize=100"),
+      ]);
+      setOverview(summary);
+      setWallets(walletResult.data);
+      setCustomers(customerResult.data);
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível carregar fidelidade.");
+    }
+  }
+  useEffect(() => {
+    void load();
+  }, []);
+  useEffect(() => {
+    if (!notice && !error) return;
+    const timer = window.setTimeout(() => {
+      setNotice("");
+      setError("");
+    }, 6500);
+    return () => window.clearTimeout(timer);
+  }, [notice, error]);
+  async function submit(
+    event: FormEvent<HTMLFormElement>,
+    path: string,
+    body: (form: FormData) => unknown,
+    message: string,
+  ) {
+    event.preventDefault();
+    try {
+      await apiFetch(path, {
+        method: "POST",
+        body: JSON.stringify(body(new FormData(event.currentTarget))),
+      });
+      event.currentTarget.reset();
+      setNotice(message);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível concluir a operação.");
+    }
+  }
+  const money = (value: number) =>
+    Number(value).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  return (
+    <div className="grid min-w-0 gap-6">
+      <PageHeader
+        title="Fidelidade e recompensas"
+        description="Transforme recorrência em resultado com regras claras, benefícios e resgates auditáveis."
+        actions={
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              icon={<Clock3 size={16} />}
+              onClick={() =>
+                void apiFetch("/loyalty/expire", { method: "POST", body: "{}" })
+                  .then(() => {
+                    setNotice("Pontos vencidos revisados.");
+                    return load();
+                  })
+                  .catch((cause) =>
+                    setError(
+                      cause instanceof Error
+                        ? cause.message
+                        : "Não foi possível revisar expirações.",
+                    ),
+                  )
+              }
+            >
+              Processar expirações
+            </Button>
+            <Button variant="secondary" icon={<RefreshCw size={16} />} onClick={() => void load()}>
+              Atualizar
+            </Button>
+          </div>
+        }
+      />
+      {error ? <Banner text={error} tone="error" close={() => setError("")} /> : null}
+      {notice ? <Banner text={notice} tone="success" close={() => setNotice("")} /> : null}
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric label="Clientes participantes" value={overview?.metrics.wallets ?? 0} />
+        <Metric label="Pontos concedidos" value={overview?.metrics.issued ?? 0} />
+        <Metric
+          label="Pontos vencem em 30 dias"
+          value={overview?.metrics.expiringPoints ?? 0}
+          accent
+        />
+        <Metric
+          label="Receita recorrente no mês"
+          value={money(overview?.metrics.loyaltySalesMonth ?? 0)}
+          detail={`${overview?.metrics.recurringCustomersMonth ?? 0} cliente(s) recorrente(s)`}
+        />
+      </section>
+      <Tabs
+        defaultValue="campaigns"
+        tabs={[
+          {
+            value: "campaigns",
+            label: "Campanhas",
+            content: (
+              <div className="grid gap-4 xl:grid-cols-[420px_minmax(0,1fr)]">
+                <Card>
+                  <CardContent>
+                    <form
+                      className="grid gap-3"
+                      onSubmit={(event) =>
+                        void submit(
+                          event,
+                          "/loyalty/campaigns",
+                          (form) => ({
+                            name: form.get("name"),
+                            pointsPerReal: Number(form.get("pointsPerReal")),
+                            startsAt: form.get("startsAt") || undefined,
+                            endsAt: form.get("endsAt") || undefined,
+                            expiresInDays: Number(form.get("expiresInDays") || 0) || undefined,
+                            minimumSaleAmount: Number(form.get("minimumSaleAmount") || 0),
+                            maxRedemptionPoints:
+                              Number(form.get("maxRedemptionPoints") || 0) || undefined,
+                            approvalThresholdPoints:
+                              Number(form.get("approvalThresholdPoints") || 0) || undefined,
+                            automationType: form.get("automationType") || undefined,
+                            automationPoints:
+                              Number(form.get("automationPoints") || 0) || undefined,
+                            inactivityDays: Number(form.get("inactivityDays") || 0) || undefined,
+                          }),
+                          "Campanha criada.",
+                        )
+                      }
+                    >
+                      <Sparkles size={22} />
+                      <h2 className="font-semibold">Nova campanha</h2>
+                      <Input name="name" label="Nome" placeholder="Clube de vantagens" required />
+                      <Input
+                        name="pointsPerReal"
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        defaultValue="1"
+                        label="Pontos por R$ 1,00"
+                        required
+                      />
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Input name="startsAt" type="datetime-local" label="Início" />
+                        <Input name="endsAt" type="datetime-local" label="Fim" />
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Input
+                          name="maxRedemptionPoints"
+                          type="number"
+                          min="1"
+                          label="Limite de resgate por venda"
+                          placeholder="Sem limite"
+                        />
+                        <Input
+                          name="approvalThresholdPoints"
+                          type="number"
+                          min="1"
+                          label="Aprovação gerencial a partir de"
+                          placeholder="Sem aprovação"
+                        />
+                      </div>
+                      <Select
+                        name="automationType"
+                        label="Gatilho automático"
+                        defaultValue=""
+                        options={[
+                          { label: "Sem gatilho automático", value: "" },
+                          { label: "Aniversário", value: "birthday" },
+                          { label: "Primeira compra", value: "first_purchase" },
+                          { label: "Retorno após inatividade", value: "inactivity" },
+                        ]}
+                      />
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Input
+                          name="automationPoints"
+                          type="number"
+                          min="1"
+                          label="Pontos do gatilho"
+                          placeholder="Ex.: 100"
+                        />
+                        <Input
+                          name="inactivityDays"
+                          type="number"
+                          min="1"
+                          label="Dias sem comprar"
+                          placeholder="Apenas retorno"
+                        />
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Input
+                          name="expiresInDays"
+                          type="number"
+                          min="1"
+                          label="Expiração dos pontos (dias)"
+                          placeholder="Sem expiração"
+                        />
+                        <Input
+                          name="minimumSaleAmount"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          label="Compra mínima"
+                          defaultValue="0"
+                        />
+                      </div>
+                      <Button type="submit">Criar campanha</Button>
+                    </form>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent>
+                    <h2 className="font-semibold">Campanhas ativas e históricas</h2>
+                    <div className="mt-4 grid gap-2">
+                      {overview?.campaigns.length ? (
+                        overview.campaigns.map((campaign) => (
+                          <div
+                            key={campaign.id}
+                            className="rounded-md border border-[var(--brand-border)] p-3"
+                          >
+                            <div className="flex flex-wrap justify-between gap-2">
+                              <strong>{campaign.name}</strong>
+                              <Badge>{campaign.isActive ? "Ativa" : "Inativa"}</Badge>
+                            </div>
+                            <p className="mt-1 text-sm text-slate-500">
+                              {campaign.rule?.pointsPerReal ?? 0} ponto(s) por real · compra mínima{" "}
+                              {money(Number(campaign.minimumSaleAmount ?? 0))} ·{" "}
+                              {campaign.expiresInDays
+                                ? `vence em ${campaign.expiresInDays} dias`
+                                : "sem expiração"}
+                            </p>
+                            {campaign.automationType ? (
+                              <p className="mt-1 text-xs text-slate-500">
+                                Gatilho:{" "}
+                                {campaign.automationType === "birthday"
+                                  ? "aniversário"
+                                  : campaign.automationType === "first_purchase"
+                                    ? "primeira compra"
+                                    : "retorno após inatividade"}{" "}
+                                · {campaign.automationPoints ?? 0} pontos
+                              </p>
+                            ) : null}
+                          </div>
+                        ))
+                      ) : (
+                        <EmptyState
+                          eyebrow="Programa"
+                          title="Nenhuma campanha criada."
+                          description="Crie uma regra para começar a pontuar compras."
+                          icon={<Gift size={20} />}
+                        />
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            ),
+          },
+          {
+            value: "benefits",
+            label: "Níveis e recompensas",
+            content: (
+              <div className="grid gap-4 xl:grid-cols-2">
+                <Card>
+                  <CardContent>
+                    <form
+                      className="grid gap-3"
+                      onSubmit={(event) =>
+                        void submit(
+                          event,
+                          "/loyalty/tiers",
+                          (form) => ({
+                            name: form.get("name"),
+                            minimumPoints: Number(form.get("minimumPoints")),
+                            multiplier: Number(form.get("multiplier")),
+                            benefits: form.get("benefits"),
+                          }),
+                          "Nível criado.",
+                        )
+                      }
+                    >
+                      <Medal size={22} />
+                      <h2 className="font-semibold">Nível de cliente</h2>
+                      <Input name="name" label="Nome" placeholder="Ouro" required />
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Input
+                          name="minimumPoints"
+                          type="number"
+                          min="0"
+                          label="Pontos mínimos"
+                          required
+                        />
+                        <Input
+                          name="multiplier"
+                          type="number"
+                          min="0.1"
+                          step="0.1"
+                          defaultValue="1"
+                          label="Multiplicador"
+                          required
+                        />
+                      </div>
+                      <Input
+                        name="benefits"
+                        label="Benefícios"
+                        placeholder="Atendimento prioritário"
+                      />
+                      <Button type="submit">Adicionar nível</Button>
+                    </form>
+                    <div className="mt-5 grid gap-2">
+                      {overview?.tiers.map((tier) => (
+                        <div
+                          key={tier.id}
+                          className="rounded-md bg-[var(--brand-surface)] p-3 text-sm"
+                        >
+                          <strong>{tier.name}</strong>
+                          <span className="ml-2 text-slate-500">
+                            a partir de {tier.minimumPoints} pontos · {tier.multiplier}x
+                          </span>
+                          {tier.benefits ? (
+                            <p className="mt-1 text-slate-500">{tier.benefits}</p>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent>
+                    <form
+                      className="grid gap-3"
+                      onSubmit={(event) =>
+                        void submit(
+                          event,
+                          "/loyalty/rewards",
+                          (form) => ({
+                            name: form.get("name"),
+                            rewardType: form.get("rewardType"),
+                            pointsRequired: Number(form.get("pointsRequired")),
+                            valueAmount: Number(form.get("valueAmount") || 0),
+                            couponCode: form.get("couponCode") || undefined,
+                          }),
+                          "Recompensa criada.",
+                        )
+                      }
+                    >
+                      <Gift size={22} />
+                      <h2 className="font-semibold">Recompensa disponível</h2>
+                      <Input name="name" label="Nome" placeholder="R$ 10 de desconto" required />
+                      <Select
+                        name="rewardType"
+                        label="Tipo"
+                        options={[
+                          { label: "Desconto", value: "discount" },
+                          { label: "Cupom", value: "coupon" },
+                          { label: "Crédito", value: "cashback" },
+                          { label: "Produto brinde", value: "bonus_product" },
+                        ]}
+                      />
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Input
+                          name="pointsRequired"
+                          type="number"
+                          min="1"
+                          label="Pontos necessários"
+                          required
+                        />
+                        <Input
+                          name="valueAmount"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          label="Valor (quando houver)"
+                        />
+                      </div>
+                      <Input name="couponCode" label="Código do cupom" placeholder="VANTAGEM10" />
+                      <Button type="submit">Adicionar recompensa</Button>
+                    </form>
+                    <div className="mt-5 grid gap-2">
+                      {overview?.rewards.map((reward) => (
+                        <div
+                          key={reward.id}
+                          className="rounded-md bg-[var(--brand-surface)] p-3 text-sm"
+                        >
+                          <strong>{reward.name}</strong>
+                          <p className="mt-1 text-slate-500">
+                            {reward.pointsRequired} pontos · {reward.rewardType}
+                            {reward.couponCode ? ` · ${reward.couponCode}` : ""}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            ),
+          },
+          {
+            value: "wallets",
+            label: "Clientes e resgates",
+            content: (
+              <div className="grid gap-4 xl:grid-cols-[.8fr_1.2fr]">
+                <Card>
+                  <CardContent>
+                    <div className="grid gap-5 lg:grid-cols-2">
+                      <PointsForm
+                        title="Conceder pontos"
+                        icon={<Plus size={16} />}
+                        kind="award"
+                        customers={customers}
+                        onSubmit={(event, kind) =>
+                          submit(
+                            event,
+                            `/loyalty/${kind}`,
+                            (form) => ({
+                              customerId: form.get("customerId"),
+                              points: Number(form.get("points")),
+                              reason: form.get("reason"),
+                            }),
+                            "Pontos concedidos.",
+                          )
+                        }
+                      />
+                      <PointsForm
+                        title="Registrar resgate"
+                        icon={<Minus size={16} />}
+                        kind="redeem"
+                        customers={customers}
+                        onSubmit={(event, kind) =>
+                          submit(
+                            event,
+                            `/loyalty/${kind}`,
+                            (form) => ({
+                              customerId: form.get("customerId"),
+                              points: Number(form.get("points")),
+                              reason: form.get("reason"),
+                            }),
+                            "Resgate registrado.",
+                          )
+                        }
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent>
+                    <h2 className="font-semibold">Saldos e vencimentos</h2>
+                    <DataTable
+                      rows={wallets}
+                      empty="Ainda não há clientes com pontos."
+                      columns={[
+                        { key: "customer", header: "Cliente", render: (row) => row.customerName },
+                        {
+                          key: "tier",
+                          header: "Nível",
+                          render: (row) => <Badge>{row.tierName ?? "Sem nível"}</Badge>,
+                        },
+                        { key: "points", header: "Pontos", render: (row) => row.pointsBalance },
+                        {
+                          key: "expires",
+                          header: "Vencem em 30 dias",
+                          render: (row) => row.expiringPoints ?? 0,
+                        },
+                      ]}
+                    />
+                  </CardContent>
+                </Card>
+              </div>
+            ),
+          },
+        ]}
+      />
+    </div>
+  );
 }
-function Metric({label,value,detail,accent}:{label:string;value:string|number;detail?:string;accent?:boolean}){return <Card><CardContent><p className="text-sm text-slate-500">{label}</p><strong className={`mt-2 block text-2xl ${accent?"text-amber-700":"text-[var(--brand-primary)]"}`}>{value}</strong>{detail?<p className="mt-1 text-xs text-slate-500">{detail}</p>:null}</CardContent></Card>}
-function PointsForm({title,icon,kind,customers,onSubmit}:{title:string;icon:React.ReactNode;kind:"award"|"redeem";customers:Array<{id:string;name:string}>;onSubmit:(event:FormEvent<HTMLFormElement>,kind:"award"|"redeem")=>Promise<void>}){return <form className="grid gap-3 rounded-lg border border-[var(--brand-border)] p-4" onSubmit={event=>void onSubmit(event,kind)}><div className="flex items-center gap-2"><span className="text-[var(--brand-secondary)]">{icon}</span><h3 className="font-semibold">{title}</h3></div><Select name="customerId" label="Cliente" options={[{label:"Selecione",value:""},...customers.map(customer=>({label:customer.name,value:customer.id}))]} required/><Input name="points" type="number" min="1" label="Pontos" required/><Input name="reason" label="Motivo" placeholder={kind==="award"?"Ação promocional":"Desconto concedido"} required/><Button type="submit" variant={kind==="award"?"primary":"secondary"}>{kind==="award"?"Conceder pontos":"Confirmar resgate"}</Button></form>}
-function Banner({tone,text,close}:{tone:"error"|"success";text:string;close:()=>void}){return <p className={`flex items-center justify-between rounded-md border p-3 text-sm ${tone==="error"?"border-rose-200 bg-rose-50 text-rose-700":"border-emerald-200 bg-emerald-50 text-emerald-700"}`}><span>{text}</span><button className="text-lg leading-none" onClick={close} aria-label="Fechar mensagem">×</button></p>}
+function Metric({
+  label,
+  value,
+  detail,
+  accent,
+}: {
+  label: string;
+  value: string | number;
+  detail?: string;
+  accent?: boolean;
+}) {
+  return (
+    <Card>
+      <CardContent>
+        <p className="text-sm text-slate-500">{label}</p>
+        <strong
+          className={`mt-2 block text-2xl ${accent ? "text-amber-700" : "text-[var(--brand-primary)]"}`}
+        >
+          {value}
+        </strong>
+        {detail ? <p className="mt-1 text-xs text-slate-500">{detail}</p> : null}
+      </CardContent>
+    </Card>
+  );
+}
+function PointsForm({
+  title,
+  icon,
+  kind,
+  customers,
+  onSubmit,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  kind: "award" | "redeem";
+  customers: Array<{ id: string; name: string }>;
+  onSubmit: (event: FormEvent<HTMLFormElement>, kind: "award" | "redeem") => Promise<void>;
+}) {
+  return (
+    <form
+      className="grid gap-3 rounded-lg border border-[var(--brand-border)] p-4"
+      onSubmit={(event) => void onSubmit(event, kind)}
+    >
+      <div className="flex items-center gap-2">
+        <span className="text-[var(--brand-secondary)]">{icon}</span>
+        <h3 className="font-semibold">{title}</h3>
+      </div>
+      <Select
+        name="customerId"
+        label="Cliente"
+        options={[
+          { label: "Selecione", value: "" },
+          ...customers.map((customer) => ({ label: customer.name, value: customer.id })),
+        ]}
+        required
+      />
+      <Input name="points" type="number" min="1" label="Pontos" required />
+      <Input
+        name="reason"
+        label="Motivo"
+        placeholder={kind === "award" ? "Ação promocional" : "Desconto concedido"}
+        required
+      />
+      <Button type="submit" variant={kind === "award" ? "primary" : "secondary"}>
+        {kind === "award" ? "Conceder pontos" : "Confirmar resgate"}
+      </Button>
+    </form>
+  );
+}
+function Banner({
+  tone,
+  text,
+  close,
+}: {
+  tone: "error" | "success";
+  text: string;
+  close: () => void;
+}) {
+  return (
+    <p
+      className={`flex items-center justify-between rounded-md border p-3 text-sm ${tone === "error" ? "border-rose-200 bg-rose-50 text-rose-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}
+    >
+      <span>{text}</span>
+      <button className="text-lg leading-none" onClick={close} aria-label="Fechar mensagem">
+        ×
+      </button>
+    </p>
+  );
+}
