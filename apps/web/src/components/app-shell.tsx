@@ -864,7 +864,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           )}
         </main>
         <footer className="px-3 pb-4 text-center text-[11px] text-slate-500 sm:px-4 lg:px-6">
-          Orien · Beta privado
+          Orien · Gestão inteligente
         </footer>
       </div>
     </div>
