@@ -133,6 +133,7 @@ export default function PosPage() {
   const [isOnline, setIsOnline] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [productionMode, setProductionMode] = useState(false);
+  const [lastSaleId, setLastSaleId] = useState("");
   const scannerRef = useRef<HTMLInputElement>(null);
   const paymentAmountRef = useRef<HTMLInputElement>(null);
 
@@ -530,6 +531,7 @@ export default function PosPage() {
           body: JSON.stringify(payload),
         });
         const saleId = result.id ?? result.sale?.id;
+        if (saleId) setLastSaleId(saleId);
         if (result.loyalty?.couponCode)
           setNotice(
             `Cupom ${result.loyalty.couponCode} emitido para ${result.loyalty.rewardName}.`,
@@ -538,6 +540,7 @@ export default function PosPage() {
           setNotice(`Crédito de fidelidade lançado para ${result.loyalty.rewardName}.`);
         else if (result.loyalty?.type === "bonus_product")
           setNotice(`Brinde ${result.loyalty.rewardName} incluído na venda.`);
+        else if (saleId) setNotice("Venda concluída com sucesso. O operador já pode iniciar a próxima.");
         if (saleId && printAfterSale && printing?.receiptMode !== "none") {
           const shouldOpenPrint = printing?.receiptMode === "thermal" || printing?.silentPrint;
           const receiptPath =
@@ -565,7 +568,7 @@ export default function PosPage() {
   }
 
   return (
-    <div className="grid gap-4">
+    <div className={`grid gap-4 ${productionMode ? "min-h-screen bg-[var(--brand-bg)] p-3 md:p-5" : ""}`}>
       <PageHeader
         title="PDV rápido"
         description="Scanner sempre disponível, atalhos de pagamento e controle de abertura e fechamento do caixa."
@@ -648,6 +651,25 @@ export default function PosPage() {
         <p className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
           {notice}
         </p>
+      ) : null}
+      {lastSaleId ? (
+        <section className="grid gap-3 rounded-md border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+          <div>
+            <strong>Última venda finalizada</strong>
+            <p className="mt-1 text-emerald-800">Comprovante e reimpressão ficam disponíveis sem tirar o operador do fluxo.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => void openApiDocument(`/sales/${lastSaleId}/receipt`, true)}>
+              Térmico
+            </Button>
+            <Button variant="secondary" onClick={() => void openApiDocument(`/sales/${lastSaleId}/document`, false)}>
+              Conferência
+            </Button>
+            <Button variant="ghost" onClick={() => setLastSaleId("")}>
+              Nova venda
+            </Button>
+          </div>
+        </section>
       ) : null}
       <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
         <Card className="min-w-0">
@@ -1141,7 +1163,7 @@ export default function PosPage() {
           </Card>
         </section>
       ) : null}
-      <Card>
+      {!productionMode ? <Card>
         <CardContent className="grid gap-3">
           <h2 className="font-semibold">Histórico de caixas</h2>
           <DataTable
@@ -1225,7 +1247,7 @@ export default function PosPage() {
             ]}
           />
         </CardContent>
-      </Card>
+      </Card> : null}
     </div>
   );
 }

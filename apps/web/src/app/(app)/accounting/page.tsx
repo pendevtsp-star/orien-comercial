@@ -7,6 +7,15 @@ import { useEffect, useState } from "react";
 import { apiFetch, downloadApiFile } from "../../../lib/api";
 
 type Branch = { id: string; name: string };
+type AccountantAccess = {
+  id: string;
+  name: string;
+  email: string;
+  branchName?: string | null;
+  expiresAt: string;
+  lastUsedAt?: string | null;
+  revokedAt?: string | null;
+};
 type Overview = {
   metrics: {
     totalDocuments: number;
@@ -67,11 +76,17 @@ export default function AccountingPage() {
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState(new Date().toISOString().slice(0, 7));
   const [closures, setClosures] = useState<Array<{ id: string; branchName?: string | null; period: string; status: string; documentCount: number; totalAmount: string; generatedAt?: string | null; closedAt?: string | null }>>([]);
+  const [accountantAccesses, setAccountantAccesses] = useState<AccountantAccess[]>([]);
+  const [accountantName, setAccountantName] = useState("");
+  const [accountantEmail, setAccountantEmail] = useState("");
+  const [accountantExpiresInDays, setAccountantExpiresInDays] = useState(30);
+  const [generatedAccessUrl, setGeneratedAccessUrl] = useState("");
 
   useEffect(() => {
     void Promise.all([
       apiFetch<{ data: Branch[] }>("/branches?page=1&pageSize=100"),
       loadOverview(""),
+      loadAccountantAccesses(),
     ])
       .then(([result]) => setBranches(result.data))
       .catch((err) => setError(message(err)))
@@ -86,6 +101,11 @@ export default function AccountingPage() {
     setOverview(result);
     setClosures(closureResult.data);
     setError(null);
+  }
+
+  async function loadAccountantAccesses() {
+    const result = await apiFetch<{ data: AccountantAccess[] }>("/fiscal/accounting/access");
+    setAccountantAccesses(result.data);
   }
 
   async function selectBranch(value: string) {
@@ -157,6 +177,38 @@ export default function AccountingPage() {
     });
   }
 
+  async function createAccountantAccess() {
+    if (!accountantName.trim() || !accountantEmail.trim()) {
+      setError("Informe nome e e-mail do contador para gerar o acesso externo.");
+      return;
+    }
+    await action(async () => {
+      const result = await apiFetch<{ id: string; url: string; expiresAt: string }>("/fiscal/accounting/access", {
+        method: "POST",
+        body: JSON.stringify({
+          name: accountantName,
+          email: accountantEmail,
+          branchId: branchId || undefined,
+          expiresInDays: accountantExpiresInDays,
+        }),
+      });
+      setGeneratedAccessUrl(result.url);
+      setAccountantName("");
+      setAccountantEmail("");
+      setNotice("Acesso externo do contador gerado. Envie o link apenas para o profissional autorizado.");
+      await loadAccountantAccesses();
+    });
+  }
+
+  async function revokeAccountantAccess(id: string) {
+    if (!window.confirm("Revogar este acesso externo do contador?")) return;
+    await action(async () => {
+      await apiFetch(`/fiscal/accounting/access/${id}/revoke`, { method: "POST", body: "{}" });
+      setNotice("Acesso externo revogado.");
+      await loadAccountantAccesses();
+    });
+  }
+
   return (
     <div className="grid gap-6">
       <PageHeader
@@ -182,6 +234,64 @@ export default function AccountingPage() {
             <label className="grid gap-1 text-sm font-medium">Loja analisada<select value={branchId} onChange={(event) => void selectBranch(event.target.value)} className="h-11 rounded-md border border-[var(--brand-border)] bg-white px-3"><option value="">Todas as lojas</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label>
             <label className="grid gap-1 text-sm font-medium">Competência<input type="month" value={period} onChange={(event) => setPeriod(event.target.value)} className="h-11 rounded-md border border-[var(--brand-border)] bg-white px-3" /></label>
             <div className="flex flex-wrap gap-2"><Button icon={<Archive size={16} />} onClick={() => void downloadPackage()}>Gerar pacote mensal</Button><Button variant="secondary" icon={<LockKeyhole size={16} />} onClick={() => void closePeriod()}>Fechar competência</Button></div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="grid gap-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-[var(--brand-primary)]">Portal externo do contador</h2>
+              <p className="text-sm text-slate-500">Gere um link temporário para o contador consultar documentos, financeiro e estoque baixo sem acessar o painel da loja.</p>
+            </div>
+            <Badge>{accountantAccesses.filter((item) => !item.revokedAt).length} ativo(s)</Badge>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_160px_auto] lg:items-end">
+            <label className="grid gap-1 text-sm font-medium">
+              Nome do contador
+              <input value={accountantName} onChange={(event) => setAccountantName(event.target.value)} className="h-11 rounded-md border border-[var(--brand-border)] bg-white px-3" placeholder="Ex.: Escritório Contábil" />
+            </label>
+            <label className="grid gap-1 text-sm font-medium">
+              E-mail
+              <input type="email" value={accountantEmail} onChange={(event) => setAccountantEmail(event.target.value)} className="h-11 rounded-md border border-[var(--brand-border)] bg-white px-3" placeholder="contador@empresa.com.br" />
+            </label>
+            <label className="grid gap-1 text-sm font-medium">
+              Validade
+              <select value={accountantExpiresInDays} onChange={(event) => setAccountantExpiresInDays(Number(event.target.value))} className="h-11 rounded-md border border-[var(--brand-border)] bg-white px-3">
+                <option value={7}>7 dias</option>
+                <option value={30}>30 dias</option>
+                <option value={90}>90 dias</option>
+                <option value={180}>180 dias</option>
+              </select>
+            </label>
+            <Button onClick={() => void createAccountantAccess()}>Gerar acesso</Button>
+          </div>
+          {generatedAccessUrl ? (
+            <div className="grid gap-2 rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-950">
+              <strong>Link gerado</strong>
+              <p className="break-all">{generatedAccessUrl}</p>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="secondary" onClick={() => void navigator.clipboard.writeText(generatedAccessUrl)}>Copiar link</Button>
+                <Button variant="ghost" onClick={() => setGeneratedAccessUrl("")}>Ocultar</Button>
+              </div>
+            </div>
+          ) : null}
+          <div className="grid gap-2">
+            {accountantAccesses.map((access) => (
+              <div key={access.id} className="grid gap-2 rounded-md border border-[var(--brand-border)] p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+                <div>
+                  <strong>{access.name}</strong>
+                  <p className="text-sm text-slate-500">{access.email} · {access.branchName || "Todas as lojas"} · expira em {new Date(access.expiresAt).toLocaleDateString("pt-BR")}</p>
+                  <p className="text-xs text-slate-500">Último acesso: {access.lastUsedAt ? new Date(access.lastUsedAt).toLocaleString("pt-BR") : "ainda não utilizado"}</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge>{access.revokedAt ? "Revogado" : "Ativo"}</Badge>
+                  {!access.revokedAt ? <Button variant="ghost" onClick={() => void revokeAccountantAccess(access.id)}>Revogar</Button> : null}
+                </div>
+              </div>
+            ))}
+            {!accountantAccesses.length ? <p className="text-sm text-slate-500">Nenhum acesso externo gerado ainda.</p> : null}
           </div>
         </CardContent>
       </Card>

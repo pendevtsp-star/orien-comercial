@@ -182,6 +182,7 @@ export class InboundFiscalService {
       matchType: string | null;
       resolution: string;
       divergences: string[];
+      suggestedSalePrice: string | null;
       productId: string | null;
       productName: string | null;
       productSku: string | null;
@@ -191,6 +192,7 @@ export class InboundFiscalService {
         i.description,i.unit,i.quantity::text AS quantity,i.unit_cost::text AS "unitCost",
         i.total_amount::text AS "totalAmount",i.ncm,i.cest,i.cfop,i.tax_code AS "taxCode",
         i.match_type AS "matchType",i.resolution,i.divergences,
+        i.suggested_sale_price::text AS "suggestedSalePrice",
         p.id AS "productId",p.name AS "productName",p.sku AS "productSku"
        FROM purchase_fiscal_document_items i
        LEFT JOIN products p ON p.id=i.matched_product_id
@@ -241,7 +243,7 @@ export class InboundFiscalService {
       ["Status", inboundStatusLabel(detail.document.status)],
       ["Total da nota", detail.document.totalAmount],
       [],
-      ["Linha", "Produto na NF-e", "Código", "Produto vinculado", "Resolução", "Qtd", "Custo", "Total", "NCM", "CFOP", "Alertas"],
+      ["Linha", "Produto na NF-e", "Código", "Produto vinculado", "Resolução", "Qtd", "Custo", "Preço sugerido", "Total", "NCM", "CFOP", "Alertas"],
       ...detail.items.map((item) => [
         item.lineNumber,
         item.description,
@@ -250,6 +252,7 @@ export class InboundFiscalService {
         resolutionLabel(item.resolution),
         item.quantity,
         item.unitCost,
+        item.suggestedSalePrice ?? "",
         item.totalAmount,
         item.ncm ?? "",
         item.cfop ?? "",
@@ -379,9 +382,22 @@ export class InboundFiscalService {
 
       await client.query(
         `UPDATE purchase_fiscal_document_items
-         SET matched_product_id=$4,description=$5,supplier_code=$6,quantity=$7,unit_cost=$8,total_amount=$9,resolution=$10,updated_at=now()
+         SET matched_product_id=$4,description=$5,supplier_code=$6,quantity=$7,unit_cost=$8,total_amount=$9,
+          resolution=$10,suggested_sale_price=$11,updated_at=now()
          WHERE tenant_id=$1 AND fiscal_document_id=$2 AND id=$3`,
-        [context.tenantId, id, itemId, productId, description, supplierCode, quantity, unitCost, quantity * unitCost, resolution],
+        [
+          context.tenantId,
+          id,
+          itemId,
+          productId,
+          description,
+          supplierCode,
+          quantity,
+          unitCost,
+          quantity * unitCost,
+          resolution,
+          input.salePrice ?? (resolution === "created" ? suggestedSalePrice(unitCost) : null),
+        ],
       );
       await client.query(
         `UPDATE purchase_fiscal_documents
@@ -399,6 +415,7 @@ export class InboundFiscalService {
         productId,
         quantity,
         unitCost,
+        salePrice: input.salePrice ?? null,
       });
     });
     return this.detail(context, id);
@@ -431,7 +448,10 @@ export class InboundFiscalService {
         sku: item.supplierCode ?? undefined,
         quantity: Number(item.quantity),
         unitCost: Number(item.unitCost),
-        salePrice: item.resolution === "created" ? suggestedSalePrice(Number(item.unitCost)) : undefined,
+        salePrice:
+          item.resolution === "created"
+            ? Number(item.suggestedSalePrice ?? suggestedSalePrice(Number(item.unitCost)))
+            : undefined,
       })),
     });
   }
@@ -467,6 +487,7 @@ export class InboundFiscalService {
         cest: string | null;
         cfop: string | null;
         tax_code: string | null;
+        suggested_sale_price: string | null;
       }>(
         "SELECT * FROM purchase_fiscal_document_items WHERE tenant_id=$1 AND fiscal_document_id=$2 ORDER BY line_number",
         [context.tenantId, document.id],
@@ -493,7 +514,7 @@ export class InboundFiscalService {
           "Fornecedor",
         );
       }
-      const resolved: Array<{ itemId: string; productId: string; quantity: number; unitCost: number; resolution: string }> = [];
+      const resolved: Array<{ itemId: string; productId: string; quantity: number; unitCost: number; salePrice: number | null; resolution: string }> = [];
       for (const item of storedItems.rows) {
         const choice = choices.get(item.line_number) ?? { action: "ignore" as const };
         if (choice.action === "ignore") {
@@ -507,7 +528,7 @@ export class InboundFiscalService {
         let resolution = "linked";
         const confirmedQuantity = Number(choice.quantity);
         const confirmedUnitCost = Number(choice.unitCost);
-        const confirmedSalePrice = Number(choice.salePrice ?? suggestedSalePrice(confirmedUnitCost));
+        const confirmedSalePrice = Number(choice.salePrice ?? item.suggested_sale_price ?? suggestedSalePrice(confirmedUnitCost));
         if (choice.action === "create") {
           const sku = await this.uniqueSku(client, context.tenantId, choice.sku || item.supplier_code || `NF-${document.document_number}-${item.line_number}`);
           const created = await client.query<{ id: string }>(
@@ -520,7 +541,14 @@ export class InboundFiscalService {
         }
         if (!productId) throw new BadRequestException(`Selecione o produto do item ${item.line_number}.`);
         await this.assertProduct(client, context.tenantId, input.branchId, productId);
-        resolved.push({ itemId: item.id, productId, quantity: confirmedQuantity, unitCost: confirmedUnitCost, resolution });
+        resolved.push({
+          itemId: item.id,
+          productId,
+          quantity: confirmedQuantity,
+          unitCost: confirmedUnitCost,
+          salePrice: choice.action === "create" ? confirmedSalePrice : null,
+          resolution,
+        });
       }
       if (!resolved.length) throw new BadRequestException("Selecione ao menos um item para receber no estoque.");
       const order = input.purchaseOrderId
@@ -561,8 +589,8 @@ export class InboundFiscalService {
           [context.tenantId, input.branchId, item.productId, item.quantity, `Entrada da NF-e ${document.document_number}`, context.userId ?? null],
         );
         await client.query(
-          "UPDATE purchase_fiscal_document_items SET matched_product_id=$3,resolution=$4,updated_at=now() WHERE tenant_id=$1 AND id=$2",
-          [context.tenantId, item.itemId, item.productId, item.resolution],
+          "UPDATE purchase_fiscal_document_items SET matched_product_id=$3,resolution=$4,suggested_sale_price=$5,updated_at=now() WHERE tenant_id=$1 AND id=$2",
+          [context.tenantId, item.itemId, item.productId, item.resolution, item.salePrice],
         );
         if (order) await this.receiveOrderItem(client, context.tenantId, order.id, item.productId, item.quantity);
       }
@@ -770,13 +798,13 @@ export class InboundFiscalService {
       for (const row of prepared) {
         await client.query(
           `INSERT INTO purchase_fiscal_document_items(tenant_id,fiscal_document_id,line_number,supplier_code,barcode,
-            description,unit,quantity,unit_cost,total_amount,ncm,cest,cfop,tax_code,matched_product_id,match_type,resolution,divergences)
-           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'pending',$17::jsonb)`,
+            description,unit,quantity,unit_cost,total_amount,ncm,cest,cfop,tax_code,matched_product_id,match_type,resolution,divergences,suggested_sale_price)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'pending',$17::jsonb,$18)`,
           [context.tenantId, documentId, row.index + 1, row.item.supplierCode ?? null, row.item.barcode ?? null,
             row.item.name, row.item.unit, row.item.quantity, row.item.unitCost, row.item.totalAmount,row.item.ncm ?? null,
             row.item.cest ?? null,row.item.cfop ?? null,row.item.taxCode ?? null,row.match?.id ?? null,
             row.match ? (row.item.barcode && row.match.barcode === row.item.barcode ? "barcode" : "sku") : null,
-            JSON.stringify(row.divergences)],
+            JSON.stringify(row.divergences), suggestedSalePrice(row.item.unitCost)],
         );
       }
       const orders = supplierMatch
@@ -797,6 +825,7 @@ export class InboundFiscalService {
         items: prepared.map((row) => ({
           ...row.item,
           sourceIndex: row.index,
+          salePrice: suggestedSalePrice(row.item.unitCost),
           match: row.match ? { productId: row.match.id, name: row.match.name, sku: row.match.sku, costPrice: row.previousCost, confidence: row.item.barcode ? "barcode" : "sku" } : null,
           suggestedAction: row.match ? "link" : "create",
           divergences: row.divergences,

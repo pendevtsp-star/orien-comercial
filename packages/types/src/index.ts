@@ -513,6 +513,21 @@ export const accountingClosureSchema = z.object({
   branchId: uuidSchema.optional(),
 });
 
+export const accountantPortalAccessCreateSchema = z.object({
+  name: z.string().trim().min(2).max(160),
+  email: z
+    .string()
+    .email()
+    .transform((value) => value.toLowerCase()),
+  branchId: uuidSchema.optional(),
+  expiresInDays: z.coerce.number().int().min(1).max(180).default(30),
+});
+
+export const accountantPortalTokenSchema = z.object({
+  token: z.string().trim().min(32).max(160),
+  period: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+});
+
 export const supplierCreateSchema = z.object({
   branchId: uuidSchema.optional(),
   name: z.string().trim().min(2).max(180),
@@ -792,6 +807,8 @@ export type InboundFiscalManifestInput = z.infer<typeof inboundFiscalManifestSch
 export type InboundFiscalItemResolutionInput = z.infer<typeof inboundFiscalItemResolutionSchema>;
 export type InboundFiscalReceiveInput = z.infer<typeof inboundFiscalReceiveSchema>;
 export type AccountingClosureInput = z.infer<typeof accountingClosureSchema>;
+export type AccountantPortalAccessCreateInput = z.infer<typeof accountantPortalAccessCreateSchema>;
+export type AccountantPortalTokenInput = z.infer<typeof accountantPortalTokenSchema>;
 export type SupplierCreateInput = z.infer<typeof supplierCreateSchema>;
 export type SupplierUpdateInput = z.infer<typeof supplierUpdateSchema>;
 export type FinancialCategoryInput = z.infer<typeof financialCategorySchema>;

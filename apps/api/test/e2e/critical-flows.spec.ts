@@ -456,7 +456,7 @@ describe.sequential("critical api flows", { timeout: 60_000 }, () => {
       documentKey: accessKey,
       documentNumber: "321",
       xml,
-      items: [{ sourceIndex: 0, action: "create", name: "Produto Fiscal E2E", sku: "FISCAL-1", barcode: "7891000000016", quantity: 2, unitCost: 10 }],
+      items: [{ sourceIndex: 0, action: "create", name: "Produto Fiscal E2E", sku: "FISCAL-1", barcode: "7891000000016", quantity: 2, unitCost: 10, salePrice: 18.9 }],
     };
     const received = await agent
       .post("/api/v1/stock/purchase-imports/xml/commit")
@@ -468,6 +468,9 @@ describe.sequential("critical api flows", { timeout: 60_000 }, () => {
     const stock = await agent.get("/api/v1/stock").set(tenantHeader).query({ search: "Produto Fiscal E2E", page: 1, pageSize: 10 });
     expect(stock.status).toBe(200);
     expect(Number(stock.body.data[0].quantity)).toBe(2);
+    const productDetail = await agent.get(`/api/v1/products/${stock.body.data[0].productId}`).set(tenantHeader);
+    expect(productDetail.status).toBe(200);
+    expect(Number(productDetail.body.sale_price)).toBe(18.9);
 
     const documents = await agent.get("/api/v1/fiscal/inbound").set(tenantHeader).query({ page: 1, pageSize: 10 });
     expect(documents.status).toBe(200);
@@ -520,6 +523,38 @@ describe.sequential("critical api flows", { timeout: 60_000 }, () => {
     const voids = await agent.get("/api/v1/fiscal/number-voids").set(tenantHeader);
     expect(voids.status).toBe(200);
     expect(voids.body.data).toEqual([]);
+  });
+
+  it("creates an external accountant portal access without sharing tenant user credentials", async () => {
+    const agent = await login(app, tenantA);
+    const tenantHeader = { "x-tenant-id": tenantA.tenantId };
+
+    const access = await agent.post("/api/v1/fiscal/accounting/access").set(tenantHeader).send({
+      name: "Contador E2E",
+      email: "contador-e2e@example.com",
+      expiresInDays: 7,
+    });
+    expect(access.status).toBe(201);
+    expect(access.body.token).toBeTruthy();
+    expect(access.body.url).toContain("/contador?token=");
+
+    const overview = await request(app.getHttpServer())
+      .get("/api/v1/accountant-portal/overview")
+      .query({ token: access.body.token, period: "2026-07" });
+    expect(overview.status).toBe(200);
+    expect(overview.body.tenant.name).toBe("Tenant Demonstracao");
+    expect(overview.body.accountant.email).toBe("contador-e2e@example.com");
+
+    const revoke = await agent
+      .post(`/api/v1/fiscal/accounting/access/${access.body.id}/revoke`)
+      .set(tenantHeader)
+      .send({});
+    expect(revoke.status).toBe(201);
+
+    const revoked = await request(app.getHttpServer())
+      .get("/api/v1/accountant-portal/overview")
+      .query({ token: access.body.token, period: "2026-07" });
+    expect(revoked.status).toBe(401);
   });
 
   it("keeps cash, cancellation, returns, purchases and transfers consistent", async () => {

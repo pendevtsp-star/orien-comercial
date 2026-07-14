@@ -62,6 +62,7 @@ type PreviewItem = {
   name: string;
   quantity: number;
   unitCost: number;
+  salePrice?: number;
   match?: { productId: string; name: string; costPrice?: number } | null;
   suggestedAction: "link" | "create";
 };
@@ -72,9 +73,27 @@ type ReceivingChoice = {
   name: string;
   quantity: number;
   unitCost: number;
+  salePrice?: number;
 };
 
 type ReceivingFilter = "all" | "alerts" | "linked" | "create" | "ignored";
+
+type PurchasePreview = {
+  fiscalDocumentId: string;
+  requiresManifestation?: boolean;
+  document: { key: string; number: string; series?: string; issuedAt?: string; totalAmount: number };
+  supplier: { name: string; document?: string; match?: { id: string; name: string } | null };
+  purchaseOrders?: Array<{ id: string; status: string; expectedAt?: string | null; pendingItems: number }>;
+  items: Array<
+    PreviewItem & {
+      barcode?: string;
+      supplierCode?: string;
+      ncm?: string;
+      cfop?: string;
+      divergences?: string[];
+    }
+  >;
+};
 
 type InboundDetail = {
   document: {
@@ -104,7 +123,9 @@ type InboundDetail = {
     unitCost: string;
     totalAmount: string;
     ncm?: string | null;
+    cest?: string | null;
     cfop?: string | null;
+    suggestedSalePrice?: string | null;
     resolution: string;
     divergences: string[];
     productId?: string | null;
@@ -120,6 +141,7 @@ function makeReceivingChoice(item: PreviewItem): ReceivingChoice {
     name: item.name,
     quantity: item.quantity,
     unitCost: item.unitCost,
+    salePrice: item.salePrice ?? suggestedSalePrice(item.unitCost),
   };
 }
 
@@ -575,7 +597,7 @@ function PurchaseXmlImporter({
   const [accessKey, setAccessKey] = useState("");
   const [source, setSource] = useState<"xml_upload" | "focus_key">("xml_upload");
   const [xml, setXml] = useState("");
-  const [preview, setPreview] = useState<{ fiscalDocumentId: string; requiresManifestation?: boolean; document: { key: string; number: string; series?: string; issuedAt?: string; totalAmount: number }; supplier: { name: string; document?: string; match?: { id: string; name: string } | null }; purchaseOrders?: Array<{ id: string; status: string; expectedAt?: string | null; pendingItems: number }>; items: Array<{ sourceIndex: number; name: string; barcode?: string; supplierCode?: string; quantity: number; unitCost: number; ncm?: string; cfop?: string; match?: { productId: string; name: string; costPrice?: number } | null; divergences?: string[]; suggestedAction: "link" | "create" }> } | null>(null);
+  const [preview, setPreview] = useState<PurchasePreview | null>(null);
   const [choices, setChoices] = useState<Record<number, ReceivingChoice>>({});
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -696,6 +718,7 @@ function PurchaseXmlImporter({
             sku: item.supplierCode,
             quantity: choices[item.sourceIndex]?.quantity ?? item.quantity,
             unitCost: choices[item.sourceIndex]?.unitCost ?? item.unitCost,
+            salePrice: choices[item.sourceIndex]?.salePrice ?? item.salePrice,
           })),
         }),
       });
@@ -783,10 +806,11 @@ function PurchaseXmlImporter({
                   {choice.action === "link" ? <Select aria-label={`Produto de ${item.name}`} value={choice.productId ?? ""} onChange={(event) => setChoices((current) => ({ ...current, [item.sourceIndex]: { ...choice, productId: event.target.value } }))} options={[{ label: item.match?.name ?? "Selecione o produto", value: "" }, ...products]} /> : <p className="self-center text-xs text-slate-500">{choice.action === "create" ? "Será criado com custo e saldo conferidos." : "Item não entrará no estoque."}</p>}
                 </div>
                 {choice.action !== "ignore" ? (
-                  <div className="grid gap-3 md:grid-cols-3">
+                  <div className="grid gap-3 md:grid-cols-4">
                     <Input label="Nome para cadastro" value={choice.name} disabled={choice.action !== "create"} onChange={(event) => setChoices((current) => ({ ...current, [item.sourceIndex]: { ...choice, name: event.target.value } }))} />
                     <Input label="Qtd recebida" type="number" min={0.001} step="0.001" value={choice.quantity} onChange={(event) => setChoices((current) => ({ ...current, [item.sourceIndex]: { ...choice, quantity: Math.max(0.001, Number(event.target.value || item.quantity)) } }))} />
                     <Input label="Custo confirmado" type="number" min={0} step="0.01" value={choice.unitCost} onChange={(event) => setChoices((current) => ({ ...current, [item.sourceIndex]: { ...choice, unitCost: Math.max(0, Number(event.target.value || 0)) } }))} />
+                    <Input label="Preço sugerido" type="number" min={0} step="0.01" disabled={choice.action !== "create"} value={choice.salePrice ?? suggestedSalePrice(choice.unitCost)} onChange={(event) => setChoices((current) => ({ ...current, [item.sourceIndex]: { ...choice, salePrice: Math.max(0, Number(event.target.value || 0)) } }))} />
                   </div>
                 ) : null}
               </div>
@@ -1042,7 +1066,7 @@ function makeDetailChoice(item: InboundDetail["items"][number]): DetailChoice {
     sku: item.supplierCode ?? undefined,
     quantity: Number(item.quantity),
     unitCost: Number(item.unitCost),
-    salePrice: suggestedSalePrice(Number(item.unitCost)),
+    salePrice: Number(item.suggestedSalePrice ?? suggestedSalePrice(Number(item.unitCost))),
   };
 }
 

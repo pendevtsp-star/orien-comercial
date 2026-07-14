@@ -1,0 +1,77 @@
+name: E2E recorrente
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "20 8 * * *"
+
+jobs:
+  critical-flows:
+    name: PDV, caixa, NF-e, permissões e documentos
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: sgc
+          POSTGRES_USER: sgc_owner
+          POSTGRES_PASSWORD: sgc_password
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U sgc_owner -d sgc"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:8-alpine
+        ports:
+          - "6379:6379"
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      NODE_ENV: test
+      APP_ENV: e2e
+      APP_VERSION: ci-e2e
+      API_PORT: 3334
+      DATABASE_URL: postgresql://sgc_owner:sgc_password@localhost:5432/sgc
+      DATABASE_MIGRATION_URL: postgresql://sgc_owner:sgc_password@localhost:5432/sgc
+      REDIS_URL: redis://localhost:6379
+      JWT_ACCESS_SECRET: e2e-access-secret-change-me-1234567890
+      JWT_REFRESH_SECRET: e2e-refresh-secret-change-me-123456789
+      COOKIE_SECRET: e2e-cookie-secret-change-me-1234567890
+      PASSWORD_PEPPER: e2e-password-pepper-value
+      INTEGRATIONS_ENCRYPTION_KEY: e2e-integration-key-32-characters-ok
+      PLATFORM_OWNER_EMAIL: e2e-owner@useorien.com.br
+      PLATFORM_OWNER_PASSWORD: ChangeMe123!E2E
+      WEB_APP_URL: http://localhost:3100
+      ADMIN_APP_URL: http://localhost:3102
+      MARKETING_APP_URL: http://localhost:3101
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply migrations
+        run: pnpm db:migrate
+
+      - name: Run critical E2E suite
+        run: pnpm test:e2e
