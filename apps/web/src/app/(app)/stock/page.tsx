@@ -110,6 +110,7 @@ type InboundDetail = {
     manifestationStatus: string;
     manifestationProtocol?: string | null;
     receivedAt?: string | null;
+    paymentSchedule?: Array<{ number: string; dueDate: string; amount: number }>;
   };
   summary: { itemCount: number; linked: number; created: number; ignored: number; withDivergence: number };
   items: Array<{
@@ -1029,6 +1030,20 @@ function InboundFiscalDetail({
           <InfoLine label="Loja" value={detail.document.branchName} />
           <InfoLine label="Emissão" value={detail.document.issuedAt ? new Date(detail.document.issuedAt).toLocaleDateString("pt-BR") : "-"} />
           <InfoLine label="Total da nota" value={detail.document.totalAmount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} />
+        </div>
+        <div className="rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] p-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--brand-secondary)]">Condições de pagamento</p>
+          {detail.document.paymentSchedule?.length ? (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              {detail.document.paymentSchedule.map((installment, index) => (
+                <div key={`${installment.number}-${index}`} className="rounded-md border border-[var(--brand-border)] bg-white p-3">
+                  <p className="text-xs text-slate-500">Parcela {installment.number || index + 1}</p>
+                  <p className="mt-1 font-semibold text-[var(--brand-primary)]">{Number(installment.amount).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</p>
+                  <p className="mt-1 text-xs text-slate-500">Vence em {new Date(`${installment.dueDate}T00:00:00`).toLocaleDateString("pt-BR")}</p>
+                </div>
+              ))}
+            </div>
+          ) : <p className="mt-2 text-sm text-slate-500">O XML não informou parcelas. Ao receber, será criada uma única conta a pagar para conferência.</p>}
         </div>
         <DataTable
           rows={detail.items}

@@ -45,6 +45,7 @@ type ParsedInboundNfe = {
     issuedAt?: string;
     totalAmount: number;
     version?: number;
+    paymentSchedule: Array<{ number: string; dueDate: string; amount: number }>;
   };
   supplier: { name: string; document?: string };
   items: ParsedItem[];
@@ -67,6 +68,7 @@ type InboundDocumentRow = {
   manifestation_status: string;
   manifestation_protocol: string | null;
   xml_content: string | null;
+  payment_schedule: Array<{ number: string; dueDate: string; amount: string | number }>;
   received_at: Date | null;
   created_at: Date;
 };
@@ -216,6 +218,11 @@ export class InboundFiscalService {
         issuerDocument: current.issuer_document,
         issuedAt: current.issued_at,
         totalAmount: Number(current.total_amount),
+        paymentSchedule: current.payment_schedule.map((installment) => ({
+          number: installment.number,
+          dueDate: installment.dueDate,
+          amount: Number(installment.amount),
+        })),
         manifestationStatus: current.manifestation_status,
         manifestationProtocol: current.manifestation_protocol,
         receivedAt: current.received_at,
@@ -595,24 +602,31 @@ export class InboundFiscalService {
         if (order) await this.receiveOrderItem(client, context.tenantId, order.id, item.productId, item.quantity);
       }
       if (order) await this.refreshOrderStatus(client, context.tenantId, order.id);
-      const payable = await client.query<{ id: string }>(
-        `INSERT INTO accounts_payable(
-          tenant_id, branch_id, supplier_id, amount, due_date, status, description,
-          payment_method, source_type, source_document_id
-        ) VALUES($1,$2,$3,$4,$5,'open',$6,NULL,'purchase_fiscal_document',$7)
-        ON CONFLICT (tenant_id, source_document_id) WHERE source_document_id IS NOT NULL
-        DO UPDATE SET amount=EXCLUDED.amount, description=EXCLUDED.description, updated_at=now()
-        RETURNING id`,
-        [
-          context.tenantId,
-          input.branchId,
-          supplierId ?? null,
-          entryTotal,
-          (document.issued_at ?? new Date()).toISOString().slice(0, 10),
-          `NF-e ${document.document_number} · ${input.supplierName || document.issuer_name}`,
-          document.id,
-        ],
-      );
+      const installments = normalizedInstallments(document.payment_schedule, entryTotal, document.issued_at);
+      const payableIds: string[] = [];
+      for (const [index, installment] of installments.entries()) {
+        const payable = await client.query<{ id: string }>(
+          `INSERT INTO accounts_payable(
+            tenant_id, branch_id, supplier_id, amount, due_date, status, description,
+            payment_method, source_type, source_document_id, installment_number, installment_total
+          ) VALUES($1,$2,$3,$4,$5,'open',$6,NULL,'purchase_fiscal_document',$7,$8,$9)
+          ON CONFLICT (tenant_id, source_document_id, installment_number) WHERE source_document_id IS NOT NULL
+          DO UPDATE SET amount=EXCLUDED.amount,due_date=EXCLUDED.due_date,description=EXCLUDED.description,installment_total=EXCLUDED.installment_total,updated_at=now()
+          RETURNING id`,
+          [
+            context.tenantId,
+            input.branchId,
+            supplierId ?? null,
+            installment.amount,
+            installment.dueDate,
+            `NF-e ${document.document_number} · ${input.supplierName || document.issuer_name} · parcela ${index + 1}/${installments.length}`,
+            document.id,
+            index + 1,
+            installments.length,
+          ],
+        );
+        payableIds.push(payable.rows[0]!.id);
+      }
       await client.query(
         `UPDATE purchase_fiscal_documents SET purchase_entry_id=$3,purchase_order_id=$4,status='received',
           received_by_user_id=$5,received_at=now(),updated_at=now() WHERE tenant_id=$1 AND id=$2`,
@@ -622,7 +636,8 @@ export class InboundFiscalService {
         accessKey: document.access_key,
         purchaseEntryId: entry.rows[0]!.id,
         purchaseOrderId: order?.id ?? null,
-        accountPayableId: payable.rows[0]!.id,
+        accountPayableIds: payableIds,
+        installmentCount: installments.length,
         itemCount: resolved.length,
         totalAmount: entryTotal,
       });
@@ -797,19 +812,19 @@ export class InboundFiscalService {
       const status = !prepared.length || prepared.some((row) => row.divergences.length) ? "review_pending" : "ready";
       const document = await client.query<{ id: string }>(
         `INSERT INTO purchase_fiscal_documents(tenant_id,branch_id,access_key,document_number,series,source,status,
-          issuer_name,issuer_document,issued_at,total_amount,provider_version,xml_content,xml_sha256,provider_payload,created_by_user_id)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16)
+          issuer_name,issuer_document,issued_at,total_amount,provider_version,xml_content,xml_sha256,provider_payload,payment_schedule,created_by_user_id)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17)
          ON CONFLICT(tenant_id,access_key) DO UPDATE SET branch_id=EXCLUDED.branch_id,document_number=EXCLUDED.document_number,
           series=EXCLUDED.series,source=EXCLUDED.source,status=EXCLUDED.status,issuer_name=EXCLUDED.issuer_name,
           issuer_document=EXCLUDED.issuer_document,issued_at=EXCLUDED.issued_at,total_amount=EXCLUDED.total_amount,
           provider_version=EXCLUDED.provider_version,xml_content=COALESCE(EXCLUDED.xml_content,purchase_fiscal_documents.xml_content),
           xml_sha256=COALESCE(EXCLUDED.xml_sha256,purchase_fiscal_documents.xml_sha256),
-          provider_payload=EXCLUDED.provider_payload,updated_at=now()
+          provider_payload=EXCLUDED.provider_payload,payment_schedule=EXCLUDED.payment_schedule,updated_at=now()
          WHERE purchase_fiscal_documents.status<>'received' RETURNING id`,
         [context.tenantId, branchId, parsed.document.key, parsed.document.number, parsed.document.series ?? null, source.source, status,
           parsed.supplier.name, parsed.supplier.document ?? null, parsed.document.issuedAt ?? null, parsed.document.totalAmount,
           parsed.document.version ?? null, source.xml ?? null, source.xml ? createHash("sha256").update(source.xml).digest("hex") : null,
-          JSON.stringify(source.providerPayload), context.userId ?? null],
+          JSON.stringify(source.providerPayload), JSON.stringify(parsed.document.paymentSchedule), context.userId ?? null],
       );
       if (!document.rows[0]) throw new BadRequestException("Esta NF-e já foi recebida e não pode ser substituída.");
       const documentId = document.rows[0].id;
@@ -944,6 +959,7 @@ export function parseNfeXml(xml: string): ParsedInboundNfe {
   const ide = objectAt(nfe, "ide") ?? {};
   const emitter = objectAt(nfe, "emit") ?? {};
   const totals = objectAt(nfe, "total", "ICMSTot") ?? {};
+  const installments = parseXmlInstallments(objectAt(nfe, "cobr") ?? {});
   const details = Array.isArray(nfe.det) ? nfe.det : nfe.det ? [nfe.det] : [];
   const key = typeof nfe.Id === "string" ? nfe.Id.replace(/^NFe/, "") : "";
   if (!/^\d{44}$/.test(key)) throw new BadRequestException("A NF-e não contém uma chave de acesso válida com 44 dígitos.");
@@ -955,6 +971,7 @@ export function parseNfeXml(xml: string): ParsedInboundNfe {
       series: textValue(ide.serie) || undefined,
       issuedAt: textValue(ide.dhEmi) || textValue(ide.dEmi) || undefined,
       totalAmount: numberValue(totals.vNF) || items.reduce((sum, item) => sum + item.totalAmount, 0),
+      paymentSchedule: installments,
     },
     supplier: { name: textValue(emitter.xNome) || "Fornecedor do XML", document: textValue(emitter.CNPJ) || textValue(emitter.CPF) || undefined },
     items,
@@ -1017,10 +1034,65 @@ export function parseFocusReceivedNfe(payload: FocusResponse, accessKey: string)
       issuedAt: textValue(payload.data_emissao ?? payload.data_emissao_nfe ?? payload.dhEmi) || undefined,
       totalAmount: numberValue(payload.valor_total ?? payload.valor_nota ?? payload.vNF) || items.reduce((sum, item) => sum + item.totalAmount, 0),
       version: numberValue(payload.versao) || undefined,
+      paymentSchedule: parseFocusInstallments(payload),
     },
     supplier: { name: textValue(payload.nome_emitente ?? payload.razao_social_emitente ?? emitter.nome ?? emitter.xNome) || "Fornecedor da NF-e", document: issuerDocument || undefined },
     items,
   };
+}
+
+function parseXmlInstallments(cobranca: Record<string, unknown>) {
+  return arrayValue(cobranca.dup)
+    .map((item, index) => {
+      const duplicate = recordValue(item) ?? {};
+      return {
+        number: textValue(duplicate.nDup) || String(index + 1),
+        dueDate: normalizeFiscalDate(textValue(duplicate.dVenc)),
+        amount: numberValue(duplicate.vDup),
+      };
+    })
+    .filter((item): item is { number: string; dueDate: string; amount: number } => Boolean(item.dueDate) && item.amount > 0);
+}
+
+function parseFocusInstallments(payload: FocusResponse) {
+  const raw = recordValue(payload) ?? {};
+  const billing = recordValue(raw.cobranca) ?? recordValue(raw.cobr) ?? raw;
+  const duplicates = arrayValue(billing.duplicatas ?? billing.dup ?? billing.parcelas ?? raw.duplicatas ?? raw.parcelas);
+  return duplicates
+    .map((item, index) => {
+      const duplicate = recordValue(item) ?? {};
+      return {
+        number: textValue(duplicate.numero ?? duplicate.nDup ?? duplicate.identificacao) || String(index + 1),
+        dueDate: normalizeFiscalDate(textValue(duplicate.vencimento ?? duplicate.data_vencimento ?? duplicate.dVenc)),
+        amount: numberValue(duplicate.valor ?? duplicate.valor_parcela ?? duplicate.vDup),
+      };
+    })
+    .filter((item): item is { number: string; dueDate: string; amount: number } => Boolean(item.dueDate) && item.amount > 0);
+}
+
+function normalizedInstallments(
+  schedule: Array<{ number: string; dueDate: string; amount: string | number }>,
+  totalAmount: number,
+  issuedAt: Date | null,
+) {
+  const valid = schedule
+    .map((item) => ({ number: item.number, dueDate: normalizeFiscalDate(item.dueDate), amount: Number(item.amount) }))
+    .filter((item): item is { number: string; dueDate: string; amount: number } => Boolean(item.dueDate) && Number.isFinite(item.amount) && item.amount > 0);
+  const scheduledTotal = valid.reduce((sum, item) => sum + item.amount, 0);
+  if (valid.length && Math.abs(scheduledTotal - totalAmount) <= 0.02) {
+    const last = valid.at(-1)!;
+    last.amount = Math.round((totalAmount - valid.slice(0, -1).reduce((sum, item) => sum + item.amount, 0)) * 100) / 100;
+    return valid;
+  }
+  return [{ number: "1", dueDate: (issuedAt ?? new Date()).toISOString().slice(0, 10), amount: totalAmount }];
+}
+
+function normalizeFiscalDate(value: string) {
+  const normalized = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return normalized;
+  if (/^\d{8}$/.test(normalized)) return `${normalized.slice(0, 4)}-${normalized.slice(4, 6)}-${normalized.slice(6, 8)}`;
+  const match = normalized.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  return match ? `${match[3]}-${match[2]}-${match[1]}` : "";
 }
 
 function objectAt(value: unknown, ...path: string[]) {
