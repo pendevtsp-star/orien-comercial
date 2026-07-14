@@ -32,7 +32,11 @@ interface EntryRow {
   installmentNumber?: number;
   installmentTotal?: number;
   reconciliationStatus?: string;
+  sourceType?: string;
+  sourceDocumentId?: string;
 }
+
+type EntryFilters = { search: string; branchId: string; paymentMethod: string; dueDateFrom: string; dueDateTo: string };
 
 interface CashflowSummary {
   receivableOpen: number;
@@ -55,6 +59,8 @@ export default function FinancialPage() {
   const [payablePage, setPayablePage] = useState(1);
   const [receivableStatus, setReceivableStatus] = useState("all");
   const [payableStatus, setPayableStatus] = useState("all");
+  const [receivableFilters, setReceivableFilters] = useState<EntryFilters>({ search: "", branchId: "", paymentMethod: "", dueDateFrom: "", dueDateTo: "" });
+  const [payableFilters, setPayableFilters] = useState<EntryFilters>({ search: "", branchId: "", paymentMethod: "", dueDateFrom: "", dueDateTo: "" });
   const [receivablePagination, setReceivablePagination] = useState({ total: 0, page: 1, pageSize: 10 });
   const [payablePagination, setPayablePagination] = useState({ total: 0, page: 1, pageSize: 10 });
   const [selectedReceivables, setSelectedReceivables] = useState<string[]>([]);
@@ -94,17 +100,18 @@ export default function FinancialPage() {
   }, []);
 
   useEffect(() => {
-    void loadEntries("receivables", receivablePage, receivableStatus, setReceivables, setReceivablePagination, setSelectedReceivables);
-  }, [receivablePage, receivableStatus]);
+    void loadEntries("receivables", receivablePage, receivableStatus, receivableFilters, setReceivables, setReceivablePagination, setSelectedReceivables);
+  }, [receivablePage, receivableStatus, receivableFilters]);
 
   useEffect(() => {
-    void loadEntries("payables", payablePage, payableStatus, setPayables, setPayablePagination, setSelectedPayables);
-  }, [payablePage, payableStatus]);
+    void loadEntries("payables", payablePage, payableStatus, payableFilters, setPayables, setPayablePagination, setSelectedPayables);
+  }, [payablePage, payableStatus, payableFilters]);
 
   async function loadEntries(
     kind: "receivables" | "payables",
     page: number,
     status: string,
+    filters: EntryFilters,
     setRows: (rows: EntryRow[]) => void,
     setPagination: (pagination: { total: number; page: number; pageSize: number }) => void,
     clearSelection: (value: string[]) => void
@@ -112,6 +119,11 @@ export default function FinancialPage() {
     try {
       const query = new URLSearchParams({ page: String(page), pageSize: "10" });
       if (status !== "all") query.set("status", status);
+      if (filters.search.trim()) query.set("search", filters.search.trim());
+      if (filters.branchId) query.set("branchId", filters.branchId);
+      if (filters.paymentMethod) query.set("paymentMethod", filters.paymentMethod);
+      if (filters.dueDateFrom) query.set("dueDateFrom", filters.dueDateFrom);
+      if (filters.dueDateTo) query.set("dueDateTo", filters.dueDateTo);
       const response = await apiFetch<ListResponse<EntryRow>>(`/financial/${kind}?${query.toString()}`);
       setRows(response.data);
       setPagination(response.pagination ?? { total: response.data.length, page, pageSize: 10 });
@@ -141,8 +153,8 @@ export default function FinancialPage() {
       event.currentTarget.reset();
       await Promise.all([
         load(),
-        loadEntries("receivables", receivablePage, receivableStatus, setReceivables, setReceivablePagination, setSelectedReceivables),
-        loadEntries("payables", payablePage, payableStatus, setPayables, setPayablePagination, setSelectedPayables)
+        loadEntries("receivables", receivablePage, receivableStatus, receivableFilters, setReceivables, setReceivablePagination, setSelectedReceivables),
+        loadEntries("payables", payablePage, payableStatus, payableFilters, setPayables, setPayablePagination, setSelectedPayables)
       ]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao criar lancamento.");
@@ -163,6 +175,7 @@ export default function FinancialPage() {
           kind,
           kind === "receivables" ? receivablePage : payablePage,
           kind === "receivables" ? receivableStatus : payableStatus,
+          kind === "receivables" ? receivableFilters : payableFilters,
           kind === "receivables" ? setReceivables : setPayables,
           kind === "receivables" ? setReceivablePagination : setPayablePagination,
           kind === "receivables" ? setSelectedReceivables : setSelectedPayables
@@ -185,6 +198,7 @@ export default function FinancialPage() {
           kind,
           kind === "receivables" ? receivablePage : payablePage,
           kind === "receivables" ? receivableStatus : payableStatus,
+          kind === "receivables" ? receivableFilters : payableFilters,
           kind === "receivables" ? setReceivables : setPayables,
           kind === "receivables" ? setReceivablePagination : setPayablePagination,
           kind === "receivables" ? setSelectedReceivables : setSelectedPayables
@@ -228,6 +242,7 @@ export default function FinancialPage() {
           kind,
           kind === "receivables" ? receivablePage : payablePage,
           kind === "receivables" ? receivableStatus : payableStatus,
+          kind === "receivables" ? receivableFilters : payableFilters,
           kind === "receivables" ? setReceivables : setPayables,
           kind === "receivables" ? setReceivablePagination : setPayablePagination,
           kind === "receivables" ? setSelectedReceivables : setSelectedPayables
@@ -255,6 +270,7 @@ export default function FinancialPage() {
           kind,
           kind === "receivables" ? receivablePage : payablePage,
           kind === "receivables" ? receivableStatus : payableStatus,
+          kind === "receivables" ? receivableFilters : payableFilters,
           kind === "receivables" ? setReceivables : setPayables,
           kind === "receivables" ? setReceivablePagination : setPayablePagination,
           kind === "receivables" ? setSelectedReceivables : setSelectedPayables
@@ -319,6 +335,8 @@ export default function FinancialPage() {
                   selectedIds={selectedReceivables}
                   setSelectedIds={setSelectedReceivables}
                   statusFilter={receivableStatus}
+                  filters={receivableFilters}
+                  setFilters={setReceivableFilters}
                   setStatusFilter={(status) => {
                     setReceivableStatus(status);
                     setReceivablePage(1);
@@ -356,6 +374,8 @@ export default function FinancialPage() {
                   selectedIds={selectedPayables}
                   setSelectedIds={setSelectedPayables}
                   statusFilter={payableStatus}
+                  filters={payableFilters}
+                  setFilters={setPayableFilters}
                   setStatusFilter={(status) => {
                     setPayableStatus(status);
                     setPayablePage(1);
@@ -462,6 +482,8 @@ function FinancialColumn({
   selectedIds,
   setSelectedIds,
   statusFilter,
+  filters,
+  setFilters,
   setStatusFilter,
   onBulkMarkPaid,
   onBulkReconcile,
@@ -479,6 +501,8 @@ function FinancialColumn({
   selectedIds: string[];
   setSelectedIds: (ids: string[]) => void;
   statusFilter: string;
+  filters: EntryFilters;
+  setFilters: (filters: EntryFilters) => void;
   setStatusFilter: (status: string) => void;
   onBulkMarkPaid: () => void;
   onBulkReconcile: (status: "reconciled" | "diverged") => void;
@@ -510,6 +534,35 @@ function FinancialColumn({
       </Card>
       <div className="grid gap-3 lg:order-1">
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--brand-border)] bg-white p-3">
+          <Input
+            aria-label="Buscar lançamentos"
+            value={filters.search}
+            onChange={(event) => setFilters({ ...filters, search: event.target.value })}
+            placeholder="Buscar descrição"
+            className="min-w-[180px] flex-1"
+          />
+          <Select
+            aria-label="Filtrar por loja"
+            value={filters.branchId}
+            onChange={(event) => setFilters({ ...filters, branchId: event.target.value })}
+            options={branches}
+          />
+          <Select
+            aria-label="Filtrar por forma de pagamento"
+            value={filters.paymentMethod}
+            onChange={(event) => setFilters({ ...filters, paymentMethod: event.target.value })}
+            options={[
+              { label: "Todas as formas", value: "" },
+              { label: "Pix", value: "pix" },
+              { label: "Boleto", value: "boleto" },
+              { label: "Cartão de crédito", value: "credit_card" },
+              { label: "Cartão de débito", value: "debit_card" },
+              { label: "Dinheiro", value: "cash" },
+              { label: "Transferência", value: "bank_transfer" },
+            ]}
+          />
+          <Input aria-label="Vencimento inicial" type="date" value={filters.dueDateFrom} onChange={(event) => setFilters({ ...filters, dueDateFrom: event.target.value })} />
+          <Input aria-label="Vencimento final" type="date" value={filters.dueDateTo} onChange={(event) => setFilters({ ...filters, dueDateTo: event.target.value })} />
           <Select
             aria-label="Status dos lancamentos"
             options={[
@@ -565,6 +618,7 @@ function FinancialColumn({
               render: (row) => Number(row.amount).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
             },
             { key: "parcel", header: "Parcela", render: (row) => `${row.installmentNumber ?? 1}/${row.installmentTotal ?? 1}` },
+            { key: "origin", header: "Origem", render: (row) => row.sourceType === "purchase_fiscal_document" ? <Badge>NF-e de compra</Badge> : <span className="text-slate-500">Manual</span> },
             { key: "status", header: "Status", render: (row) => <Badge>{row.status}</Badge> },
             { key: "reconcile", header: "Conciliacao", render: (row) => <Badge>{row.reconciliationStatus ?? "pending"}</Badge> },
             {

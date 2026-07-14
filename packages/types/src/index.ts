@@ -37,6 +37,10 @@ export const stockMovementListQuerySchema = paginationQuerySchema.extend({
 export const financialListQuerySchema = paginationQuerySchema.extend({
   status: z.enum(["open", "paid", "cancelled"]).optional(),
   reconciliationStatus: z.enum(["pending", "reconciled", "diverged"]).optional(),
+  branchId: uuidSchema.optional(),
+  paymentMethod: z.string().trim().min(1).max(60).optional(),
+  dueDateFrom: z.string().date().optional(),
+  dueDateTo: z.string().date().optional(),
   sortBy: z.enum(["dueDate", "amount", "status", "createdAt"]).optional(),
   sortDirection: z.enum(["asc", "desc"]).default("asc"),
 });

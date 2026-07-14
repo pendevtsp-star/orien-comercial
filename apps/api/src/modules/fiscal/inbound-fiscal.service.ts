@@ -595,6 +595,24 @@ export class InboundFiscalService {
         if (order) await this.receiveOrderItem(client, context.tenantId, order.id, item.productId, item.quantity);
       }
       if (order) await this.refreshOrderStatus(client, context.tenantId, order.id);
+      const payable = await client.query<{ id: string }>(
+        `INSERT INTO accounts_payable(
+          tenant_id, branch_id, supplier_id, amount, due_date, status, description,
+          payment_method, source_type, source_document_id
+        ) VALUES($1,$2,$3,$4,$5,'open',$6,NULL,'purchase_fiscal_document',$7)
+        ON CONFLICT (tenant_id, source_document_id) WHERE source_document_id IS NOT NULL
+        DO UPDATE SET amount=EXCLUDED.amount, description=EXCLUDED.description, updated_at=now()
+        RETURNING id`,
+        [
+          context.tenantId,
+          input.branchId,
+          supplierId ?? null,
+          entryTotal,
+          (document.issued_at ?? new Date()).toISOString().slice(0, 10),
+          `NF-e ${document.document_number} · ${input.supplierName || document.issuer_name}`,
+          document.id,
+        ],
+      );
       await client.query(
         `UPDATE purchase_fiscal_documents SET purchase_entry_id=$3,purchase_order_id=$4,status='received',
           received_by_user_id=$5,received_at=now(),updated_at=now() WHERE tenant_id=$1 AND id=$2`,
@@ -604,6 +622,7 @@ export class InboundFiscalService {
         accessKey: document.access_key,
         purchaseEntryId: entry.rows[0]!.id,
         purchaseOrderId: order?.id ?? null,
+        accountPayableId: payable.rows[0]!.id,
         itemCount: resolved.length,
         totalAmount: entryTotal,
       });

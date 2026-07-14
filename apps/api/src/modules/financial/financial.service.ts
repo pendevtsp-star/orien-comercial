@@ -39,6 +39,10 @@ export class FinancialService {
     if (context.branchId) {
       params.push(context.branchId);
       filters.push(`branch_id = $${params.length}`);
+    } else if (query.branchId) {
+      ensureBranchAccess(context, query.branchId);
+      params.push(query.branchId);
+      filters.push(`branch_id = $${params.length}`);
     }
 
     if (query.search) {
@@ -54,6 +58,21 @@ export class FinancialService {
     if (query.reconciliationStatus) {
       params.push(query.reconciliationStatus);
       filters.push(`COALESCE(reconciliation_status, 'pending') = $${params.length}`);
+    }
+
+    if (query.paymentMethod) {
+      params.push(query.paymentMethod);
+      filters.push(`payment_method = $${params.length}`);
+    }
+
+    if (query.dueDateFrom) {
+      params.push(query.dueDateFrom);
+      filters.push(`due_date >= $${params.length}::date`);
+    }
+
+    if (query.dueDateTo) {
+      params.push(query.dueDateTo);
+      filters.push(`due_date <= $${params.length}::date`);
     }
 
     const count = await this.database.tenantQuery<{ total: string }>(
@@ -74,6 +93,8 @@ export class FinancialService {
            , paid_at AS "paidAt"
            , payment_method AS "paymentMethod"
            , reconciliation_status AS "reconciliationStatus"
+           , source_type AS "sourceType"
+           , source_document_id AS "sourceDocumentId"
       FROM ${table}
       WHERE ${filters.join(" AND ")}
       ORDER BY ${sort.field} ${sort.direction}, created_at DESC
