@@ -423,6 +423,11 @@ export const purchaseXmlPreviewSchema = z.object({
   branchId: uuidSchema,
 });
 
+export const purchaseKeyPreviewSchema = z.object({
+  accessKey: z.string().trim().regex(/^\d{44}$/, "Informe os 44 dígitos da chave da NF-e."),
+  branchId: uuidSchema,
+});
+
 export const purchaseXmlCommitSchema = z
   .object({
     branchId: uuidSchema,
@@ -434,6 +439,10 @@ export const purchaseXmlCommitSchema = z
       .regex(/^\d{44}$/)
       .optional(),
     documentNumber: z.string().trim().min(1).max(80),
+    xml: z.string().trim().min(80).max(8_000_000).optional(),
+    source: z.enum(["xml_upload", "focus_key"]).default("xml_upload"),
+    purchaseOrderId: uuidSchema.optional(),
+    createSupplier: z.boolean().default(false),
     notes: z.string().trim().max(500).optional(),
     items: z
       .array(
@@ -454,6 +463,29 @@ export const purchaseXmlCommitSchema = z
   .refine((value) => value.supplierId || value.supplierName, {
     message: "supplierId or supplierName is required",
   });
+
+export const inboundFiscalListQuerySchema = paginationQuerySchema.extend({
+  branchId: uuidSchema.optional(),
+  status: z.enum(["ready", "review_pending", "received", "rejected", "cancelled"]).optional(),
+  manifestationStatus: z
+    .enum(["pending", "ciencia", "confirmacao", "desconhecimento", "nao_realizada"])
+    .optional(),
+  period: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+});
+
+export const inboundFiscalManifestSchema = z
+  .object({
+    type: z.enum(["ciencia", "confirmacao", "desconhecimento", "nao_realizada"]),
+    justification: z.string().trim().min(15).max(255).optional(),
+  })
+  .refine((value) => value.type !== "nao_realizada" || Boolean(value.justification), {
+    message: "Explique por que a operação não foi realizada.",
+  });
+
+export const accountingClosureSchema = z.object({
+  period: z.string().regex(/^\d{4}-\d{2}$/),
+  branchId: uuidSchema.optional(),
+});
 
 export const supplierCreateSchema = z.object({
   branchId: uuidSchema.optional(),
@@ -718,6 +750,10 @@ export type InventoryCountCreateInput = z.infer<typeof inventoryCountCreateSchem
 export type PurchaseEntryCreateInput = z.infer<typeof purchaseEntryCreateSchema>;
 export type PurchaseXmlPreviewInput = z.infer<typeof purchaseXmlPreviewSchema>;
 export type PurchaseXmlCommitInput = z.infer<typeof purchaseXmlCommitSchema>;
+export type PurchaseKeyPreviewInput = z.infer<typeof purchaseKeyPreviewSchema>;
+export type InboundFiscalListQuery = z.infer<typeof inboundFiscalListQuerySchema>;
+export type InboundFiscalManifestInput = z.infer<typeof inboundFiscalManifestSchema>;
+export type AccountingClosureInput = z.infer<typeof accountingClosureSchema>;
 export type SupplierCreateInput = z.infer<typeof supplierCreateSchema>;
 export type SupplierUpdateInput = z.infer<typeof supplierUpdateSchema>;
 export type FinancialCategoryInput = z.infer<typeof financialCategorySchema>;

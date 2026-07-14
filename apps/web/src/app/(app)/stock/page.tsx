@@ -1,7 +1,7 @@
 "use client";
 
 import { Badge, Button, Card, CardContent, DataTable, EmptyState, Input, PageHeader, Select, Tabs } from "@sgc/ui";
-import { AlertTriangle, ArrowRightLeft, Boxes, ClipboardCheck, Plus, RefreshCw, Warehouse, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, Boxes, ClipboardCheck, FileCheck2, Plus, RefreshCw, Search, Warehouse, type LucideIcon } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { apiFetch, openApiDocument } from "../../../lib/api";
 import { PaginationFooter } from "../../../components/pagination-footer";
@@ -349,6 +349,11 @@ export default function StockPage() {
             )
           },
           {
+            value: "notas",
+            label: "Notas recebidas",
+            content: <InboundFiscalHistory branches={branchOptions} />
+          },
+          {
             value: "relatorios",
             label: "Relatorios",
             content: (
@@ -492,8 +497,12 @@ function PurchaseXmlImporter({
 }) {
   const [branchId, setBranchId] = useState("");
   const [supplierId, setSupplierId] = useState("");
+  const [purchaseOrderId, setPurchaseOrderId] = useState("");
+  const [createSupplier, setCreateSupplier] = useState(true);
+  const [accessKey, setAccessKey] = useState("");
+  const [source, setSource] = useState<"xml_upload" | "focus_key">("xml_upload");
   const [xml, setXml] = useState("");
-  const [preview, setPreview] = useState<{ document: { key?: string; number: string }; supplier: { name: string; document?: string; match?: { id: string; name: string } | null }; items: Array<{ sourceIndex: number; name: string; barcode?: string; supplierCode?: string; quantity: number; unitCost: number; match?: { productId: string; name: string; costPrice?: number } | null; divergences?: string[]; suggestedAction: "link" | "create" }> } | null>(null);
+  const [preview, setPreview] = useState<{ fiscalDocumentId: string; requiresManifestation?: boolean; document: { key: string; number: string; series?: string; issuedAt?: string; totalAmount: number }; supplier: { name: string; document?: string; match?: { id: string; name: string } | null }; purchaseOrders?: Array<{ id: string; status: string; expectedAt?: string | null; pendingItems: number }>; items: Array<{ sourceIndex: number; name: string; barcode?: string; supplierCode?: string; quantity: number; unitCost: number; ncm?: string; cfop?: string; match?: { productId: string; name: string; costPrice?: number } | null; divergences?: string[]; suggestedAction: "link" | "create" }> } | null>(null);
   const [choices, setChoices] = useState<Record<number, { action: "link" | "create" | "ignore"; productId?: string }>>({});
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -512,6 +521,24 @@ function PurchaseXmlImporter({
       setError(cause instanceof Error ? cause.message : "Não foi possível ler o XML da nota.");
     }
   }
+  async function previewKey() {
+    if (!branchId) return setError("Escolha a loja antes de consultar a chave.");
+    if (!/^\d{44}$/.test(accessKey.replace(/\D/g, ""))) return setError("Informe os 44 dígitos da chave da NF-e.");
+    setError(null);
+    setSource("focus_key");
+    try {
+      const result = await apiFetch<typeof preview>("/stock/purchase-imports/key/preview", {
+        method: "POST",
+        body: JSON.stringify({ branchId, accessKey: accessKey.replace(/\D/g, "") }),
+      });
+      setPreview(result);
+      setXml("");
+      setChoices(Object.fromEntries((result?.items ?? []).map((item) => [item.sourceIndex, { action: item.suggestedAction, productId: item.match?.productId }])));
+      setMessage("NF-e consultada. Confira os vínculos e divergências antes de receber.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível consultar a NF-e pela chave.");
+    }
+  }
   async function commit() {
     if (!preview || !branchId || !xml) return;
     setError(null);
@@ -522,8 +549,12 @@ function PurchaseXmlImporter({
           branchId,
           supplierId: supplierId || undefined,
           supplierName: supplierId ? undefined : preview.supplier.name,
+          createSupplier: !supplierId && createSupplier,
+          purchaseOrderId: purchaseOrderId || undefined,
           documentKey: preview.document.key,
           documentNumber: preview.document.number,
+          source,
+          xml: source === "xml_upload" ? xml : undefined,
           items: preview.items.map((item) => ({
             sourceIndex: item.sourceIndex,
             action: choices[item.sourceIndex]?.action ?? "create",
@@ -539,26 +570,86 @@ function PurchaseXmlImporter({
       setMessage("Entrada confirmada. Estoque e custos foram atualizados com trilha de auditoria.");
       setPreview(null);
       setXml("");
+      setAccessKey("");
+      setPurchaseOrderId("");
       onCompleted();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "A entrada não foi concluída.");
     }
   }
+  async function acknowledgeAndReload() {
+    if (!preview) return;
+    setError(null);
+    try {
+      await apiFetch(`/fiscal/inbound/${preview.fiscalDocumentId}/manifest`, { method: "POST", body: JSON.stringify({ type: "ciencia" }) });
+      setMessage("Ciência registrada. Buscando os itens completos disponibilizados pelo provedor...");
+      await previewKey();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível registrar a ciência da NF-e."); }
+  }
   return (
     <Card>
       <CardContent className="grid gap-3">
-        <div><p className="text-xs font-medium uppercase tracking-[0.16em] text-[var(--brand-secondary)]">Recebimento assistido</p><h2 className="mt-1 font-semibold text-[var(--brand-primary)]">Importar XML da NF-e</h2><p className="mt-1 text-sm leading-5 text-slate-500">A chave de 44 dígitos identifica a nota, mas é o XML que traz produtos e quantidades. O Orien compara código, custo e volume antes de atualizar o estoque.</p></div>
+        <div><p className="text-xs font-medium uppercase tracking-[0.16em] text-[var(--brand-secondary)]">Recebimento fiscal assistido</p><h2 className="mt-1 font-semibold text-[var(--brand-primary)]">Ler nota de compra</h2><p className="mt-1 text-sm leading-5 text-slate-500">Envie o XML ou consulte a chave. O Orien compara produtos, custos, quantidades e dados fiscais antes de atualizar o estoque.</p></div>
         <div className="grid gap-3 md:grid-cols-2">
           <Select label="Loja" value={branchId} onChange={(event) => setBranchId(event.target.value)} options={branches} />
           <Select label="Fornecedor" value={supplierId} onChange={(event) => setSupplierId(event.target.value)} options={[{ label: "Usar fornecedor do XML", value: "" }, ...suppliers]} />
         </div>
-        <Input label="Arquivo XML da NF-e" type="file" accept=".xml,text/xml,application/xml" onChange={(event) => { const file = event.target.files?.[0]; if (file) void previewXml(file); }} />
+        <div className="grid gap-3 rounded-md border border-[var(--brand-border)] p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+          <Input label="Chave de acesso da NF-e" value={accessKey} inputMode="numeric" maxLength={44} placeholder="Digite ou leia os 44 dígitos" onChange={(event) => setAccessKey(event.target.value.replace(/\D/g, "").slice(0, 44))} />
+          <Button variant="secondary" icon={<Search size={16} />} onClick={() => void previewKey()}>Consultar chave</Button>
+        </div>
+        <div className="flex items-center gap-3 text-xs uppercase tracking-[0.14em] text-slate-400"><span className="h-px flex-1 bg-[var(--brand-border)]" />ou envie o arquivo<span className="h-px flex-1 bg-[var(--brand-border)]" /></div>
+        <Input label="Arquivo XML da NF-e" type="file" accept=".xml,text/xml,application/xml" onChange={(event) => { const file = event.target.files?.[0]; if (file) { setSource("xml_upload"); void previewXml(file); } }} />
         {error ? <p className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</p> : null}
         {message ? <p className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{message}</p> : null}
-        {preview ? <div className="grid gap-3 rounded-md border border-[var(--brand-border)] bg-[var(--brand-surface)] p-3"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-medium">NF-e {preview.document.number} · {preview.supplier.name}</p><Badge className={preview.supplier.match ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}>{preview.supplier.match ? `Fornecedor vinculado: ${preview.supplier.match.name}` : "Fornecedor novo no XML"}</Badge></div>{preview.items.map((item) => { const choice = choices[item.sourceIndex] ?? { action: "create" as const }; return <div key={item.sourceIndex} className="grid gap-2 rounded-md border border-[var(--brand-border)] bg-white p-3 lg:grid-cols-[minmax(0,1fr)_150px_220px]"><div><p className="font-medium">{item.name}</p><p className="text-xs text-slate-500">{item.barcode || item.supplierCode || "Sem código"} · {item.quantity} un. · R$ {item.unitCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>{item.divergences?.length ? <div className="mt-2 flex flex-wrap gap-1">{item.divergences.map((divergence) => <Badge key={divergence} className="border-amber-200 bg-amber-50 text-amber-800">{divergence}</Badge>)}</div> : <span className="mt-2 inline-block text-xs text-emerald-700">Sem divergência relevante.</span>}</div><Select aria-label={`Ação para ${item.name}`} value={choice.action} onChange={(event) => setChoices((current) => ({ ...current, [item.sourceIndex]: { ...choice, action: event.target.value as typeof choice.action } }))} options={[{ label: "Vincular", value: "link" }, { label: "Cadastrar produto", value: "create" }, { label: "Ignorar", value: "ignore" }]} />{choice.action === "link" ? <Select aria-label={`Produto de ${item.name}`} value={choice.productId ?? ""} onChange={(event) => setChoices((current) => ({ ...current, [item.sourceIndex]: { ...choice, productId: event.target.value } }))} options={[{ label: item.match?.name ?? "Selecione o produto", value: "" }, ...products]} /> : <p className="self-center text-xs text-slate-500">{choice.action === "create" ? "Será criado com custo da nota." : "Item não entrará no estoque."}</p>}</div>; })}<Button onClick={() => void commit()}>Confirmar entrada da nota</Button></div> : null}
+        {preview ? <div className="grid gap-3 rounded-md border border-[var(--brand-border)] bg-[var(--brand-surface)] p-3"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-medium">NF-e {preview.document.number}{preview.document.series ? ` · série ${preview.document.series}` : ""} · {preview.supplier.name}</p><p className="text-xs text-slate-500">Total R$ {preview.document.totalAmount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} · chave {preview.document.key}</p></div><Badge className={preview.supplier.match ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}>{preview.supplier.match ? `Fornecedor vinculado: ${preview.supplier.match.name}` : "Fornecedor ainda não cadastrado"}</Badge></div>
+          {!preview.supplier.match ? <label className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><input type="checkbox" checked={createSupplier} onChange={(event) => setCreateSupplier(event.target.checked)} />Cadastrar o fornecedor automaticamente ao confirmar</label> : null}
+          {preview.requiresManifestation ? <div className="grid gap-3 rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950"><div><strong>Os itens completos ainda não foram liberados.</strong><p className="mt-1 text-blue-800">A SEFAZ exige a ciência da operação antes de disponibilizar o conteúdo integral desta NF-e.</p></div><Button variant="secondary" onClick={() => void acknowledgeAndReload()}>Dar ciência e carregar itens</Button></div> : null}
+          {preview.purchaseOrders?.length ? <Select label="Vincular a pedido de compra" value={purchaseOrderId} onChange={(event) => setPurchaseOrderId(event.target.value)} options={[{ label: "Receber sem vincular a pedido", value: "" }, ...preview.purchaseOrders.map((order) => ({ label: `Pedido ${order.id.slice(0, 8)} · ${order.pendingItems} item(ns) pendente(s)`, value: order.id }))]} /> : null}
+          {preview.items.map((item) => { const choice = choices[item.sourceIndex] ?? { action: "create" as const }; return <div key={item.sourceIndex} className="grid gap-2 rounded-md border border-[var(--brand-border)] bg-white p-3 lg:grid-cols-[minmax(0,1fr)_150px_220px]"><div><p className="font-medium">{item.name}</p><p className="text-xs text-slate-500">{item.barcode || item.supplierCode || "Sem código"} · {item.quantity} {item.ncm ? `· NCM ${item.ncm}` : ""} · R$ {item.unitCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>{item.divergences?.length ? <div className="mt-2 flex flex-wrap gap-1">{item.divergences.map((divergence) => <Badge key={divergence} className="border-amber-200 bg-amber-50 text-amber-800">{divergence}</Badge>)}</div> : <span className="mt-2 inline-block text-xs text-emerald-700">Sem divergência relevante.</span>}</div><Select aria-label={`Ação para ${item.name}`} value={choice.action} onChange={(event) => setChoices((current) => ({ ...current, [item.sourceIndex]: { ...choice, action: event.target.value as typeof choice.action } }))} options={[{ label: "Vincular", value: "link" }, { label: "Cadastrar produto", value: "create" }, { label: "Ignorar", value: "ignore" }]} />{choice.action === "link" ? <Select aria-label={`Produto de ${item.name}`} value={choice.productId ?? ""} onChange={(event) => setChoices((current) => ({ ...current, [item.sourceIndex]: { ...choice, productId: event.target.value } }))} options={[{ label: item.match?.name ?? "Selecione o produto", value: "" }, ...products]} /> : <p className="self-center text-xs text-slate-500">{choice.action === "create" ? "Será criado com custo da nota." : "Item não entrará no estoque."}</p>}</div>; })}{preview.items.length ? <Button onClick={() => void commit()}>Confirmar recebimento e atualizar estoque</Button> : null}</div> : null}
       </CardContent>
     </Card>
   );
+}
+
+function InboundFiscalHistory({ branches }: { branches: Array<{ label: string; value: string }> }) {
+  type Row = { id: string; branchName: string; accessKey: string; documentNumber: string; issuerName: string; issuedAt?: string; totalAmount: string; status: string; manifestationStatus: string; itemCount: number; divergenceCount: number };
+  const [rows, setRows] = useState<Row[]>([]);
+  const [branchId, setBranchId] = useState("");
+  const [period, setPeriod] = useState(new Date().toISOString().slice(0, 7));
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function loadHistory() {
+    setLoading(true);
+    try {
+      const query = new URLSearchParams({ page: "1", pageSize: "100", period });
+      if (branchId) query.set("branchId", branchId);
+      const result = await apiFetch<ListResponse<Row>>(`/fiscal/inbound?${query.toString()}`);
+      setRows(result.data);
+      setError(null);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível carregar as notas recebidas."); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { void loadHistory(); }, [branchId, period]);
+  async function manifest(id: string, type: "ciencia" | "confirmacao" | "desconhecimento" | "nao_realizada") {
+    const justification = type === "nao_realizada" ? window.prompt("Explique por que a operação não foi realizada:") : undefined;
+    if (type === "nao_realizada" && (!justification || justification.length < 15)) return;
+    try {
+      await apiFetch(`/fiscal/inbound/${id}/manifest`, { method: "POST", body: JSON.stringify({ type, justification }) });
+      await loadHistory();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível registrar a manifestação."); }
+  }
+  return <div className="grid gap-4">
+    <Card><CardContent className="grid gap-3 md:grid-cols-[minmax(0,1fr)_240px_auto] md:items-end"><Select label="Loja" value={branchId} onChange={(event) => setBranchId(event.target.value)} options={[{ label: "Todas as lojas", value: "" }, ...branches]} /><Input label="Competência" type="month" value={period} onChange={(event) => setPeriod(event.target.value)} /><Button variant="secondary" icon={<RefreshCw size={16} />} onClick={() => void loadHistory()}>Atualizar</Button></CardContent></Card>
+    {error ? <p className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</p> : null}
+    <DataTable rows={rows} empty={loading ? "Carregando..." : <EmptyState eyebrow="NF-e de entrada" title="Nenhuma nota recebida nesta competência." description="Importe o XML ou consulte a chave na aba Operações para iniciar o recebimento fiscal." icon={<FileCheck2 size={20} />} />} columns={[
+      { key: "document", header: "Nota", render: (row) => <div><strong>NF-e {row.documentNumber}</strong><p className="text-xs text-slate-500">{row.issuerName} · {row.branchName}</p></div> },
+      { key: "issued", header: "Emissão", render: (row) => row.issuedAt ? new Date(row.issuedAt).toLocaleDateString("pt-BR") : "-" },
+      { key: "total", header: "Total", render: (row) => Number(row.totalAmount).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) },
+      { key: "status", header: "Conferência", render: (row) => <div className="flex flex-wrap gap-1"><Badge>{row.status === "received" ? "Recebida" : row.status === "review_pending" ? "Revisar" : "Pronta"}</Badge>{row.divergenceCount ? <Badge className="border-amber-200 bg-amber-50 text-amber-800">{row.divergenceCount} divergência(s)</Badge> : null}</div> },
+      { key: "manifest", header: "Manifestação", render: (row) => <div className="flex flex-wrap gap-1">{row.manifestationStatus === "pending" || row.manifestationStatus === "ciencia" ? <><Button variant="ghost" onClick={() => void manifest(row.id, "ciencia")}>Dar ciência</Button><Button variant="ghost" onClick={() => void manifest(row.id, "confirmacao")}>Confirmar</Button><Button variant="ghost" onClick={() => void manifest(row.id, "desconhecimento")}>Não reconheço</Button><Button variant="ghost" onClick={() => void manifest(row.id, "nao_realizada")}>Não realizada</Button></> : <Badge>{row.manifestationStatus === "confirmacao" ? "Operação confirmada" : row.manifestationStatus === "desconhecimento" ? "Não reconhecida" : "Não realizada"}</Badge>}</div> },
+    ]} />
+  </div>;
 }
 
 function StockFormCard({

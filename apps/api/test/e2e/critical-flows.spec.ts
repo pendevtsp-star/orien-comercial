@@ -434,6 +434,53 @@ describe.sequential("critical api flows", { timeout: 60_000 }, () => {
     ).toBe(403);
   });
 
+  it("receives an inbound NF-e once and updates stock with an auditable fiscal link", async () => {
+    const agent = await login(app, tenantA);
+    const tenantHeader = { "x-tenant-id": tenantA.tenantId };
+    const accessKey = "35260712345678000199550010000000011000000010";
+    const xml = `<?xml version="1.0"?><nfeProc><NFe><infNFe Id="NFe${accessKey}"><ide><nNF>321</nNF><serie>1</serie><dhEmi>2026-07-13T10:00:00-03:00</dhEmi></ide><emit><CNPJ>11222333000144</CNPJ><xNome>Fornecedor Fiscal E2E</xNome></emit><det nItem="1"><prod><cProd>FISCAL-1</cProd><cEAN>7891000000016</cEAN><xProd>Produto Fiscal E2E</xProd><NCM>22021000</NCM><CFOP>5102</CFOP><uCom>UN</uCom><qCom>2</qCom><vUnCom>10</vUnCom><vProd>20</vProd></prod><imposto><ICMS><ICMS00><CST>00</CST></ICMS00></ICMS></imposto></det><total><ICMSTot><vNF>20</vNF></ICMSTot></total></infNFe></NFe></nfeProc>`;
+
+    const preview = await agent
+      .post("/api/v1/stock/purchase-imports/xml/preview")
+      .set(tenantHeader)
+      .send({ branchId: tenantA.branchId, xml });
+    expect(preview.status).toBe(201);
+    expect(preview.body.document.key).toBe(accessKey);
+    expect(preview.body.items).toHaveLength(1);
+
+    const payload = {
+      branchId: tenantA.branchId,
+      supplierName: "Fornecedor Fiscal E2E",
+      createSupplier: true,
+      source: "xml_upload",
+      documentKey: accessKey,
+      documentNumber: "321",
+      xml,
+      items: [{ sourceIndex: 0, action: "create", name: "Produto Fiscal E2E", sku: "FISCAL-1", barcode: "7891000000016", quantity: 2, unitCost: 10 }],
+    };
+    const received = await agent
+      .post("/api/v1/stock/purchase-imports/xml/commit")
+      .set(tenantHeader)
+      .send(payload);
+    expect(received.status).toBe(201);
+    expect(received.body.itemCount).toBe(1);
+
+    const stock = await agent.get("/api/v1/stock").set(tenantHeader).query({ search: "Produto Fiscal E2E", page: 1, pageSize: 10 });
+    expect(stock.status).toBe(200);
+    expect(Number(stock.body.data[0].quantity)).toBe(2);
+
+    const documents = await agent.get("/api/v1/fiscal/inbound").set(tenantHeader).query({ page: 1, pageSize: 10 });
+    expect(documents.status).toBe(200);
+    expect(documents.body.data[0]).toMatchObject({ accessKey, status: "received", itemCount: 1 });
+
+    const duplicate = await agent
+      .post("/api/v1/stock/purchase-imports/xml/commit")
+      .set(tenantHeader)
+      .send(payload);
+    expect(duplicate.status).toBe(400);
+    expect(duplicate.body.message).toMatch(/já foi recebida/i);
+  });
+
   it("keeps cash, cancellation, returns, purchases and transfers consistent", async () => {
     const agent = await login(app, tenantA);
     const tenantHeader = { "x-tenant-id": tenantA.tenantId };

@@ -1,7 +1,7 @@
 "use client";
 
 import { Badge, Button, Card, CardContent, EmptyState, PageHeader } from "@sgc/ui";
-import { CheckCircle2, Download, FileCheck2, RefreshCw, XCircle } from "lucide-react";
+import { Archive, CheckCircle2, Download, FileCheck2, LockKeyhole, RefreshCw, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { apiFetch, downloadApiFile } from "../../../lib/api";
@@ -47,6 +47,8 @@ export default function AccountingPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [period, setPeriod] = useState(new Date().toISOString().slice(0, 7));
+  const [closures, setClosures] = useState<Array<{ id: string; branchName?: string | null; period: string; status: string; documentCount: number; totalAmount: string; generatedAt?: string | null; closedAt?: string | null }>>([]);
 
   useEffect(() => {
     void Promise.all([
@@ -59,10 +61,12 @@ export default function AccountingPage() {
   }, []);
 
   async function loadOverview(selected = branchId) {
-    const result = await apiFetch<Overview>(
-      `/fiscal/accounting/overview${selected ? `?branchId=${selected}` : ""}`,
-    );
+    const [result, closureResult] = await Promise.all([
+      apiFetch<Overview>(`/fiscal/accounting/overview${selected ? `?branchId=${selected}` : ""}`),
+      apiFetch<{ data: typeof closures }>("/fiscal/accounting/closures"),
+    ]);
     setOverview(result);
+    setClosures(closureResult.data);
     setError(null);
   }
 
@@ -116,6 +120,25 @@ export default function AccountingPage() {
     }
   }
 
+  async function downloadPackage() {
+    try {
+      setError(null);
+      const query = new URLSearchParams({ period });
+      if (branchId) query.set("branchId", branchId);
+      await downloadApiFile(`/fiscal/accounting/package?${query.toString()}`, `orien-contabilidade-${period}.zip`);
+      setNotice("Pacote contábil gerado com entradas, saídas e XML disponíveis.");
+      await loadOverview();
+    } catch (err) { setError(message(err)); }
+  }
+
+  async function closePeriod() {
+    if (!window.confirm(`Fechar a competência ${period}? O fechamento ficará registrado na auditoria.`)) return;
+    await action(async () => {
+      await apiFetch("/fiscal/accounting/close", { method: "POST", body: JSON.stringify({ period, branchId: branchId || undefined }) });
+      setNotice("Competência fechada com sucesso.");
+    });
+  }
+
   return (
     <div className="grid gap-6">
       <PageHeader
@@ -137,13 +160,19 @@ export default function AccountingPage() {
 
       <Card>
         <CardContent>
-          <label className="grid max-w-xl gap-1 text-sm font-medium">
-            Loja analisada
-            <select value={branchId} onChange={(event) => void selectBranch(event.target.value)} className="h-11 rounded-md border border-[var(--brand-border)] bg-white px-3">
-              <option value="">Todas as lojas</option>
-              {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
-            </select>
-          </label>
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_auto] lg:items-end">
+            <label className="grid gap-1 text-sm font-medium">Loja analisada<select value={branchId} onChange={(event) => void selectBranch(event.target.value)} className="h-11 rounded-md border border-[var(--brand-border)] bg-white px-3"><option value="">Todas as lojas</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label>
+            <label className="grid gap-1 text-sm font-medium">Competência<input type="month" value={period} onChange={(event) => setPeriod(event.target.value)} className="h-11 rounded-md border border-[var(--brand-border)] bg-white px-3" /></label>
+            <div className="flex flex-wrap gap-2"><Button icon={<Archive size={16} />} onClick={() => void downloadPackage()}>Gerar pacote mensal</Button><Button variant="secondary" icon={<LockKeyhole size={16} />} onClick={() => void closePeriod()}>Fechar competência</Button></div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent>
+          <div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-lg font-semibold text-[var(--brand-primary)]">Fechamentos recentes</h2><p className="text-sm text-slate-500">Histórico de pacotes entregues e competências encerradas.</p></div><Badge>{closures.length} registro(s)</Badge></div>
+          <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">{closures.map((closure) => <div key={closure.id} className="rounded-md border border-[var(--brand-border)] p-3"><div className="flex items-center justify-between gap-2"><strong>{closure.period}</strong><Badge>{closure.status === "closed" ? "Fechada" : "Pacote gerado"}</Badge></div><p className="mt-2 text-sm text-slate-500">{closure.branchName || "Todas as lojas"} · {closure.documentCount} documento(s)</p><p className="mt-1 font-medium">{Number(closure.totalAmount).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} em entradas</p></div>)}</div>
+          {!closures.length ? <p className="mt-4 text-sm text-slate-500">Nenhuma competência foi gerada ainda.</p> : null}
         </CardContent>
       </Card>
 

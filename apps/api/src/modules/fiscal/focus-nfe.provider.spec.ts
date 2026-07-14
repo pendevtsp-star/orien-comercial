@@ -49,4 +49,19 @@ describe("FocusNfeProvider", () => {
       "endereço de artefato inválido",
     );
   });
+
+  it("consulta e manifesta NF-e recebida usando a chave de acesso", async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    const provider = new FocusNfeProvider("token-teste", "production", (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      requests.push({ url, init });
+      return Promise.resolve(new Response(JSON.stringify({ status: "evento_registrado", protocolo: "135" }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    });
+    const key = "35260712345678000199550010000000011000000010";
+    await provider.getReceivedNfe(key);
+    await provider.manifestReceivedNfe(key, "confirmacao");
+    expect(requests[0]?.url).toBe(`https://api.focusnfe.com.br/v2/nfes_recebidas/${key}.json?completa=1`);
+    expect(requests[1]?.url).toBe(`https://api.focusnfe.com.br/v2/nfes_recebidas/${key}/manifesto`);
+    expect(requests[1]?.init?.body).toBe(JSON.stringify({ tipo: "confirmacao" }));
+  });
 });

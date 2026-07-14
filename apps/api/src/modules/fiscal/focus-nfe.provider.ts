@@ -8,7 +8,7 @@ import {
 } from "./fiscal-provider";
 
 type Fetcher = typeof fetch;
-type FocusResponse = Record<string, unknown>;
+export type FocusResponse = Record<string, unknown>;
 
 export class FocusNfeProvider implements FiscalProvider {
   readonly name = "focus_nfe";
@@ -51,6 +51,23 @@ export class FocusNfeProvider implements FiscalProvider {
       body: JSON.stringify({ justificativa: justification }),
     });
     return normalizeFocusResponse(payload, reference);
+  }
+
+  async getReceivedNfe(accessKey: string) {
+    return this.request(`/v2/nfes_recebidas/${encodeURIComponent(accessKey)}.json?completa=1`, {
+      method: "GET",
+    });
+  }
+
+  async manifestReceivedNfe(
+    accessKey: string,
+    type: "ciencia" | "confirmacao" | "desconhecimento" | "nao_realizada",
+    justification?: string,
+  ) {
+    return this.request(`/v2/nfes_recebidas/${encodeURIComponent(accessKey)}/manifesto`, {
+      method: "POST",
+      body: JSON.stringify({ tipo: type, ...(justification ? { justificativa: justification } : {}) }),
+    });
   }
 
   async downloadArtifact(url: string) {

@@ -22,6 +22,9 @@ import {
   fiscalIssueSchema,
   fiscalProductionActionSchema,
   fiscalReviewSchema,
+  inboundFiscalListQuerySchema,
+  inboundFiscalManifestSchema,
+  accountingClosureSchema,
 } from "@sgc/types";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../shared/auth.guard";
@@ -32,12 +35,63 @@ import type { TenantContext } from "../../shared/request-context";
 import { TenantContextGuard } from "../../shared/tenant-context.guard";
 import { ZodValidationPipe } from "../../shared/zod-validation.pipe";
 import { FiscalService } from "./fiscal.service";
+import { InboundFiscalService } from "./inbound-fiscal.service";
 
 @ApiTags("fiscal")
 @UseGuards(JwtAuthGuard, TenantContextGuard, PermissionsGuard)
 @Controller("fiscal")
 export class FiscalController {
-  constructor(@Inject(FiscalService) private readonly fiscal: FiscalService) {}
+  constructor(
+    @Inject(FiscalService) private readonly fiscal: FiscalService,
+    @Inject(InboundFiscalService) private readonly inboundFiscal: InboundFiscalService,
+  ) {}
+
+  @RequirePermissions(permissions.fiscal.read)
+  @Get("inbound")
+  inboundDocuments(
+    @CurrentTenant() context: TenantContext,
+    @Query(new ZodValidationPipe(inboundFiscalListQuerySchema)) query: never,
+  ) {
+    return this.inboundFiscal.list(context, query);
+  }
+
+  @RequirePermissions(permissions.stock.purchase)
+  @Post("inbound/:id/manifest")
+  manifestInbound(
+    @CurrentTenant() context: TenantContext,
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(inboundFiscalManifestSchema)) body: never,
+  ) {
+    return this.inboundFiscal.manifest(context, id, body);
+  }
+
+  @RequirePermissions(permissions.fiscal.review)
+  @Get("accounting/closures")
+  accountingClosures(@CurrentTenant() context: TenantContext) {
+    return this.inboundFiscal.closures(context);
+  }
+
+  @RequirePermissions(permissions.fiscal.review)
+  @Get("accounting/package")
+  async accountingPackage(
+    @CurrentTenant() context: TenantContext,
+    @Query(new ZodValidationPipe(accountingClosureSchema)) body: never,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const input = body as { period: string };
+    response.setHeader("Content-Type", "application/zip");
+    response.setHeader("Content-Disposition", `attachment; filename="orien-contabilidade-${input.period}.zip"`);
+    return new StreamableFile(await this.inboundFiscal.accountingPackage(context, body));
+  }
+
+  @RequirePermissions(permissions.fiscal.review)
+  @Post("accounting/close")
+  closeAccountingPeriod(
+    @CurrentTenant() context: TenantContext,
+    @Body(new ZodValidationPipe(accountingClosureSchema)) body: never,
+  ) {
+    return this.inboundFiscal.closePeriod(context, body);
+  }
 
   @RequirePermissions(permissions.fiscal.read)
   @Get("branches/:branchId/settings")

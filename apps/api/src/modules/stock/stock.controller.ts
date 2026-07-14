@@ -5,6 +5,7 @@ import {
   inventoryCountCreateSchema,
   purchaseXmlCommitSchema,
   purchaseXmlPreviewSchema,
+  purchaseKeyPreviewSchema,
   purchaseEntryCreateSchema,
   stockAdjustmentSchema,
   stockListQuerySchema,
@@ -20,12 +21,16 @@ import type { TenantContext } from "../../shared/request-context";
 import { TenantContextGuard } from "../../shared/tenant-context.guard";
 import { ZodValidationPipe } from "../../shared/zod-validation.pipe";
 import { StockService } from "./stock.service";
+import { InboundFiscalService } from "../fiscal/inbound-fiscal.service";
 
 @ApiTags("stock")
 @UseGuards(JwtAuthGuard, TenantContextGuard, PermissionsGuard)
 @Controller("stock")
 export class StockController {
-  constructor(@Inject(StockService) private readonly stockService: StockService) {}
+  constructor(
+    @Inject(StockService) private readonly stockService: StockService,
+    @Inject(InboundFiscalService) private readonly inboundFiscal: InboundFiscalService,
+  ) {}
 
   @RequirePermissions(permissions.stock.read)
   @Get()
@@ -66,13 +71,19 @@ export class StockController {
   @RequirePermissions(permissions.stock.purchase)
   @Post("purchase-imports/xml/preview")
   previewPurchaseXml(@CurrentTenant() tenant: TenantContext, @Body(new ZodValidationPipe(purchaseXmlPreviewSchema)) body: never) {
-    return this.stockService.previewPurchaseXml(tenant, body);
+    return this.inboundFiscal.previewXml(tenant, body);
+  }
+
+  @RequirePermissions(permissions.stock.purchase)
+  @Post("purchase-imports/key/preview")
+  previewPurchaseKey(@CurrentTenant() tenant: TenantContext, @Body(new ZodValidationPipe(purchaseKeyPreviewSchema)) body: never) {
+    return this.inboundFiscal.previewKey(tenant, body);
   }
 
   @RequirePermissions(permissions.stock.purchase)
   @Post("purchase-imports/xml/commit")
   commitPurchaseXml(@CurrentTenant() tenant: TenantContext, @Body(new ZodValidationPipe(purchaseXmlCommitSchema)) body: never) {
-    return this.stockService.commitPurchaseXml(tenant, body);
+    return this.inboundFiscal.commit(tenant, body);
   }
 
   @RequirePermissions(permissions.stock.reports)

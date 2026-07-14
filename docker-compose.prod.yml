@@ -4,7 +4,6 @@ services:
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
-    env_file: .env
     environment:
       POSTGRES_DB: sgc
       POSTGRES_USER: sgc_owner

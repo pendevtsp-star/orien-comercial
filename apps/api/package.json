@@ -32,6 +32,7 @@
     "fast-xml-parser": "5.3.3",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
+    "jszip": "^3.10.1",
     "nodemailer": "^9.0.3",
     "pg": "^8.16.3",
     "qrcode": "^1.5.4",
