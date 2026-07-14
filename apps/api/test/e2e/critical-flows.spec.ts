@@ -481,6 +481,47 @@ describe.sequential("critical api flows", { timeout: 60_000 }, () => {
     expect(duplicate.body.message).toMatch(/já foi recebida/i);
   });
 
+  it("explains fiscal blockers before issuing a sale document", async () => {
+    const agent = await login(app, tenantA);
+    const tenantHeader = { "x-tenant-id": tenantA.tenantId };
+    const product = await agent
+      .post("/api/v1/products")
+      .set(tenantHeader)
+      .send({
+        branchId: tenantA.branchId,
+        name: "Produto Fiscal Bloqueado",
+        sku: "FISCAL-BLOCK-001",
+        unit: "un",
+        costPrice: 4,
+        salePrice: 8,
+        minStock: 1,
+        isActive: true,
+      });
+    await agent.post("/api/v1/stock/adjustments").set(tenantHeader).send({
+      branchId: tenantA.branchId,
+      productId: product.body.id,
+      quantityDelta: 3,
+      reason: "Carga fiscal",
+    });
+    const sale = await agent.post("/api/v1/sales").set(tenantHeader).send({
+      branchId: tenantA.branchId,
+      items: [{ productId: product.body.id, quantity: 1, unitPrice: 8 }],
+      payments: [{ method: "pix", amount: 8, status: "paid" }],
+    });
+
+    const precheck = await agent.get(`/api/v1/fiscal/sales/${sale.body.id}/precheck`).set(tenantHeader);
+    expect(precheck.status).toBe(200);
+    expect(precheck.body.ready).toBe(false);
+    expect(precheck.body.blockers.join(" ")).toMatch(/Loja|Produto/i);
+
+    const contingency = await agent.get("/api/v1/fiscal/contingency").set(tenantHeader);
+    expect(contingency.status).toBe(200);
+    expect(contingency.body.data).toEqual([]);
+    const voids = await agent.get("/api/v1/fiscal/number-voids").set(tenantHeader);
+    expect(voids.status).toBe(200);
+    expect(voids.body.data).toEqual([]);
+  });
+
   it("keeps cash, cancellation, returns, purchases and transfers consistent", async () => {
     const agent = await login(app, tenantA);
     const tenantHeader = { "x-tenant-id": tenantA.tenantId };

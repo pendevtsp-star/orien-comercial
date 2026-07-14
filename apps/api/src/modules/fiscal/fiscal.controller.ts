@@ -20,6 +20,7 @@ import {
   fiscalCredentialSchema,
   fiscalDocumentListQuerySchema,
   fiscalIssueSchema,
+  fiscalNumberVoidSchema,
   fiscalProductionActionSchema,
   fiscalReviewSchema,
   inboundFiscalListQuerySchema,
@@ -192,6 +193,18 @@ export class FiscalController {
   }
 
   @RequirePermissions(permissions.fiscal.read)
+  @Get("contingency")
+  contingency(@CurrentTenant() context: TenantContext, @Query("branchId") branchId?: string) {
+    return this.fiscal.contingencyQueue(context, branchId);
+  }
+
+  @RequirePermissions(permissions.fiscal.read)
+  @Get("number-voids")
+  numberVoids(@CurrentTenant() context: TenantContext, @Query("branchId") branchId?: string) {
+    return this.fiscal.numberVoids(context, branchId);
+  }
+
+  @RequirePermissions(permissions.fiscal.read)
   @Get("documents/:id")
   document(@CurrentTenant() context: TenantContext, @Param("id") id: string) {
     return this.fiscal.getDocument(context, id);
@@ -219,6 +232,22 @@ export class FiscalController {
     @Body(new ZodValidationPipe(fiscalIssueSchema)) body: never,
   ) {
     return this.fiscal.issueSale(context, body, idempotencyKey);
+  }
+
+  @RequirePermissions(permissions.fiscal.issue)
+  @Get("sales/:saleId/precheck")
+  precheckSale(@CurrentTenant() context: TenantContext, @Param("saleId") saleId: string) {
+    return this.fiscal.precheckSale(context, saleId);
+  }
+
+  @RequirePermissions(permissions.fiscal.cancel)
+  @Post("branches/:branchId/number-voids")
+  voidNumbers(
+    @CurrentTenant() context: TenantContext,
+    @Param("branchId") branchId: string,
+    @Body(new ZodValidationPipe(fiscalNumberVoidSchema)) body: never,
+  ) {
+    return this.fiscal.voidNumbers(context, branchId, body);
   }
 
   @RequirePermissions(permissions.fiscal.issue)

@@ -686,6 +686,16 @@ export const fiscalCancelSchema = z.object({
   justification: z.string().trim().min(15).max(255),
 });
 
+export const fiscalNumberVoidSchema = z.object({
+  series: z.coerce.number().int().min(1).max(999),
+  numberStart: z.coerce.number().int().min(1),
+  numberEnd: z.coerce.number().int().min(1),
+  justification: z.string().trim().min(15).max(255),
+}).refine(
+  (value) => value.numberEnd >= value.numberStart,
+  "O número final deve ser maior ou igual ao número inicial.",
+);
+
 export const fiscalReviewSchema = z
   .object({
     status: z.enum(["approved", "rejected"]),
@@ -776,6 +786,7 @@ export type BranchFiscalSettingsInput = z.infer<typeof branchFiscalSettingsSchem
 export type FiscalCredentialInput = z.infer<typeof fiscalCredentialSchema>;
 export type FiscalIssueInput = z.infer<typeof fiscalIssueSchema>;
 export type FiscalCancelInput = z.infer<typeof fiscalCancelSchema>;
+export type FiscalNumberVoidInput = z.infer<typeof fiscalNumberVoidSchema>;
 export type FiscalReviewInput = z.infer<typeof fiscalReviewSchema>;
 export type FiscalProductionActionInput = z.infer<typeof fiscalProductionActionSchema>;
 export type FiscalDocumentListQuery = z.infer<typeof fiscalDocumentListQuerySchema>;

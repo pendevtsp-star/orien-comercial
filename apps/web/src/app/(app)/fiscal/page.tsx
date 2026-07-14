@@ -93,6 +93,31 @@ type FiscalDocument = {
   createdAt: string;
   artifacts?: Record<string, string>;
 };
+type ContingencyDocument = {
+  id: string;
+  saleId: string;
+  branchName: string;
+  documentType: string;
+  status: string;
+  reference: string;
+  attemptCount: number;
+  deadlineAt?: string | null;
+  syncedAt?: string | null;
+  lastError?: string | null;
+  createdAt: string;
+};
+type NumberVoid = {
+  id: string;
+  branchName: string;
+  series: number;
+  numberStart: number;
+  numberEnd: number;
+  justification: string;
+  status: string;
+  protocol?: string | null;
+  providerMessage?: string | null;
+  requestedAt: string;
+};
 
 export default function FiscalPage() {
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -100,6 +125,8 @@ export default function FiscalPage() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [readiness, setReadiness] = useState<Readiness | null>(null);
   const [documents, setDocuments] = useState<FiscalDocument[]>([]);
+  const [contingency, setContingency] = useState<ContingencyDocument[]>([]);
+  const [numberVoids, setNumberVoids] = useState<NumberVoid[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -131,14 +158,18 @@ export default function FiscalPage() {
   async function loadBranch(id: string) {
     setLoading(true);
     try {
-      const [settings, currentReadiness, currentDocuments] = await Promise.all([
+      const [settings, currentReadiness, currentDocuments, currentContingency, currentNumberVoids] = await Promise.all([
         apiFetch<Overview>(`/fiscal/branches/${id}/settings`),
         apiFetch<Readiness>(`/fiscal/branches/${id}/readiness`),
         apiFetch<{ data: FiscalDocument[] }>(`/fiscal/documents?branchId=${id}&page=1&pageSize=50`),
+        apiFetch<{ data: ContingencyDocument[] }>(`/fiscal/contingency?branchId=${id}`),
+        apiFetch<{ data: NumberVoid[] }>(`/fiscal/number-voids?branchId=${id}`),
       ]);
       setOverview(settings);
       setReadiness(currentReadiness);
       setDocuments(currentDocuments.data);
+      setContingency(currentContingency.data);
+      setNumberVoids(currentNumberVoids.data);
       setWebhookSecret(null);
       setError(null);
     } catch (err) {
@@ -309,6 +340,25 @@ export default function FiscalPage() {
     }, false);
   }
 
+  async function voidNumberRange(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    await act(async () => {
+      const justification = form.get("justification");
+      await apiFetch(`/fiscal/branches/${branchId}/number-voids`, {
+        method: "POST",
+        body: JSON.stringify({
+          series: Number(form.get("series")),
+          numberStart: Number(form.get("numberStart")),
+          numberEnd: Number(form.get("numberEnd")),
+          justification: typeof justification === "string" ? justification : "",
+        }),
+      });
+      setNotice("Inutilização enviada ao provedor fiscal e registrada para auditoria.");
+      event.currentTarget.reset();
+    });
+  }
+
   async function act(callback: () => Promise<void>, reload = true) {
     try {
       setError(null);
@@ -323,6 +373,7 @@ export default function FiscalPage() {
   const canConfigure = granted.includes("fiscal.configure");
   const canReview = granted.includes("fiscal.review");
   const canActivate = granted.includes("fiscal.activate");
+  const canCancel = granted.includes("fiscal.cancel");
   return (
     <div className="grid gap-6">
       <PageHeader
@@ -797,6 +848,101 @@ export default function FiscalPage() {
         </CardContent>
       </Card>
 
+      <section className="grid gap-4 xl:grid-cols-2">
+        <Card>
+          <CardContent>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-[var(--brand-primary)]">
+                  Contingência NFC-e
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Documentos emitidos offline precisam ser acompanhados até a autorização definitiva.
+                </p>
+              </div>
+              <Badge>{contingency.length} em acompanhamento</Badge>
+            </div>
+            <div className="mt-4 grid gap-2">
+              {contingency.map((document) => (
+                <article key={document.id} className="rounded-md border border-[var(--brand-border)] p-3 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <strong>{document.documentType.toUpperCase()} · venda {document.saleId.slice(0, 8)}</strong>
+                    <StatusBadge status={document.status} />
+                  </div>
+                  <p className="mt-1 text-slate-500">
+                    Loja {document.branchName} · tentativas {document.attemptCount}
+                    {document.deadlineAt ? ` · prazo ${new Date(document.deadlineAt).toLocaleString("pt-BR")}` : ""}
+                  </p>
+                  {document.syncedAt ? (
+                    <p className="mt-2 text-emerald-700">Sincronizada em {new Date(document.syncedAt).toLocaleString("pt-BR")}.</p>
+                  ) : null}
+                  {document.lastError ? <p className="mt-2 text-rose-700">{document.lastError}</p> : null}
+                </article>
+              ))}
+              {!contingency.length ? (
+                <EmptyState
+                  eyebrow="Operação fiscal"
+                  title="Nenhuma contingência aberta."
+                  description="Quando uma NFC-e for emitida offline, ela aparecerá aqui até ser sincronizada."
+                  icon={<ShieldCheck size={20} />}
+                />
+              ) : null}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-[var(--brand-primary)]">
+                  Inutilização de numeração
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Use quando uma faixa de NFC-e não puder mais ser aproveitada. A justificativa fica auditada.
+                </p>
+              </div>
+              <Badge>{numberVoids.length} registro(s)</Badge>
+            </div>
+            {canCancel ? (
+              <form className="mt-4 grid gap-3 sm:grid-cols-3" onSubmit={(event) => void voidNumberRange(event)}>
+                <Field name="series" label="Série" value={settings?.nfceSeries ?? 1} type="number" required />
+                <Field name="numberStart" label="Número inicial" value="" type="number" required />
+                <Field name="numberEnd" label="Número final" value="" type="number" required />
+                <label className="grid gap-1 text-sm font-medium sm:col-span-3">
+                  Justificativa
+                  <input
+                    name="justification"
+                    required
+                    minLength={15}
+                    maxLength={255}
+                    placeholder="Ex.: falha técnica na emissão em contingência"
+                    className="h-11 min-w-0 rounded-md border border-[var(--brand-border)] bg-white px-3"
+                  />
+                </label>
+                <div className="sm:col-span-3">
+                  <Button type="submit">Inutilizar faixa</Button>
+                </div>
+              </form>
+            ) : null}
+            <div className="mt-4 grid gap-2">
+              {numberVoids.slice(0, 5).map((item) => (
+                <article key={item.id} className="rounded-md border border-[var(--brand-border)] p-3 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <strong>Série {item.series} · {item.numberStart} a {item.numberEnd}</strong>
+                    <StatusBadge status={item.status} />
+                  </div>
+                  <p className="mt-1 text-slate-500">{new Date(item.requestedAt).toLocaleString("pt-BR")} · {item.justification}</p>
+                  {item.protocol ? <p className="mt-1 text-slate-600">Protocolo: {item.protocol}</p> : null}
+                  {item.providerMessage ? <p className="mt-1 text-slate-600">{item.providerMessage}</p> : null}
+                </article>
+              ))}
+              {!numberVoids.length ? <p className="text-sm text-slate-500">Nenhuma inutilização registrada para esta loja.</p> : null}
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
       <Card>
         <CardContent>
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -980,11 +1126,11 @@ function FieldSelect({
 
 function StatusBadge({ status }: { status: string }) {
   const tone =
-    status === "authorized"
+    ["authorized", "processed"].includes(status)
       ? "bg-emerald-50 text-emerald-800"
       : status === "cancelled"
         ? "bg-slate-100 text-slate-700"
-        : ["rejected", "error"].includes(status)
+        : ["rejected", "error", "failed"].includes(status)
           ? "bg-rose-50 text-rose-700"
           : "bg-amber-50 text-amber-800";
   return <Badge className={tone}>{statusLabel(status)}</Badge>;
@@ -1007,6 +1153,8 @@ function statusLabel(status: string) {
         passed: "Concluída",
         in_progress: "Em andamento",
         failed: "Falhou",
+        processed: "Processada",
+        requested: "Solicitada",
       } as Record<string, string>
     )[status] ?? status
   );

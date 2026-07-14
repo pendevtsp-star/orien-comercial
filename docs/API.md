@@ -66,6 +66,10 @@ Base local: `http://localhost:3334/api/v1`.
 - `POST /fiscal/branches/:branchId/production/request`
 - `POST /fiscal/branches/:branchId/production/approve`
 - `POST /fiscal/branches/:branchId/production/revoke`
+- `GET /fiscal/sales/:saleId/precheck`
+- `GET /fiscal/contingency`
+- `GET /fiscal/number-voids`
+- `POST /fiscal/branches/:branchId/number-voids`
 - `GET/POST /fiscal/documents`
 - `GET /fiscal/documents/:id`
 - `POST /fiscal/documents/:id/sync`

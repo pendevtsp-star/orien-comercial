@@ -12,6 +12,7 @@ import type {
   FiscalCredentialInput,
   FiscalDocumentListQuery,
   FiscalIssueInput,
+  FiscalNumberVoidInput,
   FiscalProductionActionInput,
   FiscalReviewInput,
 } from "@sgc/types";
@@ -88,6 +89,8 @@ type FiscalDocumentRow = {
   reference: string;
   attempt_count: number;
   contingency_mode: boolean;
+  contingency_synced_at: Date | null;
+  contingency_deadline_at: Date | null;
 };
 
 @Injectable()
@@ -459,6 +462,193 @@ export class FiscalService {
       [context.tenantId, saleId],
     );
     return { data: documents.rows };
+  }
+
+  async precheckSale(context: TenantContext, saleId: string) {
+    const sale = await this.database.tenantQuery<Record<string, unknown>>(
+      context.tenantId,
+      `SELECT s.id,s.branch_id,s.status,s.total_amount,b.name AS branch_name
+       FROM sales s JOIN branches b ON b.id=s.branch_id
+       WHERE s.tenant_id=$1 AND s.id=$2 AND s.deleted_at IS NULL`,
+      [context.tenantId, saleId],
+    );
+    const row = ensureFound(sale.rows[0], "Venda");
+    ensureBranchAccess(context, row.branch_id as string);
+    const settings = await this.settingsRow(context.tenantId, row.branch_id as string);
+    const items = await this.database.tenantQuery<Record<string, unknown>>(
+      context.tenantId,
+      `SELECT si.product_id AS "productId",si.description,p.sku,p.barcode,
+        pf.ncm,pf.cest,pf.tax_origin,pf.cfop_domestic,pf.cfop_interstate,pf.icms_tax_code,
+        pf.pis_tax_code,pf.cofins_tax_code,pf.subject_to_icms_st,pf.accountant_review_status
+       FROM sale_items si JOIN products p ON p.id=si.product_id AND p.tenant_id=si.tenant_id
+       LEFT JOIN product_fiscal_profiles pf ON pf.product_id=p.id AND pf.tenant_id=p.tenant_id
+       WHERE si.tenant_id=$1 AND si.sale_id=$2 ORDER BY si.id`,
+      [context.tenantId, saleId],
+    );
+    const settingsMissing = settings ? fiscalSettingsMissing(settings) : ["Configuração fiscal da loja"];
+    const itemResults = items.rows.map((item) => {
+      const missing = [
+        [item.ncm, "NCM"],
+        [item.tax_origin, "Origem"],
+        [item.cfop_domestic, "CFOP interno"],
+        [item.cfop_interstate, "CFOP interestadual"],
+        [item.icms_tax_code, "CST/CSOSN"],
+        [item.pis_tax_code, "CST PIS"],
+        [item.cofins_tax_code, "CST COFINS"],
+        [!item.subject_to_icms_st || item.cest, "CEST"],
+      ]
+        .filter(([value]) => !value)
+        .map(([, label]) => label);
+      return {
+        productId: item.productId,
+        description: typeof item.description === "string" ? item.description : "Produto",
+        sku: item.sku,
+        barcode: item.barcode,
+        missing,
+        reviewStatus: item.accountant_review_status ?? "pending",
+      };
+    });
+    const missingItems = itemResults.filter(
+      (item) => item.missing.length || item.reviewStatus !== "approved",
+    );
+    const blockers = [
+      ...(row.status === "cancelled" ? ["Venda cancelada"] : []),
+      ...(!items.rows.length ? ["Venda sem produtos"] : []),
+      ...settingsMissing.map((item) => `Loja: ${item}`),
+      ...missingItems.map((item) => `Produto ${item.description}: ${item.missing.join(", ") || "revisão contábil pendente"}`),
+    ];
+    return {
+      saleId,
+      branchId: row.branch_id,
+      branchName: row.branch_name,
+      ready: blockers.length === 0,
+      status: blockers.length ? "blocked" : "ready",
+      blockers,
+      settings: {
+        configured: Boolean(settings),
+        environment: settings?.environment ?? null,
+        provider: settings?.provider ?? null,
+        documentMode: settings?.document_mode ?? null,
+        contingencyEnabled: Boolean(settings?.contingency_enabled),
+      },
+      items: itemResults,
+    };
+  }
+
+  async contingencyQueue(context: TenantContext, branchId?: string) {
+    if (branchId) ensureBranchAccess(context, branchId);
+    const selectedBranch = context.branchId ?? branchId ?? null;
+    const values: unknown[] = [context.tenantId];
+    const branchFilter = selectedBranch ? "AND fd.branch_id=$2" : "";
+    if (selectedBranch) values.push(selectedBranch);
+    const rows = await this.database.tenantQuery(
+      context.tenantId,
+      `SELECT fd.id,fd.sale_id AS "saleId",fd.branch_id AS "branchId",b.name AS "branchName",
+        fd.document_type AS "documentType",fd.status,fd.reference,fd.access_key AS "accessKey",
+        fd.protocol,fd.attempt_count AS "attemptCount",fd.contingency_deadline_at AS "deadlineAt",
+        fd.contingency_synced_at AS "syncedAt",fd.created_at AS "createdAt",fd.last_error AS "lastError"
+       FROM fiscal_documents fd JOIN branches b ON b.id=fd.branch_id
+       WHERE fd.tenant_id=$1 ${branchFilter}
+         AND (fd.contingency_mode=true OR fd.status='contingency')
+       ORDER BY COALESCE(fd.contingency_deadline_at,fd.created_at) ASC
+       LIMIT 100`,
+      values,
+    );
+    return { data: rows.rows };
+  }
+
+  async numberVoids(context: TenantContext, branchId?: string) {
+    if (branchId) ensureBranchAccess(context, branchId);
+    const selectedBranch = context.branchId ?? branchId ?? null;
+    const values: unknown[] = [context.tenantId];
+    const branchFilter = selectedBranch ? "AND v.branch_id=$2" : "";
+    if (selectedBranch) values.push(selectedBranch);
+    const rows = await this.database.tenantQuery(
+      context.tenantId,
+      `SELECT v.id,v.branch_id AS "branchId",b.name AS "branchName",v.provider,v.environment,
+        v.document_type AS "documentType",v.series,v.number_start AS "numberStart",
+        v.number_end AS "numberEnd",v.justification,v.status,v.protocol,
+        v.provider_code AS "providerCode",v.provider_message AS "providerMessage",
+        v.requested_at AS "requestedAt",v.processed_at AS "processedAt"
+       FROM fiscal_number_voids v JOIN branches b ON b.id=v.branch_id
+       WHERE v.tenant_id=$1 ${branchFilter}
+       ORDER BY v.requested_at DESC LIMIT 100`,
+      values,
+    );
+    return { data: rows.rows };
+  }
+
+  async voidNumbers(context: TenantContext, branchId: string, input: FiscalNumberVoidInput) {
+    ensureBranchAccess(context, branchId);
+    const settings = await this.settingsRow(context.tenantId, branchId);
+    if (!settings || settings.status === "draft") {
+      throw new BadRequestException("Configure os dados fiscais desta loja antes de inutilizar numeração.");
+    }
+    if (!settings.tax_id) throw new BadRequestException("Informe o CNPJ fiscal da loja.");
+    if (settings.provider !== "focus_nfe") {
+      throw new BadRequestException("A inutilização está disponível para Focus NFe nesta rodada.");
+    }
+    const provider = await this.providerForSettings(context, settings);
+    const inserted = await this.database.tenantTransaction(context.tenantId, async (client) => {
+      const result = await client.query<{ id: string }>(
+        `INSERT INTO fiscal_number_voids(
+          tenant_id,branch_id,provider,environment,document_type,series,number_start,number_end,
+          justification,requested_by_user_id
+        ) VALUES($1,$2,$3,$4,'nfce',$5,$6,$7,$8,$9) RETURNING id`,
+        [
+          context.tenantId,
+          branchId,
+          settings.provider,
+          settings.environment,
+          input.series,
+          input.numberStart,
+          input.numberEnd,
+          input.justification,
+          context.userId ?? null,
+        ],
+      );
+      await insertAudit(client, context, "fiscal.number_void.requested", "branch", branchId, {
+        series: input.series,
+        numberStart: input.numberStart,
+        numberEnd: input.numberEnd,
+      });
+      return result.rows[0]!.id;
+    });
+    try {
+      const result = await provider.voidNumbers({
+        documentType: "nfce",
+        taxId: settings.tax_id,
+        series: input.series,
+        numberStart: input.numberStart,
+        numberEnd: input.numberEnd,
+        justification: input.justification,
+      });
+      await this.database.tenantQuery(
+        context.tenantId,
+        `UPDATE fiscal_number_voids SET status=$3,protocol=$4,provider_code=$5,
+          provider_message=$6,provider_payload=$7::jsonb,processed_at=now(),updated_at=now()
+         WHERE tenant_id=$1 AND id=$2`,
+        [
+          context.tenantId,
+          inserted,
+          result.status,
+          result.protocol ?? null,
+          result.providerCode ?? null,
+          result.providerMessage ?? null,
+          JSON.stringify(result.providerPayload ?? {}),
+        ],
+      );
+    } catch (error) {
+      await this.database.tenantQuery(
+        context.tenantId,
+        `UPDATE fiscal_number_voids SET status='failed',provider_message=$3,
+          provider_payload='{}'::jsonb,processed_at=now(),updated_at=now()
+         WHERE tenant_id=$1 AND id=$2`,
+        [context.tenantId, inserted, safeError(error)],
+      );
+      throw error;
+    }
+    return this.numberVoids(context, branchId);
   }
 
   async issueSale(context: TenantContext, input: FiscalIssueInput, idempotencyKey?: string) {
@@ -992,13 +1182,22 @@ export class FiscalService {
     context: TenantContext,
     document: FiscalDocumentRow,
   ): Promise<FiscalProvider> {
+    const settings = await this.settingsRow(context.tenantId, document.branch_id);
+    if (settings) return this.providerForSettings(context, settings);
+    throw new BadRequestException("Configure os dados fiscais desta loja antes de emitir.");
+  }
+
+  private async providerForSettings(
+    context: TenantContext,
+    settings: FiscalSettingsRow,
+  ): Promise<FiscalProvider> {
     const integration = await this.integrations.getFiscalConnection(context);
     if (!integration)
       throw new BadRequestException("Configure e teste o token da Focus NFe em Integrações.");
     if ((integration.settings.provider || "focus_nfe") !== "focus_nfe") {
       throw new BadRequestException("O adaptador Spedy ainda não foi homologado.");
     }
-    return new FocusNfeProvider(integration.secret, document.environment);
+    return new FocusNfeProvider(integration.secret, settings.environment);
   }
 
   private async applyProviderResult(
@@ -1014,6 +1213,8 @@ export class FiscalService {
           rejection_code=$7,rejection_reason=$8,last_error=NULL,next_retry_at=NULL,
           issued_at=CASE WHEN $3='authorized' THEN COALESCE(issued_at,now()) ELSE issued_at END,
           cancelled_at=CASE WHEN $3='cancelled' THEN now() ELSE cancelled_at END,
+          contingency_deadline_at=CASE WHEN $3='contingency' THEN COALESCE(contingency_deadline_at,now()+interval '24 hours') ELSE contingency_deadline_at END,
+          contingency_synced_at=CASE WHEN $3='authorized' AND contingency_mode=true THEN COALESCE(contingency_synced_at,now()) ELSE contingency_synced_at END,
           provider_updated_at=now(),metadata=metadata||$9::jsonb,updated_at=now()
          WHERE tenant_id=$1 AND id=$2`,
         [

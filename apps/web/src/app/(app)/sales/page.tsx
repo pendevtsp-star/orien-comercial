@@ -257,6 +257,11 @@ export default function SalesPage() {
 
   async function issueFiscal(id: string) {
     try {
+      const precheck = await apiFetch<{ ready: boolean; blockers: string[] }>(`/fiscal/sales/${id}/precheck`);
+      if (!precheck.ready) {
+        setError(`Antes de emitir, corrija: ${precheck.blockers.slice(0, 4).join("; ")}${precheck.blockers.length > 4 ? "..." : ""}`);
+        return;
+      }
       const result = await apiFetch<{ message: string }>(`/sales/${id}/fiscal/issue`, {
         method: "POST",
         body: "{}",

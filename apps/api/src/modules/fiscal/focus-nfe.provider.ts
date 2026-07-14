@@ -3,6 +3,8 @@ import {
   type FiscalDocumentType,
   type FiscalEnvironment,
   type FiscalIssueRequest,
+  type FiscalNumberVoidRequest,
+  type FiscalNumberVoidResult,
   type FiscalProvider,
   type FiscalProviderResult,
 } from "./fiscal-provider";
@@ -51,6 +53,29 @@ export class FocusNfeProvider implements FiscalProvider {
       body: JSON.stringify({ justificativa: justification }),
     });
     return normalizeFocusResponse(payload, reference);
+  }
+
+  async voidNumbers(request: FiscalNumberVoidRequest): Promise<FiscalNumberVoidResult> {
+    const payload = await this.request("/v2/nfce/inutilizacao", {
+      method: "POST",
+      body: JSON.stringify({
+        cnpj: request.taxId.replace(/\D/g, ""),
+        serie: request.series,
+        numero_inicial: request.numberStart,
+        numero_final: request.numberEnd,
+        justificativa: request.justification,
+      }),
+    });
+    return {
+      status: "processed",
+      protocol: stringValue(payload.protocolo ?? payload.numero_protocolo) || undefined,
+      providerCode:
+        stringValue(payload.codigo_status_sefaz ?? payload.codigo ?? payload.status_sefaz) ||
+        undefined,
+      providerMessage:
+        stringValue(payload.mensagem_sefaz ?? payload.mensagem ?? payload.status) || undefined,
+      providerPayload: payload,
+    };
   }
 
   async getReceivedNfe(accessKey: string) {

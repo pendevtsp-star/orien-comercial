@@ -15,6 +15,23 @@ export interface FiscalProviderResult {
   providerStatus?: string;
 }
 
+export interface FiscalNumberVoidRequest {
+  documentType: "nfce";
+  taxId: string;
+  series: number;
+  numberStart: number;
+  numberEnd: number;
+  justification: string;
+}
+
+export interface FiscalNumberVoidResult {
+  status: "processed" | "failed";
+  protocol?: string;
+  providerCode?: string;
+  providerMessage?: string;
+  providerPayload?: Record<string, unknown>;
+}
+
 export interface FiscalIssueRequest {
   reference: string;
   documentType: FiscalDocumentType;
@@ -31,6 +48,7 @@ export interface FiscalProvider {
     reference: string,
     justification: string,
   ): Promise<FiscalProviderResult>;
+  voidNumbers(request: FiscalNumberVoidRequest): Promise<FiscalNumberVoidResult>;
   downloadArtifact(url: string): Promise<{ content: Buffer; contentType: string }>;
 }
 

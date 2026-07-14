@@ -79,3 +79,17 @@ uma autorização SEFAZ como se fosse real.
 
 Os códigos técnicos ficam no histórico. A interface mostra uma mensagem operacional em
 português e preserva o código para suporte e contabilidade.
+
+## Contingência e inutilização
+
+Antes de solicitar uma NFC-e, a Orien executa a pré-validação da venda. Ela verifica a
+configuração da loja, a situação da venda e os dados fiscais dos produtos. Quando houver
+pendência, a interface deve orientar a correção antes da transmissão.
+
+Se uma NFC-e for emitida em contingência, ela entra em acompanhamento até a sincronização
+posterior com o provedor. O operador enxerga a loja, a venda, o prazo operacional e o último
+erro registrado.
+
+Quando uma faixa de numeração não puder ser usada, a Central Fiscal permite registrar a
+inutilização por série e intervalo. A solicitação é enviada ao provedor, recebe protocolo quando
+processada e fica auditada para suporte e contabilidade.
