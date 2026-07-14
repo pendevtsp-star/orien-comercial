@@ -56,6 +56,12 @@ export class FiscalController {
     return this.inboundFiscal.list(context, query);
   }
 
+  @RequirePermissions(permissions.fiscal.read)
+  @Get("inbound/:id")
+  inboundDocumentDetail(@CurrentTenant() context: TenantContext, @Param("id") id: string) {
+    return this.inboundFiscal.detail(context, id);
+  }
+
   @RequirePermissions(permissions.stock.purchase)
   @Post("inbound/:id/manifest")
   manifestInbound(

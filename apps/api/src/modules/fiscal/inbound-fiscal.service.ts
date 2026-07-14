@@ -63,7 +63,10 @@ type InboundDocumentRow = {
   issued_at: Date | null;
   total_amount: string;
   manifestation_status: string;
+  manifestation_protocol: string | null;
   xml_content: string | null;
+  received_at: Date | null;
+  created_at: Date;
 };
 
 @Injectable()
@@ -144,6 +147,85 @@ export class InboundFiscalService {
       params,
     );
     return { data: rows.rows, pagination: { ...page, total: Number(count.rows[0]?.total ?? 0) } };
+  }
+
+  async detail(context: TenantContext, id: string) {
+    const document = await this.database.tenantQuery<InboundDocumentRow & {
+      branchName: string;
+      purchaseEntryId: string | null;
+      purchaseOrderId: string | null;
+    }>(
+      context.tenantId,
+      `SELECT d.*,b.name AS "branchName",d.purchase_entry_id AS "purchaseEntryId",d.purchase_order_id AS "purchaseOrderId"
+       FROM purchase_fiscal_documents d JOIN branches b ON b.id=d.branch_id
+       WHERE d.tenant_id=$1 AND d.id=$2`,
+      [context.tenantId, id],
+    );
+    const current = ensureFound(document.rows[0], "NF-e recebida");
+    ensureBranchAccess(context, current.branch_id);
+    const items = await this.database.tenantQuery<{
+      id: string;
+      lineNumber: number;
+      supplierCode: string | null;
+      barcode: string | null;
+      description: string;
+      unit: string | null;
+      quantity: string;
+      unitCost: string;
+      totalAmount: string;
+      ncm: string | null;
+      cest: string | null;
+      cfop: string | null;
+      taxCode: string | null;
+      matchType: string | null;
+      resolution: string;
+      divergences: string[];
+      productId: string | null;
+      productName: string | null;
+      productSku: string | null;
+    }>(
+      context.tenantId,
+      `SELECT i.id,i.line_number AS "lineNumber",i.supplier_code AS "supplierCode",i.barcode,
+        i.description,i.unit,i.quantity::text AS quantity,i.unit_cost::text AS "unitCost",
+        i.total_amount::text AS "totalAmount",i.ncm,i.cest,i.cfop,i.tax_code AS "taxCode",
+        i.match_type AS "matchType",i.resolution,i.divergences,
+        p.id AS "productId",p.name AS "productName",p.sku AS "productSku"
+       FROM purchase_fiscal_document_items i
+       LEFT JOIN products p ON p.id=i.matched_product_id
+       WHERE i.tenant_id=$1 AND i.fiscal_document_id=$2
+       ORDER BY i.line_number`,
+      [context.tenantId, id],
+    );
+    return {
+      document: {
+        id: current.id,
+        branchId: current.branch_id,
+        branchName: current.branchName,
+        purchaseEntryId: current.purchaseEntryId,
+        purchaseOrderId: current.purchaseOrderId,
+        accessKey: current.access_key,
+        documentNumber: current.document_number,
+        series: current.series,
+        status: current.status,
+        source: current.source,
+        issuerName: current.issuer_name,
+        issuerDocument: current.issuer_document,
+        issuedAt: current.issued_at,
+        totalAmount: Number(current.total_amount),
+        manifestationStatus: current.manifestation_status,
+        manifestationProtocol: current.manifestation_protocol,
+        receivedAt: current.received_at,
+        createdAt: current.created_at,
+      },
+      items: items.rows,
+      summary: {
+        itemCount: items.rowCount,
+        linked: items.rows.filter((item) => item.resolution === "linked").length,
+        created: items.rows.filter((item) => item.resolution === "created").length,
+        ignored: items.rows.filter((item) => item.resolution === "ignored").length,
+        withDivergence: items.rows.filter((item) => item.divergences.length > 0).length,
+      },
+    };
   }
 
   async commit(context: TenantContext, input: PurchaseXmlCommitInput) {

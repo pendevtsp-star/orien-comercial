@@ -1,7 +1,7 @@
 "use client";
 
 import { Badge, Button, Card, CardContent, DataTable, EmptyState, Input, PageHeader, Select, Tabs } from "@sgc/ui";
-import { AlertTriangle, ArrowRightLeft, Boxes, ClipboardCheck, FileCheck2, Plus, RefreshCw, Search, Warehouse, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, Boxes, ClipboardCheck, Eye, FileCheck2, Plus, RefreshCw, Search, Warehouse, type LucideIcon } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { apiFetch, openApiDocument } from "../../../lib/api";
 import { PaginationFooter } from "../../../components/pagination-footer";
@@ -72,6 +72,44 @@ type ReceivingChoice = {
   name: string;
   quantity: number;
   unitCost: number;
+};
+
+type ReceivingFilter = "all" | "alerts" | "linked" | "create" | "ignored";
+
+type InboundDetail = {
+  document: {
+    id: string;
+    branchName: string;
+    accessKey: string;
+    documentNumber: string;
+    series?: string | null;
+    status: string;
+    issuerName: string;
+    issuerDocument?: string | null;
+    issuedAt?: string | null;
+    totalAmount: number;
+    manifestationStatus: string;
+    manifestationProtocol?: string | null;
+    receivedAt?: string | null;
+  };
+  summary: { itemCount: number; linked: number; created: number; ignored: number; withDivergence: number };
+  items: Array<{
+    id: string;
+    lineNumber: number;
+    supplierCode?: string | null;
+    barcode?: string | null;
+    description: string;
+    unit?: string | null;
+    quantity: string;
+    unitCost: string;
+    totalAmount: string;
+    ncm?: string | null;
+    cfop?: string | null;
+    resolution: string;
+    divergences: string[];
+    productName?: string | null;
+    productSku?: string | null;
+  }>;
 };
 
 function makeReceivingChoice(item: PreviewItem): ReceivingChoice {
@@ -540,6 +578,7 @@ function PurchaseXmlImporter({
   const [choices, setChoices] = useState<Record<number, ReceivingChoice>>({});
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reviewFilter, setReviewFilter] = useState<ReceivingFilter>("all");
   const reviewStats = useMemo(() => {
     if (!preview) return null;
     return preview.items.reduce(
@@ -563,6 +602,39 @@ function PurchaseXmlImporter({
       return sum + choice.quantity * choice.unitCost;
     }, 0);
   }, [choices, preview]);
+  const filteredPreviewItems = useMemo(() => {
+    if (!preview) return [];
+    return preview.items.filter((item) => {
+      const choice = choices[item.sourceIndex] ?? makeReceivingChoice(item);
+      if (reviewFilter === "alerts") return Boolean(item.divergences?.length);
+      if (reviewFilter === "linked") return choice.action === "link";
+      if (reviewFilter === "create") return choice.action === "create";
+      if (reviewFilter === "ignored") return choice.action === "ignore";
+      return true;
+    });
+  }, [choices, preview, reviewFilter]);
+  function setAllMatchedToLink() {
+    if (!preview) return;
+    setChoices((current) =>
+      Object.fromEntries(
+        preview.items.map((item) => {
+          const choice = current[item.sourceIndex] ?? makeReceivingChoice(item);
+          return [item.sourceIndex, item.match?.productId ? { ...choice, action: "link" as const, productId: item.match.productId } : choice];
+        }),
+      ),
+    );
+  }
+  function ignoreAlertedItems() {
+    if (!preview) return;
+    setChoices((current) => ({
+      ...current,
+      ...Object.fromEntries(
+        preview.items
+          .filter((item) => item.divergences?.length)
+          .map((item) => [item.sourceIndex, { ...(current[item.sourceIndex] ?? makeReceivingChoice(item)), action: "ignore" as const }]),
+      ),
+    }));
+  }
 
   async function previewXml(file: File) {
     if (!branchId) return setError("Escolha a loja antes de importar o XML.");
@@ -678,7 +750,25 @@ function PurchaseXmlImporter({
           {!preview.supplier.match ? <label className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><input type="checkbox" checked={createSupplier} onChange={(event) => setCreateSupplier(event.target.checked)} />Cadastrar o fornecedor automaticamente ao confirmar</label> : null}
           {preview.requiresManifestation ? <div className="grid gap-3 rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950"><div><strong>Os itens completos ainda não foram liberados.</strong><p className="mt-1 text-blue-800">A SEFAZ exige a ciência da operação antes de disponibilizar o conteúdo integral desta NF-e.</p></div><Button variant="secondary" onClick={() => void acknowledgeAndReload()}>Dar ciência e carregar itens</Button></div> : null}
           {preview.purchaseOrders?.length ? <Select label="Vincular a pedido de compra" value={purchaseOrderId} onChange={(event) => setPurchaseOrderId(event.target.value)} options={[{ label: "Receber sem vincular a pedido", value: "" }, ...preview.purchaseOrders.map((order) => ({ label: `Pedido ${order.id.slice(0, 8)} · ${order.pendingItems} item(ns) pendente(s)`, value: order.id }))]} /> : null}
-          {preview.items.map((item) => {
+          <div className="grid gap-3 rounded-md border border-[var(--brand-border)] bg-white p-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+            <Select
+              label="Filtrar conferência"
+              value={reviewFilter}
+              onChange={(event) => setReviewFilter(event.target.value as ReceivingFilter)}
+              options={[
+                { label: `Todos os itens (${preview.items.length})`, value: "all" },
+                { label: `Com alerta (${reviewStats?.withDivergence ?? 0})`, value: "alerts" },
+                { label: `Vinculados (${reviewStats?.linked ?? 0})`, value: "linked" },
+                { label: `Cadastrar produto (${reviewStats?.created ?? 0})`, value: "create" },
+                { label: `Ignorados (${reviewStats?.ignored ?? 0})`, value: "ignored" },
+              ]}
+            />
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" onClick={setAllMatchedToLink}>Vincular encontrados</Button>
+              <Button variant="ghost" onClick={ignoreAlertedItems}>Ignorar itens com alerta</Button>
+            </div>
+          </div>
+          {filteredPreviewItems.length ? filteredPreviewItems.map((item) => {
             const choice = choices[item.sourceIndex] ?? makeReceivingChoice(item);
             return (
               <div key={item.sourceIndex} className="grid gap-3 rounded-md border border-[var(--brand-border)] bg-white p-3">
@@ -700,7 +790,7 @@ function PurchaseXmlImporter({
                 ) : null}
               </div>
             );
-          })}{preview.items.length ? <Button onClick={() => void commit()}>Confirmar recebimento e atualizar estoque</Button> : null}</div> : null}
+          }) : <EmptyState eyebrow="Conferência" title="Nenhum item neste filtro." description="Altere o filtro para revisar os demais itens da nota." icon={<FileCheck2 size={20} />} />}{preview.items.length ? <Button onClick={() => void commit()}>Confirmar recebimento e atualizar estoque</Button> : null}</div> : null}
       </CardContent>
     </Card>
   );
@@ -713,6 +803,8 @@ function InboundFiscalHistory({ branches }: { branches: Array<{ label: string; v
   const [period, setPeriod] = useState(new Date().toISOString().slice(0, 7));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [detail, setDetail] = useState<InboundDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   async function loadHistory() {
     setLoading(true);
     try {
@@ -733,6 +825,17 @@ function InboundFiscalHistory({ branches }: { branches: Array<{ label: string; v
       await loadHistory();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível registrar a manifestação."); }
   }
+  async function loadDetail(id: string) {
+    setDetailLoading(true);
+    try {
+      setDetail(await apiFetch<InboundDetail>(`/fiscal/inbound/${id}`));
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível carregar os itens da NF-e.");
+    } finally {
+      setDetailLoading(false);
+    }
+  }
   return <div className="grid gap-4">
     <Card><CardContent className="grid gap-3 md:grid-cols-[minmax(0,1fr)_240px_auto] md:items-end"><Select label="Loja" value={branchId} onChange={(event) => setBranchId(event.target.value)} options={[{ label: "Todas as lojas", value: "" }, ...branches]} /><Input label="Competência" type="month" value={period} onChange={(event) => setPeriod(event.target.value)} /><Button variant="secondary" icon={<RefreshCw size={16} />} onClick={() => void loadHistory()}>Atualizar</Button></CardContent></Card>
     {error ? <p className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</p> : null}
@@ -742,8 +845,71 @@ function InboundFiscalHistory({ branches }: { branches: Array<{ label: string; v
       { key: "total", header: "Total", render: (row) => Number(row.totalAmount).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) },
       { key: "status", header: "Conferência", render: (row) => <div className="flex flex-wrap gap-1"><Badge>{row.status === "received" ? "Recebida" : row.status === "review_pending" ? "Revisar" : "Pronta"}</Badge>{row.divergenceCount ? <Badge className="border-amber-200 bg-amber-50 text-amber-800">{row.divergenceCount} divergência(s)</Badge> : null}</div> },
       { key: "manifest", header: "Manifestação", render: (row) => <div className="flex flex-wrap gap-1">{row.manifestationStatus === "pending" || row.manifestationStatus === "ciencia" ? <><Button variant="ghost" onClick={() => void manifest(row.id, "ciencia")}>Dar ciência</Button><Button variant="ghost" onClick={() => void manifest(row.id, "confirmacao")}>Confirmar</Button><Button variant="ghost" onClick={() => void manifest(row.id, "desconhecimento")}>Não reconheço</Button><Button variant="ghost" onClick={() => void manifest(row.id, "nao_realizada")}>Não realizada</Button></> : <Badge>{row.manifestationStatus === "confirmacao" ? "Operação confirmada" : row.manifestationStatus === "desconhecimento" ? "Não reconhecida" : "Não realizada"}</Badge>}</div> },
+      { key: "detail", header: "Itens", render: (row) => <Button variant="secondary" icon={<Eye size={14} />} onClick={() => void loadDetail(row.id)}>{detailLoading ? "Carregando..." : "Ver itens"}</Button> },
     ]} />
+    {detail ? <InboundFiscalDetail detail={detail} onClose={() => setDetail(null)} /> : null}
   </div>;
+}
+
+function InboundFiscalDetail({ detail, onClose }: { detail: InboundDetail; onClose: () => void }) {
+  return (
+    <Card>
+      <CardContent className="grid gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-[0.16em] text-[var(--brand-secondary)]">Detalhe da NF-e</p>
+            <h2 className="mt-1 text-xl font-semibold text-[var(--brand-primary)]">NF-e {detail.document.documentNumber} · {detail.document.issuerName}</h2>
+            <p className="mt-1 break-all text-sm text-slate-500">Chave {detail.document.accessKey}</p>
+          </div>
+          <Button variant="ghost" onClick={onClose}>Fechar detalhe</Button>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+          <ReviewMetric label="Itens" value={detail.summary.itemCount} tone="muted" />
+          <ReviewMetric label="Vinculados" value={detail.summary.linked} tone="ok" />
+          <ReviewMetric label="Criados" value={detail.summary.created} tone={detail.summary.created ? "warn" : "ok"} />
+          <ReviewMetric label="Ignorados" value={detail.summary.ignored} tone={detail.summary.ignored ? "muted" : "ok"} />
+          <ReviewMetric label="Com alerta" value={detail.summary.withDivergence} tone={detail.summary.withDivergence ? "warn" : "ok"} />
+        </div>
+        <div className="grid gap-2 text-sm md:grid-cols-3">
+          <InfoLine label="Loja" value={detail.document.branchName} />
+          <InfoLine label="Emissão" value={detail.document.issuedAt ? new Date(detail.document.issuedAt).toLocaleDateString("pt-BR") : "-"} />
+          <InfoLine label="Total da nota" value={detail.document.totalAmount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} />
+        </div>
+        <DataTable
+          rows={detail.items}
+          empty="Nenhum item registrado nesta NF-e."
+          columns={[
+            { key: "line", header: "Item", render: (row) => `#${row.lineNumber}` },
+            { key: "description", header: "Produto NF-e", render: (row) => <div><strong>{row.description}</strong><p className="text-xs text-slate-500">{row.barcode || row.supplierCode || "Sem código"}{row.ncm ? ` · NCM ${row.ncm}` : ""}</p></div> },
+            { key: "match", header: "Vínculo", render: (row) => row.productName ? <div><strong>{row.productName}</strong><p className="text-xs text-slate-500">{row.productSku || row.resolution}</p></div> : <Badge>{resolutionLabel(row.resolution)}</Badge> },
+            { key: "quantity", header: "Qtd", render: (row) => Number(row.quantity).toLocaleString("pt-BR") },
+            { key: "cost", header: "Custo", render: (row) => Number(row.unitCost).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) },
+            { key: "alerts", header: "Alertas", render: (row) => row.divergences.length ? <div className="flex flex-wrap gap-1">{row.divergences.map((item) => <Badge key={item} className="border-amber-200 bg-amber-50 text-amber-800">{item}</Badge>)}</div> : <span className="text-emerald-700">Sem alerta</span> },
+          ]}
+        />
+      </CardContent>
+    </Card>
+  );
+}
+
+function InfoLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-[var(--brand-border)] bg-white p-3">
+      <p className="text-xs uppercase tracking-[0.14em] text-slate-500">{label}</p>
+      <p className="mt-1 font-semibold text-[var(--brand-primary)]">{value}</p>
+    </div>
+  );
+}
+
+function resolutionLabel(value: string) {
+  return (
+    {
+      pending: "Pendente",
+      linked: "Vinculado",
+      created: "Produto criado",
+      ignored: "Ignorado",
+    } as Record<string, string>
+  )[value] ?? value;
 }
 
 function ReviewMetric({
