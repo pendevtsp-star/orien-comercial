@@ -24,6 +24,9 @@ export class DashboardService {
       overdueReceivables,
       pendingTasks,
       integrationErrors,
+      printingSettings,
+      fiscalSettings,
+      paymentAccounts,
       onboarding,
     ] = await Promise.all([
       this.database.tenantQuery<{ total: string }>(
@@ -87,6 +90,21 @@ export class DashboardService {
         "SELECT count(*)::text total FROM tenant_integrations WHERE tenant_id=$1 AND status='error'",
         [context.tenantId],
       ),
+      this.database.tenantQuery<{ total: string }>(
+        context.tenantId,
+        "SELECT count(*)::text total FROM tenant_settings WHERE tenant_id=$1 AND key='printing' AND deleted_at IS NULL",
+        [context.tenantId],
+      ),
+      this.database.tenantQuery<{ total: string }>(
+        context.tenantId,
+        `SELECT count(*)::text total FROM branch_fiscal_settings WHERE tenant_id=$1 ${context.branchId ? "AND branch_id=$2" : ""} AND status IN ('configured','active')`,
+        params,
+      ),
+      this.database.tenantQuery<{ total: string }>(
+        context.tenantId,
+        "SELECT count(*)::text total FROM payment_provider_accounts WHERE tenant_id=$1 AND status='active'",
+        [context.tenantId],
+      ),
       this.database.tenantQuery<{ value: { dismissed?: boolean; completedKeys?: string[] } | null }>(
         context.tenantId,
         "SELECT value FROM tenant_settings WHERE tenant_id=$1 AND key='onboarding' AND deleted_at IS NULL LIMIT 1",
@@ -106,6 +124,9 @@ export class DashboardService {
       overdueReceivables: Number(overdueReceivables.rows[0]?.total ?? 0),
       pendingTasks: Number(pendingTasks.rows[0]?.total ?? 0),
       integrationErrors: Number(integrationErrors.rows[0]?.total ?? 0),
+      printingSettings: Number(printingSettings.rows[0]?.total ?? 0),
+      fiscalSettings: Number(fiscalSettings.rows[0]?.total ?? 0),
+      paymentAccounts: Number(paymentAccounts.rows[0]?.total ?? 0),
     };
 
     const persisted = onboarding.rows[0]?.value ?? {};
@@ -116,6 +137,9 @@ export class DashboardService {
       { key: "customers", label: "Cadastrar clientes", autoDone: counts.customers > 0, href: "/customers" },
       { key: "operator", label: "Convidar operador", autoDone: counts.operators > 1, href: "/team" },
       { key: "stock", label: "Informar estoque inicial", autoDone: counts.stockBalances > 0, href: "/stock" },
+      { key: "printer", label: "Configurar comprovante e impressora", autoDone: counts.printingSettings > 0, href: "/printers" },
+      { key: "payment", label: "Validar formas de pagamento", autoDone: counts.paymentAccounts > 0 || counts.testSales > 0, href: "/integrations" },
+      { key: "fiscal", label: "Preparar emissão fiscal", autoDone: counts.fiscalSettings > 0, href: "/fiscal" },
       { key: "sale", label: "Realizar venda teste", autoDone: counts.testSales > 0, href: "/pos" },
     ].map((item) => ({ ...item, done: item.autoDone || completedKeys.has(item.key) }));
 

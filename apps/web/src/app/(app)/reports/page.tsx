@@ -63,6 +63,9 @@ export default function ReportsPage() {
     averageTicket?: string;
     discounts?: string;
     customers?: number;
+    grossMargin?: string;
+    overdueReceivables?: string;
+    lowStockProducts?: number;
   } | null;
   const rows = arrayRows(data);
   return (
@@ -159,6 +162,10 @@ export default function ReportsPage() {
             ["Receita", money(overview.grossRevenue)],
             ["Ticket médio", money(overview.averageTicket)],
             ["Clientes", overview.customers ?? 0],
+            ["Margem bruta", money(overview.grossMargin)],
+            ["Inadimplência", money(overview.overdueReceivables)],
+            ["Estoque crítico", overview.lowStockProducts ?? 0],
+            ["Descontos", money(overview.discounts)],
           ].map(([label, value]) => (
             <Card key={String(label)}>
               <CardContent>

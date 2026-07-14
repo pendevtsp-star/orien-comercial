@@ -35,10 +35,26 @@ export class ReportsService {
       "SELECT count(*)::int AS total FROM customers WHERE tenant_id=$1 AND deleted_at IS NULL",
       [context.tenantId],
     );
+    const health = await this.database.tenantQuery(
+      context.tenantId,
+      `
+      SELECT
+        COALESCE((SELECT SUM((si.unit_price * si.quantity) - si.discount_amount - (p.cost_price * si.quantity))
+          FROM sale_items si JOIN sales s ON s.id=si.sale_id JOIN products p ON p.id=si.product_id
+          WHERE si.tenant_id=$1 AND s.status='sold' AND s.created_at BETWEEN $2 AND $3${branch}),0)::text AS "grossMargin",
+        COALESCE((SELECT SUM(amount) FROM accounts_receivable WHERE tenant_id=$1 AND status IN ('open','overdue') AND due_date<CURRENT_DATE${context.branchId ? " AND branch_id=$4" : ""}),0)::text AS "overdueReceivables",
+        COALESCE((SELECT count(*) FROM products p LEFT JOIN stock_balances sb ON sb.tenant_id=p.tenant_id AND sb.product_id=p.id ${context.branchId ? "AND sb.branch_id=$4" : ""}
+          WHERE p.tenant_id=$1 AND p.deleted_at IS NULL ${context.branchId ? "AND (p.branch_id=$4 OR p.branch_id IS NULL)" : ""} AND COALESCE(sb.quantity,0)<=p.min_stock),0)::text AS "lowStockProducts"
+      `,
+      params,
+    );
     return {
       period: { startDate: start.slice(0, 10), endDate: end.slice(0, 10) },
       ...result.rows[0],
       customers: customers.rows[0]?.total ?? 0,
+      grossMargin: health.rows[0]?.grossMargin ?? "0",
+      overdueReceivables: health.rows[0]?.overdueReceivables ?? "0",
+      lowStockProducts: Number(health.rows[0]?.lowStockProducts ?? 0),
     };
   }
 
@@ -144,8 +160,22 @@ export class ReportsService {
                 currency: "BRL",
               }),
             },
+            {
+              label: "Margem bruta",
+              value: Number(data.grossMargin ?? 0).toLocaleString("pt-BR", {
+                style: "currency",
+                currency: "BRL",
+              }),
+            },
+            {
+              label: "Inadimplência",
+              value: Number(data.overdueReceivables ?? 0).toLocaleString("pt-BR", {
+                style: "currency",
+                currency: "BRL",
+              }),
+            },
           ],
-          contentHtml: `<p>Base ativa de clientes: <strong>${data.customers ?? 0}</strong>. Descontos concedidos: <strong>${Number(data.discounts ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong>.</p>`,
+          contentHtml: `<p>Base ativa de clientes: <strong>${data.customers ?? 0}</strong>. Descontos concedidos: <strong>${Number(data.discounts ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong>. Produtos em estoque crítico: <strong>${data.lowStockProducts ?? 0}</strong>.</p>`,
         },
       ],
     };

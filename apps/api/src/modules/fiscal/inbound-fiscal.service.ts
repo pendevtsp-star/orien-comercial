@@ -431,6 +431,7 @@ export class InboundFiscalService {
         sku: item.supplierCode ?? undefined,
         quantity: Number(item.quantity),
         unitCost: Number(item.unitCost),
+        salePrice: item.resolution === "created" ? suggestedSalePrice(Number(item.unitCost)) : undefined,
       })),
     });
   }
@@ -506,12 +507,13 @@ export class InboundFiscalService {
         let resolution = "linked";
         const confirmedQuantity = Number(choice.quantity);
         const confirmedUnitCost = Number(choice.unitCost);
+        const confirmedSalePrice = Number(choice.salePrice ?? suggestedSalePrice(confirmedUnitCost));
         if (choice.action === "create") {
           const sku = await this.uniqueSku(client, context.tenantId, choice.sku || item.supplier_code || `NF-${document.document_number}-${item.line_number}`);
           const created = await client.query<{ id: string }>(
             `INSERT INTO products(tenant_id,branch_id,name,sku,barcode,unit,cost_price,sale_price,min_stock,is_active)
-             VALUES($1,$2,$3,$4,$5,$6,$7,$7,0,true) RETURNING id`,
-            [context.tenantId, input.branchId, choice.name || item.description, sku, item.barcode, item.unit || "un", confirmedUnitCost],
+             VALUES($1,$2,$3,$4,$5,$6,$7,$8,0,true) RETURNING id`,
+            [context.tenantId, input.branchId, choice.name || item.description, sku, item.barcode, item.unit || "un", confirmedUnitCost, confirmedSalePrice],
           );
           productId = created.rows[0]!.id;
           resolution = "created";
@@ -1000,6 +1002,10 @@ function formatMoney(value: number) {
 }
 function formatNumber(value: number) {
   return value.toLocaleString("pt-BR", { maximumFractionDigits: 3 });
+}
+function suggestedSalePrice(unitCost: number) {
+  if (!Number.isFinite(unitCost) || unitCost <= 0) return 0;
+  return Math.round(unitCost * 1.35 * 100) / 100;
 }
 function resolutionLabel(value: string) {
   return (

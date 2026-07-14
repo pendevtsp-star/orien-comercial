@@ -1031,6 +1031,7 @@ type DetailChoice = {
   sku?: string;
   quantity?: number;
   unitCost?: number;
+  salePrice?: number;
 };
 
 function makeDetailChoice(item: InboundDetail["items"][number]): DetailChoice {
@@ -1041,6 +1042,7 @@ function makeDetailChoice(item: InboundDetail["items"][number]): DetailChoice {
     sku: item.supplierCode ?? undefined,
     quantity: Number(item.quantity),
     unitCost: Number(item.unitCost),
+    salePrice: suggestedSalePrice(Number(item.unitCost)),
   };
 }
 
@@ -1076,9 +1078,10 @@ function ItemResolutionEditor({
         />
       ) : null}
       {choice.action === "create" ? (
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid gap-2 sm:grid-cols-3">
           <Input aria-label={`Nome do novo produto ${row.lineNumber}`} value={choice.name ?? ""} onChange={(event) => onChange({ ...choice, name: event.target.value })} />
           <Input aria-label={`SKU do novo produto ${row.lineNumber}`} value={choice.sku ?? ""} onChange={(event) => onChange({ ...choice, sku: event.target.value })} />
+          <Input aria-label={`Preço de venda sugerido ${row.lineNumber}`} type="number" min={0} step="0.01" value={choice.salePrice ?? suggestedSalePrice(choice.unitCost ?? Number(row.unitCost))} onChange={(event) => onChange({ ...choice, salePrice: Number(event.target.value || 0) })} />
         </div>
       ) : null}
       {choice.action !== "ignore" ? (
@@ -1087,8 +1090,16 @@ function ItemResolutionEditor({
           <Input aria-label={`Custo do item ${row.lineNumber}`} type="number" min={0} step="0.01" value={choice.unitCost ?? Number(row.unitCost)} onChange={(event) => onChange({ ...choice, unitCost: Number(event.target.value || 0) })} />
         </div>
       ) : null}
+      {choice.action === "create" ? (
+        <p className="text-xs text-slate-500">O produto será criado com custo conferido e preço sugerido. Revise margem, NCM e tributação depois no cadastro.</p>
+      ) : null}
     </div>
   );
+}
+
+function suggestedSalePrice(unitCost: number) {
+  if (!Number.isFinite(unitCost) || unitCost <= 0) return 0;
+  return Math.round(unitCost * 1.35 * 100) / 100;
 }
 
 function InfoLine({ label, value }: { label: string; value: string }) {

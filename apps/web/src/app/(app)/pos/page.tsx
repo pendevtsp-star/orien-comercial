@@ -75,6 +75,10 @@ interface CashHistory {
   closedAt?: string;
   approvalStatus?: string;
 }
+interface CashSummary {
+  payments: Array<{ method: string; amount: string }>;
+  movements: Array<{ id: string; type: "supply" | "withdrawal"; amount: string; reason: string; createdAt: string }>;
+}
 interface CartItem {
   productId: string;
   name: string;
@@ -106,6 +110,12 @@ export default function PosPage() {
   const [fiscalRequested, setFiscalRequested] = useState(false);
   const [cash, setCash] = useState<CashSession | null>(null);
   const [cashHistory, setCashHistory] = useState<CashHistory[]>([]);
+  const [cashSummary, setCashSummary] = useState<CashSummary | null>(null);
+  const [movementType, setMovementType] = useState<"supply" | "withdrawal">("supply");
+  const [movementAmount, setMovementAmount] = useState("");
+  const [movementReason, setMovementReason] = useState("");
+  const [closingAmount, setClosingAmount] = useState("");
+  const [closingNotes, setClosingNotes] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [scanner, setScanner] = useState("");
   const [scanQuantity, setScanQuantity] = useState(1);
@@ -226,6 +236,13 @@ export default function PosPage() {
         setCash(current);
         setCashHistory(history.data);
         setPrinting(printSettings);
+        if (current?.id) {
+          void apiFetch<CashSummary>(`/cash-registers/${current.id}/summary`)
+            .then(setCashSummary)
+            .catch(() => setCashSummary(null));
+        } else {
+          setCashSummary(null);
+        }
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Falha ao consultar caixa."));
   }, [branchId]);
@@ -339,6 +356,7 @@ export default function PosPage() {
         body: JSON.stringify({ branchId, openingAmount: Number(form.get("openingAmount") || 0) }),
       });
       setCash(opened);
+      setCashSummary({ payments: [], movements: [] });
       scannerRef.current?.focus();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao abrir caixa.");
@@ -346,34 +364,46 @@ export default function PosPage() {
   }
   async function closeCash() {
     if (!cash) return;
-    const value = window.prompt("Conferencia cega: informe o valor contado no caixa:");
-    if (value === null) return;
+    if (!closingAmount) {
+      setError("Informe o valor contado para fechar o caixa.");
+      return;
+    }
     try {
       await apiFetch(`/cash-registers/${cash.id}/close`, {
         method: "POST",
-        body: JSON.stringify({ closingAmount: Number(value) }),
+        body: JSON.stringify({ closingAmount: Number(closingAmount), notes: closingNotes || undefined }),
       });
       const history = await apiFetch<{ data: CashHistory[] }>(
         `/cash-registers?branchId=${branchId}`,
       );
       setCashHistory(history.data);
       setCash(null);
+      setCashSummary(null);
       setCart([]);
+      setClosingAmount("");
+      setClosingNotes("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao fechar caixa.");
     }
   }
-  async function cashMovement(type: "supply" | "withdrawal") {
+  async function cashMovement(type: "supply" | "withdrawal" = movementType) {
     if (!cash) return;
-    const amount = window.prompt(type === "supply" ? "Valor do suprimento:" : "Valor da sangria:");
-    if (!amount) return;
-    const reason = window.prompt("Motivo da movimentação:");
-    if (!reason) return;
+    if (!movementAmount || Number(movementAmount) <= 0) {
+      setError("Informe um valor positivo para a movimentação do caixa.");
+      return;
+    }
+    if (movementReason.trim().length < 3) {
+      setError("Informe um motivo curto para auditoria do caixa.");
+      return;
+    }
     try {
       await apiFetch(`/cash-registers/${cash.id}/movements`, {
         method: "POST",
-        body: JSON.stringify({ type, amount: Number(amount), reason }),
+        body: JSON.stringify({ type, amount: Number(movementAmount), reason: movementReason.trim() }),
       });
+      setCashSummary(await apiFetch<CashSummary>(`/cash-registers/${cash.id}/summary`));
+      setMovementAmount("");
+      setMovementReason("");
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha na movimentação do caixa.");
@@ -516,6 +546,11 @@ export default function PosPage() {
               : `/sales/${saleId}/document`;
           void openApiDocument(receiptPath, shouldOpenPrint).catch(() => undefined);
         }
+        if (cash?.id) {
+          void apiFetch<CashSummary>(`/cash-registers/${cash.id}/summary`)
+            .then(setCashSummary)
+            .catch(() => undefined);
+        }
       }
       setCart([]);
       setPaymentParts([]);
@@ -551,14 +586,20 @@ export default function PosPage() {
             </Button>
             <Button
               variant="secondary"
-              onClick={() => void cashMovement("supply")}
+              onClick={() => {
+                setMovementType("supply");
+                document.getElementById("cash-movement-amount")?.focus();
+              }}
               disabled={!cash}
             >
               Suprimento
             </Button>
             <Button
               variant="secondary"
-              onClick={() => void cashMovement("withdrawal")}
+              onClick={() => {
+                setMovementType("withdrawal");
+                document.getElementById("cash-movement-amount")?.focus();
+              }}
               disabled={!cash}
             >
               Sangria
@@ -1026,6 +1067,80 @@ export default function PosPage() {
           </CardContent>
         </Card>
       </div>
+      {cash ? (
+        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <Card>
+            <CardContent className="grid gap-4">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Operação de caixa</p>
+                <h2 className="mt-1 text-lg font-semibold text-[var(--brand-primary)]">Sangria, suprimento e conferência cega</h2>
+                <p className="mt-1 text-sm text-slate-500">Toda movimentação fica registrada com valor, motivo, operador e horário.</p>
+              </div>
+              <div className="grid gap-3 md:grid-cols-[180px_160px_minmax(0,1fr)_auto] md:items-end">
+                <Select
+                  label="Tipo"
+                  value={movementType}
+                  onChange={(event) => setMovementType(event.target.value as "supply" | "withdrawal")}
+                  options={[
+                    { label: "Suprimento", value: "supply" },
+                    { label: "Sangria", value: "withdrawal" },
+                  ]}
+                />
+                <Input
+                  id="cash-movement-amount"
+                  label="Valor"
+                  type="number"
+                  step="0.01"
+                  value={movementAmount}
+                  onChange={(event) => setMovementAmount(event.target.value)}
+                />
+                <Input
+                  label="Motivo"
+                  value={movementReason}
+                  placeholder="Ex.: retirada para depósito"
+                  onChange={(event) => setMovementReason(event.target.value)}
+                />
+                <Button onClick={() => void cashMovement()}>
+                  Registrar
+                </Button>
+              </div>
+              <div className="grid gap-2">
+                {(cashSummary?.movements ?? []).slice(0, 4).map((movement) => (
+                  <div key={movement.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--brand-border)] px-3 py-2 text-sm">
+                    <span><Badge>{movement.type === "supply" ? "Suprimento" : "Sangria"}</Badge> {movement.reason}</span>
+                    <strong>{Number(movement.amount).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong>
+                  </div>
+                ))}
+                {!cashSummary?.movements?.length ? <p className="text-sm text-slate-500">Nenhuma movimentação manual neste caixa.</p> : null}
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="grid gap-4">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Fechamento do turno</p>
+                <h2 className="mt-1 text-lg font-semibold text-[var(--brand-primary)]">Conferência cega do caixa</h2>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                {(cashSummary?.payments ?? []).map((payment) => (
+                  <div key={payment.method} className="rounded-md border border-[var(--brand-border)] bg-[var(--brand-surface)] p-3">
+                    <p className="text-xs uppercase tracking-[0.12em] text-[var(--brand-secondary)]">{paymentMethodLabel(payment.method)}</p>
+                    <strong className="mt-1 block text-lg text-[var(--brand-primary)]">{Number(payment.amount).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong>
+                  </div>
+                ))}
+                {!cashSummary?.payments?.length ? <p className="text-sm text-slate-500 sm:col-span-3">Nenhum pagamento registrado neste caixa ainda.</p> : null}
+              </div>
+              <div className="grid gap-3 md:grid-cols-[180px_minmax(0,1fr)_auto] md:items-end">
+                <Input label="Valor contado" type="number" step="0.01" value={closingAmount} onChange={(event) => setClosingAmount(event.target.value)} />
+                <Input label="Observação" value={closingNotes} placeholder="Opcional, mas recomendado se houver diferença" onChange={(event) => setClosingNotes(event.target.value)} />
+                <Button variant="secondary" onClick={() => void closeCash()}>
+                  Fechar caixa
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+      ) : null}
       <Card>
         <CardContent className="grid gap-3">
           <h2 className="font-semibold">Histórico de caixas</h2>
