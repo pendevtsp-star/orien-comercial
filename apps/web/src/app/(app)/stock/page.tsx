@@ -107,6 +107,7 @@ type InboundDetail = {
     cfop?: string | null;
     resolution: string;
     divergences: string[];
+    productId?: string | null;
     productName?: string | null;
     productSku?: string | null;
   }>;
@@ -423,7 +424,7 @@ export default function StockPage() {
           {
             value: "notas",
             label: "Notas recebidas",
-            content: <InboundFiscalHistory branches={branchOptions} />
+            content: <InboundFiscalHistory branches={branchOptions} products={productOptions} onCompleted={() => void load()} />
           },
           {
             value: "relatorios",
@@ -796,7 +797,15 @@ function PurchaseXmlImporter({
   );
 }
 
-function InboundFiscalHistory({ branches }: { branches: Array<{ label: string; value: string }> }) {
+function InboundFiscalHistory({
+  branches,
+  products,
+  onCompleted,
+}: {
+  branches: Array<{ label: string; value: string }>;
+  products: Array<{ label: string; value: string }>;
+  onCompleted: () => void;
+}) {
   type Row = { id: string; branchName: string; accessKey: string; documentNumber: string; issuerName: string; issuedAt?: string; totalAmount: string; status: string; manifestationStatus: string; itemCount: number; divergenceCount: number };
   const [rows, setRows] = useState<Row[]>([]);
   const [branchId, setBranchId] = useState("");
@@ -847,16 +856,45 @@ function InboundFiscalHistory({ branches }: { branches: Array<{ label: string; v
       { key: "manifest", header: "Manifestação", render: (row) => <div className="flex flex-wrap gap-1">{row.manifestationStatus === "pending" || row.manifestationStatus === "ciencia" ? <><Button variant="ghost" onClick={() => void manifest(row.id, "ciencia")}>Dar ciência</Button><Button variant="ghost" onClick={() => void manifest(row.id, "confirmacao")}>Confirmar</Button><Button variant="ghost" onClick={() => void manifest(row.id, "desconhecimento")}>Não reconheço</Button><Button variant="ghost" onClick={() => void manifest(row.id, "nao_realizada")}>Não realizada</Button></> : <Badge>{row.manifestationStatus === "confirmacao" ? "Operação confirmada" : row.manifestationStatus === "desconhecimento" ? "Não reconhecida" : "Não realizada"}</Badge>}</div> },
       { key: "detail", header: "Itens", render: (row) => <Button variant="secondary" icon={<Eye size={14} />} onClick={() => void loadDetail(row.id)}>{detailLoading ? "Carregando..." : "Ver itens"}</Button> },
     ]} />
-    {detail ? <InboundFiscalDetail detail={detail} onClose={() => setDetail(null)} /> : null}
+    {detail ? (
+      <InboundFiscalDetail
+        detail={detail}
+        products={products}
+        onClose={() => setDetail(null)}
+        onUpdated={setDetail}
+        onCompleted={() => {
+          setDetail(null);
+          void loadHistory();
+          onCompleted();
+        }}
+      />
+    ) : null}
   </div>;
 }
 
-function InboundFiscalDetail({ detail, onClose }: { detail: InboundDetail; onClose: () => void }) {
+function InboundFiscalDetail({
+  detail,
+  products,
+  onClose,
+  onUpdated,
+  onCompleted,
+}: {
+  detail: InboundDetail;
+  products: Array<{ label: string; value: string }>;
+  onClose: () => void;
+  onUpdated: (detail: InboundDetail) => void;
+  onCompleted: () => void;
+}) {
   const pendingItems = detail.items.filter((item) => item.resolution === "pending").length;
   const linkedItems = detail.items.filter((item) => item.productName).length;
   const receivedValue = detail.items
     .filter((item) => item.resolution !== "ignored")
     .reduce((sum, item) => sum + Number(item.totalAmount), 0);
+  const [choices, setChoices] = useState(() => Object.fromEntries(detail.items.map((item) => [item.id, makeDetailChoice(item)])));
+  const [savingItemId, setSavingItemId] = useState<string | null>(null);
+  const [receiving, setReceiving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const checklist = [
     {
       label: "Produtos vinculados ou tratados",
@@ -874,6 +912,41 @@ function InboundFiscalDetail({ detail, onClose }: { detail: InboundDetail; onClo
       detail: detail.document.status === "received" ? "Estoque atualizado" : "Aguardando confirmação de recebimento",
     },
   ];
+  async function saveItem(item: InboundDetail["items"][number]) {
+    const choice = choices[item.id] ?? makeDetailChoice(item);
+    setSavingItemId(item.id);
+    setError(null);
+    try {
+      const updated = await apiFetch<InboundDetail>(`/fiscal/inbound/${detail.document.id}/items/${item.id}`, {
+        method: "PUT",
+        body: JSON.stringify(choice),
+      });
+      onUpdated(updated);
+      setChoices(Object.fromEntries(updated.items.map((row) => [row.id, makeDetailChoice(row)])));
+      setMessage(`Item #${item.lineNumber} atualizado.`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível salvar o item.");
+    } finally {
+      setSavingItemId(null);
+    }
+  }
+  async function receiveDocument() {
+    if (pendingItems) return setError("Resolva todos os itens pendentes antes de receber a NF-e.");
+    setReceiving(true);
+    setError(null);
+    try {
+      await apiFetch(`/fiscal/inbound/${detail.document.id}/receive`, {
+        method: "POST",
+        body: JSON.stringify({ supplierName: detail.document.issuerName, createSupplier: true }),
+      });
+      setMessage("NF-e recebida. Estoque, custos e auditoria foram atualizados.");
+      onCompleted();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível receber a NF-e.");
+    } finally {
+      setReceiving(false);
+    }
+  }
   return (
     <Card>
       <CardContent className="grid gap-4">
@@ -890,9 +963,16 @@ function InboundFiscalDetail({ detail, onClose }: { detail: InboundDetail; onClo
             <Button variant="secondary" icon={<Download size={14} />} onClick={() => void downloadApiFile(`/fiscal/inbound/${detail.document.id}/export`, `orien-conferencia-nfe-${detail.document.documentNumber}.csv`)}>
               Baixar CSV
             </Button>
+            {detail.document.status !== "received" ? (
+              <Button onClick={() => void receiveDocument()} disabled={Boolean(pendingItems) || receiving}>
+                {receiving ? "Recebendo..." : "Receber NF-e"}
+              </Button>
+            ) : null}
             <Button variant="ghost" onClick={onClose}>Fechar detalhe</Button>
           </div>
         </div>
+        {error ? <p className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</p> : null}
+        {message ? <p className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{message}</p> : null}
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
           <ReviewMetric label="Itens" value={detail.summary.itemCount} tone="muted" />
           <ReviewMetric label="Vinculados" value={detail.summary.linked} tone="ok" />
@@ -932,14 +1012,82 @@ function InboundFiscalDetail({ detail, onClose }: { detail: InboundDetail; onClo
           columns={[
             { key: "line", header: "Item", render: (row) => `#${row.lineNumber}` },
             { key: "description", header: "Produto NF-e", render: (row) => <div><strong>{row.description}</strong><p className="text-xs text-slate-500">{row.barcode || row.supplierCode || "Sem código"}{row.ncm ? ` · NCM ${row.ncm}` : ""}</p></div> },
-            { key: "match", header: "Vínculo", render: (row) => row.productName ? <div><strong>{row.productName}</strong><p className="text-xs text-slate-500">{row.productSku || row.resolution}</p></div> : <Badge>{resolutionLabel(row.resolution)}</Badge> },
+            { key: "match", header: "Vínculo", render: (row) => detail.document.status === "received" ? (row.productName ? <div><strong>{row.productName}</strong><p className="text-xs text-slate-500">{row.productSku || row.resolution}</p></div> : <Badge>{resolutionLabel(row.resolution)}</Badge>) : <ItemResolutionEditor row={row} products={products} choice={choices[row.id] ?? makeDetailChoice(row)} onChange={(choice) => setChoices((current) => ({ ...current, [row.id]: choice }))} /> },
             { key: "quantity", header: "Qtd", render: (row) => Number(row.quantity).toLocaleString("pt-BR") },
             { key: "cost", header: "Custo", render: (row) => Number(row.unitCost).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) },
             { key: "alerts", header: "Alertas", render: (row) => row.divergences.length ? <div className="flex flex-wrap gap-1">{row.divergences.map((item) => <Badge key={item} className="border-amber-200 bg-amber-50 text-amber-800">{item}</Badge>)}</div> : <span className="text-emerald-700">Sem alerta</span> },
+            { key: "save", header: "Ação", render: (row) => detail.document.status === "received" ? <Badge>{resolutionLabel(row.resolution)}</Badge> : <Button variant="secondary" onClick={() => void saveItem(row)} disabled={savingItemId === row.id}>{savingItemId === row.id ? "Salvando..." : "Salvar"}</Button> },
           ]}
         />
       </CardContent>
     </Card>
+  );
+}
+
+type DetailChoice = {
+  action: "link" | "create" | "ignore";
+  productId?: string;
+  name?: string;
+  sku?: string;
+  quantity?: number;
+  unitCost?: number;
+};
+
+function makeDetailChoice(item: InboundDetail["items"][number]): DetailChoice {
+  return {
+    action: item.resolution === "ignored" ? "ignore" : item.resolution === "created" ? "create" : "link",
+    productId: item.productId ?? undefined,
+    name: item.description,
+    sku: item.supplierCode ?? undefined,
+    quantity: Number(item.quantity),
+    unitCost: Number(item.unitCost),
+  };
+}
+
+function ItemResolutionEditor({
+  row,
+  products,
+  choice,
+  onChange,
+}: {
+  row: InboundDetail["items"][number];
+  products: Array<{ label: string; value: string }>;
+  choice: DetailChoice;
+  onChange: (choice: DetailChoice) => void;
+}) {
+  return (
+    <div className="grid min-w-[280px] gap-2">
+      <Select
+        aria-label={`Ação do item ${row.lineNumber}`}
+        value={choice.action}
+        onChange={(event) => onChange({ ...choice, action: event.target.value as DetailChoice["action"] })}
+        options={[
+          { label: "Vincular produto", value: "link" },
+          { label: "Cadastrar no recebimento", value: "create" },
+          { label: "Ignorar item", value: "ignore" },
+        ]}
+      />
+      {choice.action === "link" ? (
+        <Select
+          aria-label={`Produto vinculado ao item ${row.lineNumber}`}
+          value={choice.productId ?? ""}
+          onChange={(event) => onChange({ ...choice, productId: event.target.value })}
+          options={[{ label: "Selecione o produto", value: "" }, ...products]}
+        />
+      ) : null}
+      {choice.action === "create" ? (
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Input aria-label={`Nome do novo produto ${row.lineNumber}`} value={choice.name ?? ""} onChange={(event) => onChange({ ...choice, name: event.target.value })} />
+          <Input aria-label={`SKU do novo produto ${row.lineNumber}`} value={choice.sku ?? ""} onChange={(event) => onChange({ ...choice, sku: event.target.value })} />
+        </div>
+      ) : null}
+      {choice.action !== "ignore" ? (
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Input aria-label={`Quantidade do item ${row.lineNumber}`} type="number" min={0.001} step="0.001" value={choice.quantity ?? Number(row.quantity)} onChange={(event) => onChange({ ...choice, quantity: Number(event.target.value || row.quantity) })} />
+          <Input aria-label={`Custo do item ${row.lineNumber}`} type="number" min={0} step="0.01" value={choice.unitCost ?? Number(row.unitCost)} onChange={(event) => onChange({ ...choice, unitCost: Number(event.target.value || 0) })} />
+        </div>
+      ) : null}
+    </div>
   );
 }
 

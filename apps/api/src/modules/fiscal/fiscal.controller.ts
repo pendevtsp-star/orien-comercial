@@ -24,7 +24,9 @@ import {
   fiscalProductionActionSchema,
   fiscalReviewSchema,
   inboundFiscalListQuerySchema,
+  inboundFiscalItemResolutionSchema,
   inboundFiscalManifestSchema,
+  inboundFiscalReceiveSchema,
   accountingClosureSchema,
 } from "@sgc/types";
 import type { Response } from "express";
@@ -60,6 +62,27 @@ export class FiscalController {
   @Get("inbound/:id")
   inboundDocumentDetail(@CurrentTenant() context: TenantContext, @Param("id") id: string) {
     return this.inboundFiscal.detail(context, id);
+  }
+
+  @RequirePermissions(permissions.stock.purchase)
+  @Put("inbound/:id/items/:itemId")
+  resolveInboundDocumentItem(
+    @CurrentTenant() context: TenantContext,
+    @Param("id") id: string,
+    @Param("itemId") itemId: string,
+    @Body(new ZodValidationPipe(inboundFiscalItemResolutionSchema)) body: never,
+  ) {
+    return this.inboundFiscal.resolveItem(context, id, itemId, body);
+  }
+
+  @RequirePermissions(permissions.stock.purchase)
+  @Post("inbound/:id/receive")
+  receiveInboundDocument(
+    @CurrentTenant() context: TenantContext,
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(inboundFiscalReceiveSchema)) body: never,
+  ) {
+    return this.inboundFiscal.receiveExisting(context, id, body);
   }
 
   @RequirePermissions(permissions.fiscal.read)

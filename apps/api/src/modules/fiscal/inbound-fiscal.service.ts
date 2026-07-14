@@ -1,8 +1,10 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import type {
   AccountingClosureInput,
+  InboundFiscalItemResolutionInput,
   InboundFiscalListQuery,
   InboundFiscalManifestInput,
+  InboundFiscalReceiveInput,
   PurchaseKeyPreviewInput,
   PurchaseXmlCommitInput,
   PurchaseXmlPreviewInput,
@@ -335,6 +337,102 @@ export class InboundFiscalService {
   </main>
 </body>
 </html>`;
+  }
+
+  async resolveItem(context: TenantContext, id: string, itemId: string, input: InboundFiscalItemResolutionInput) {
+    const document = await this.database.tenantQuery<InboundDocumentRow>(
+      context.tenantId,
+      "SELECT * FROM purchase_fiscal_documents WHERE tenant_id=$1 AND id=$2",
+      [context.tenantId, id],
+    );
+    const current = ensureFound(document.rows[0], "NF-e recebida");
+    ensureBranchAccess(context, current.branch_id);
+    if (current.status === "received") throw new BadRequestException("Esta NF-e já foi recebida e não pode ser alterada.");
+
+    await this.database.tenantTransaction(context.tenantId, async (client) => {
+      const item = ensureFound(
+        (await client.query<{
+          id: string;
+          line_number: number;
+          description: string;
+          supplier_code: string | null;
+          quantity: string;
+          unit_cost: string;
+          total_amount: string;
+        }>(
+          "SELECT id,line_number,description,supplier_code,quantity::text,unit_cost::text,total_amount::text FROM purchase_fiscal_document_items WHERE tenant_id=$1 AND fiscal_document_id=$2 AND id=$3 FOR UPDATE",
+          [context.tenantId, id, itemId],
+        )).rows[0],
+        "Item da NF-e",
+      );
+      let productId: string | null = input.productId ?? null;
+      if (input.action === "link") {
+        if (!productId) throw new BadRequestException("Selecione o produto para vincular este item.");
+        await this.assertProduct(client, context.tenantId, current.branch_id, productId);
+      }
+      if (input.action !== "link") productId = null;
+      const quantity = input.quantity ?? Number(item.quantity);
+      const unitCost = input.unitCost ?? Number(item.unit_cost);
+      const resolution = input.action === "link" ? "linked" : input.action === "create" ? "created" : "ignored";
+      const description = input.action === "create" && input.name ? input.name : item.description;
+      const supplierCode = input.action === "create" && input.sku ? input.sku : item.supplier_code;
+
+      await client.query(
+        `UPDATE purchase_fiscal_document_items
+         SET matched_product_id=$4,description=$5,supplier_code=$6,quantity=$7,unit_cost=$8,total_amount=$9,resolution=$10,updated_at=now()
+         WHERE tenant_id=$1 AND fiscal_document_id=$2 AND id=$3`,
+        [context.tenantId, id, itemId, productId, description, supplierCode, quantity, unitCost, quantity * unitCost, resolution],
+      );
+      await client.query(
+        `UPDATE purchase_fiscal_documents
+         SET status=CASE
+           WHEN EXISTS (SELECT 1 FROM purchase_fiscal_document_items WHERE tenant_id=$1 AND fiscal_document_id=$2 AND resolution='pending') THEN 'review_pending'
+           ELSE 'ready'
+         END, updated_at=now()
+         WHERE tenant_id=$1 AND id=$2 AND status<>'received'`,
+        [context.tenantId, id],
+      );
+      await this.audit(client, context, "purchase.fiscal.item_resolved", id, {
+        itemId,
+        lineNumber: item.line_number,
+        action: input.action,
+        productId,
+        quantity,
+        unitCost,
+      });
+    });
+    return this.detail(context, id);
+  }
+
+  async receiveExisting(context: TenantContext, id: string, input: InboundFiscalReceiveInput) {
+    const detail = await this.detail(context, id);
+    if (detail.document.status === "received") throw new BadRequestException("Esta NF-e já foi recebida.");
+    const pending = detail.items.filter((item) => item.resolution === "pending");
+    if (pending.length) throw new BadRequestException(`Resolva ${pending.length} item(ns) pendente(s) antes de receber a NF-e.`);
+    const actionable = detail.items.filter((item) => item.resolution !== "ignored");
+    if (!actionable.length) throw new BadRequestException("A NF-e não possui itens para receber no estoque.");
+
+    return this.commit(context, {
+      branchId: detail.document.branchId,
+      supplierId: input.supplierId,
+      supplierName: input.supplierId ? undefined : input.supplierName || detail.document.issuerName,
+      documentKey: detail.document.accessKey,
+      documentNumber: detail.document.documentNumber,
+      source: detail.document.source,
+      purchaseOrderId: input.purchaseOrderId,
+      createSupplier: input.createSupplier,
+      notes: input.notes,
+      items: detail.items.map((item) => ({
+        sourceIndex: item.lineNumber - 1,
+        action: item.resolution === "ignored" ? "ignore" : item.resolution === "created" ? "create" : "link",
+        productId: item.productId ?? undefined,
+        name: item.description,
+        barcode: item.barcode ?? undefined,
+        sku: item.supplierCode ?? undefined,
+        quantity: Number(item.quantity),
+        unitCost: Number(item.unitCost),
+      })),
+    });
   }
 
   async commit(context: TenantContext, input: PurchaseXmlCommitInput) {

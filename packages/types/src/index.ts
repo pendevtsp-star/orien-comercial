@@ -482,6 +482,30 @@ export const inboundFiscalManifestSchema = z
     message: "Explique por que a operação não foi realizada.",
   });
 
+export const inboundFiscalItemResolutionSchema = z
+  .object({
+    action: z.enum(["link", "create", "ignore"]),
+    productId: uuidSchema.optional(),
+    name: z.string().trim().min(2).max(180).optional(),
+    sku: z.string().trim().max(64).optional(),
+    quantity: z.coerce.number().positive().optional(),
+    unitCost: z.coerce.number().min(0).optional(),
+  })
+  .refine((value) => value.action !== "link" || Boolean(value.productId), {
+    message: "Selecione o produto para vincular este item.",
+  })
+  .refine((value) => value.action !== "create" || Boolean(value.name), {
+    message: "Informe o nome do produto que será criado.",
+  });
+
+export const inboundFiscalReceiveSchema = z.object({
+  supplierId: uuidSchema.optional(),
+  supplierName: z.string().trim().min(2).max(180).optional(),
+  purchaseOrderId: uuidSchema.optional(),
+  createSupplier: z.boolean().default(false),
+  notes: z.string().trim().max(500).optional(),
+});
+
 export const accountingClosureSchema = z.object({
   period: z.string().regex(/^\d{4}-\d{2}$/),
   branchId: uuidSchema.optional(),
@@ -763,6 +787,8 @@ export type PurchaseXmlCommitInput = z.infer<typeof purchaseXmlCommitSchema>;
 export type PurchaseKeyPreviewInput = z.infer<typeof purchaseKeyPreviewSchema>;
 export type InboundFiscalListQuery = z.infer<typeof inboundFiscalListQuerySchema>;
 export type InboundFiscalManifestInput = z.infer<typeof inboundFiscalManifestSchema>;
+export type InboundFiscalItemResolutionInput = z.infer<typeof inboundFiscalItemResolutionSchema>;
+export type InboundFiscalReceiveInput = z.infer<typeof inboundFiscalReceiveSchema>;
 export type AccountingClosureInput = z.infer<typeof accountingClosureSchema>;
 export type SupplierCreateInput = z.infer<typeof supplierCreateSchema>;
 export type SupplierUpdateInput = z.infer<typeof supplierUpdateSchema>;
