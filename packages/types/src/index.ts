@@ -521,11 +521,34 @@ export const accountantPortalAccessCreateSchema = z.object({
     .transform((value) => value.toLowerCase()),
   branchId: uuidSchema.optional(),
   expiresInDays: z.coerce.number().int().min(1).max(180).default(30),
+  allowedPeriodStart: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+  allowedPeriodEnd: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+}).refine((value) => !value.allowedPeriodStart || !value.allowedPeriodEnd || value.allowedPeriodEnd >= value.allowedPeriodStart, {
+  message: "A competência final deve ser maior ou igual à inicial.",
 });
 
 export const accountantPortalTokenSchema = z.object({
-  token: z.string().trim().min(32).max(160),
+  token: z.string().trim().min(32).max(160).optional(),
+  sessionToken: z.string().trim().min(32).max(180).optional(),
   period: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+}).refine((value) => Boolean(value.token || value.sessionToken), {
+  message: "Informe o token ou a sessão do portal.",
+});
+
+export const accountantPortalLoginRequestSchema = z.object({
+  token: z.string().trim().min(32).max(160),
+  email: z
+    .string()
+    .email()
+    .transform((value) => value.toLowerCase()),
+});
+
+export const accountantPortalLoginVerifySchema = accountantPortalLoginRequestSchema.extend({
+  code: z.string().trim().regex(/^\d{6}$/, "Informe o código de 6 dígitos."),
+});
+
+export const accountantPortalExportQuerySchema = accountantPortalTokenSchema.extend({
+  format: z.enum(["csv", "pdf", "xml"]).default("csv"),
 });
 
 export const supplierCreateSchema = z.object({
@@ -809,6 +832,9 @@ export type InboundFiscalReceiveInput = z.infer<typeof inboundFiscalReceiveSchem
 export type AccountingClosureInput = z.infer<typeof accountingClosureSchema>;
 export type AccountantPortalAccessCreateInput = z.infer<typeof accountantPortalAccessCreateSchema>;
 export type AccountantPortalTokenInput = z.infer<typeof accountantPortalTokenSchema>;
+export type AccountantPortalLoginRequestInput = z.infer<typeof accountantPortalLoginRequestSchema>;
+export type AccountantPortalLoginVerifyInput = z.infer<typeof accountantPortalLoginVerifySchema>;
+export type AccountantPortalExportQueryInput = z.infer<typeof accountantPortalExportQuerySchema>;
 export type SupplierCreateInput = z.infer<typeof supplierCreateSchema>;
 export type SupplierUpdateInput = z.infer<typeof supplierUpdateSchema>;
 export type FinancialCategoryInput = z.infer<typeof financialCategorySchema>;

@@ -13,8 +13,17 @@ type AccountantAccess = {
   email: string;
   branchName?: string | null;
   expiresAt: string;
+  allowedPeriodStart?: string | null;
+  allowedPeriodEnd?: string | null;
   lastUsedAt?: string | null;
   revokedAt?: string | null;
+  recentEvents?: Array<{
+    eventType: string;
+    period?: string | null;
+    exportFormat?: string | null;
+    ipAddress?: string | null;
+    createdAt: string;
+  }>;
 };
 type Overview = {
   metrics: {
@@ -80,6 +89,8 @@ export default function AccountingPage() {
   const [accountantName, setAccountantName] = useState("");
   const [accountantEmail, setAccountantEmail] = useState("");
   const [accountantExpiresInDays, setAccountantExpiresInDays] = useState(30);
+  const [accountantAllowedStart, setAccountantAllowedStart] = useState(new Date().toISOString().slice(0, 7));
+  const [accountantAllowedEnd, setAccountantAllowedEnd] = useState(new Date().toISOString().slice(0, 7));
   const [generatedAccessUrl, setGeneratedAccessUrl] = useState("");
 
   useEffect(() => {
@@ -190,6 +201,8 @@ export default function AccountingPage() {
           email: accountantEmail,
           branchId: branchId || undefined,
           expiresInDays: accountantExpiresInDays,
+          allowedPeriodStart: accountantAllowedStart || undefined,
+          allowedPeriodEnd: accountantAllowedEnd || undefined,
         }),
       });
       setGeneratedAccessUrl(result.url);
@@ -243,11 +256,11 @@ export default function AccountingPage() {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold text-[var(--brand-primary)]">Portal externo do contador</h2>
-              <p className="text-sm text-slate-500">Gere um link temporário para o contador consultar documentos, financeiro e estoque baixo sem acessar o painel da loja.</p>
+              <p className="text-sm text-slate-500">Gere um acesso temporário com confirmação por e-mail, competência liberada e histórico de consultas/downloads.</p>
             </div>
             <Badge>{accountantAccesses.filter((item) => !item.revokedAt).length} ativo(s)</Badge>
           </div>
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_160px_auto] lg:items-end">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_150px_150px_150px_auto] lg:items-end">
             <label className="grid gap-1 text-sm font-medium">
               Nome do contador
               <input value={accountantName} onChange={(event) => setAccountantName(event.target.value)} className="h-11 rounded-md border border-[var(--brand-border)] bg-white px-3" placeholder="Ex.: Escritório Contábil" />
@@ -264,6 +277,14 @@ export default function AccountingPage() {
                 <option value={90}>90 dias</option>
                 <option value={180}>180 dias</option>
               </select>
+            </label>
+            <label className="grid gap-1 text-sm font-medium">
+              Competência inicial
+              <input type="month" value={accountantAllowedStart} onChange={(event) => setAccountantAllowedStart(event.target.value)} className="h-11 rounded-md border border-[var(--brand-border)] bg-white px-3" />
+            </label>
+            <label className="grid gap-1 text-sm font-medium">
+              Competência final
+              <input type="month" value={accountantAllowedEnd} onChange={(event) => setAccountantAllowedEnd(event.target.value)} className="h-11 rounded-md border border-[var(--brand-border)] bg-white px-3" />
             </label>
             <Button onClick={() => void createAccountantAccess()}>Gerar acesso</Button>
           </div>
@@ -283,7 +304,22 @@ export default function AccountingPage() {
                 <div>
                   <strong>{access.name}</strong>
                   <p className="text-sm text-slate-500">{access.email} · {access.branchName || "Todas as lojas"} · expira em {new Date(access.expiresAt).toLocaleDateString("pt-BR")}</p>
+                  <p className="text-xs text-slate-500">Competências: {access.allowedPeriodStart ? String(access.allowedPeriodStart).slice(0, 7) : "sem início"} até {access.allowedPeriodEnd ? String(access.allowedPeriodEnd).slice(0, 7) : "sem fim"}</p>
                   <p className="text-xs text-slate-500">Último acesso: {access.lastUsedAt ? new Date(access.lastUsedAt).toLocaleString("pt-BR") : "ainda não utilizado"}</p>
+                  {access.recentEvents?.length ? (
+                    <div className="mt-2 grid gap-1">
+                      {access.recentEvents.slice(0, 4).map((event, index) => (
+                        <p key={`${access.id}-${index}`} className="rounded-md bg-slate-50 px-2 py-1 text-xs text-slate-600">
+                          {eventLabel(event.eventType)}
+                          {event.period ? ` · ${event.period}` : ""}
+                          {event.exportFormat ? ` · ${event.exportFormat.toUpperCase()}` : ""}
+                          {" · "}
+                          {new Date(event.createdAt).toLocaleString("pt-BR")}
+                          {event.ipAddress ? ` · IP ${event.ipAddress}` : ""}
+                        </p>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge>{access.revokedAt ? "Revogado" : "Ativo"}</Badge>
@@ -411,6 +447,19 @@ function Metric({ label, value, ok, warning, danger }: { label: string; value: n
 
 function label(status: string) {
   return ({ approved: "Aprovada", pending: "Pendente", rejected: "Rejeitada", passed: "Concluída", authorized: "Autorizada", cancelled: "Cancelada", retry_pending: "Nova tentativa", error: "Erro", queued: "Na fila", transmitting: "Transmitindo", requested: "Solicitada", processed: "Processada", failed: "Falhou", contingency: "Contingência" } as Record<string, string>)[status] ?? status;
+}
+
+function eventLabel(eventType: string) {
+  return (
+    {
+      code_requested: "Código solicitado",
+      code_verified: "Login confirmado",
+      login_failed: "Tentativa recusada",
+      overview_viewed: "Consulta realizada",
+      export_downloaded: "Exportação baixada",
+      access_revoked: "Acesso revogado",
+    } as Record<string, string>
+  )[eventType] ?? eventType;
 }
 
 function message(error: unknown) {
