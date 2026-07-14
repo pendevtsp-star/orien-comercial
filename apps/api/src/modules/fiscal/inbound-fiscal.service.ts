@@ -228,6 +228,115 @@ export class InboundFiscalService {
     };
   }
 
+  async reportCsv(context: TenantContext, id: string) {
+    const detail = await this.detail(context, id);
+    const rows: Array<Array<string | number>> = [
+      ["Relatório de conferência Orien"],
+      ["Nota", detail.document.documentNumber],
+      ["Fornecedor", detail.document.issuerName],
+      ["Loja", detail.document.branchName],
+      ["Chave", detail.document.accessKey],
+      ["Status", inboundStatusLabel(detail.document.status)],
+      ["Total da nota", detail.document.totalAmount],
+      [],
+      ["Linha", "Produto na NF-e", "Código", "Produto vinculado", "Resolução", "Qtd", "Custo", "Total", "NCM", "CFOP", "Alertas"],
+      ...detail.items.map((item) => [
+        item.lineNumber,
+        item.description,
+        item.barcode ?? item.supplierCode ?? "",
+        item.productName ?? "",
+        resolutionLabel(item.resolution),
+        item.quantity,
+        item.unitCost,
+        item.totalAmount,
+        item.ncm ?? "",
+        item.cfop ?? "",
+        item.divergences.join(" | "),
+      ]),
+    ];
+    return csv(rows);
+  }
+
+  async reportHtml(context: TenantContext, id: string) {
+    const detail = await this.detail(context, id);
+    const totalReceived = detail.items
+      .filter((item) => item.resolution !== "ignored")
+      .reduce((sum, item) => sum + Number(item.totalAmount), 0);
+    const unresolved = detail.items.filter((item) => item.resolution === "pending").length;
+    const htmlRows = detail.items
+      .map((item) => {
+        const alerts = item.divergences.length ? item.divergences.map((value) => `<span class="chip warn">${escapeHtml(value)}</span>`).join("") : '<span class="ok">Sem alerta</span>';
+        return `<tr>
+          <td>#${item.lineNumber}</td>
+          <td><strong>${escapeHtml(item.description)}</strong><small>${escapeHtml(item.barcode ?? item.supplierCode ?? "Sem código")} ${item.ncm ? ` · NCM ${escapeHtml(item.ncm)}` : ""}</small></td>
+          <td>${item.productName ? `<strong>${escapeHtml(item.productName)}</strong><small>${escapeHtml(item.productSku ?? "")}</small>` : "-"}</td>
+          <td><span class="chip">${escapeHtml(resolutionLabel(item.resolution))}</span></td>
+          <td>${formatNumber(Number(item.quantity))}</td>
+          <td>${formatMoney(Number(item.unitCost))}</td>
+          <td>${formatMoney(Number(item.totalAmount))}</td>
+          <td>${alerts}</td>
+        </tr>`;
+      })
+      .join("");
+    return `<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Conferência NF-e ${escapeHtml(detail.document.documentNumber)}</title>
+  <style>
+    @page { size: A4; margin: 14mm; }
+    body { margin: 0; background: #f3f6fb; color: #071b3a; font-family: Inter, Arial, sans-serif; }
+    main { max-width: 1120px; margin: 0 auto; padding: 24px; }
+    .hero { border-radius: 18px; background: linear-gradient(135deg, #081d3d, #133a7c 72%, #f5c34a); color: white; padding: 28px; }
+    .eyebrow { color: #f5c34a; font-size: 12px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }
+    h1 { margin: 8px 0 0; font-family: Georgia, serif; font-size: 34px; }
+    .muted { color: #5d6e89; }
+    .hero .muted { color: rgba(255,255,255,.76); }
+    .grid { display: grid; gap: 12px; grid-template-columns: repeat(4, 1fr); margin: 18px 0; }
+    .card { background: white; border: 1px solid #d9e2ef; border-radius: 14px; padding: 16px; }
+    .label { color: #133a7c; font-size: 11px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
+    .value { margin-top: 6px; font-size: 20px; font-weight: 800; }
+    table { width: 100%; border-collapse: collapse; background: white; border: 1px solid #d9e2ef; border-radius: 14px; overflow: hidden; }
+    th { background: #eef3f9; color: #0b1d3d; font-size: 11px; letter-spacing: .14em; text-align: left; text-transform: uppercase; }
+    th, td { border-bottom: 1px solid #d9e2ef; padding: 12px; vertical-align: top; }
+    small { display: block; margin-top: 3px; color: #5d6e89; }
+    .chip { display: inline-flex; margin: 2px 4px 2px 0; border: 1px solid #d9e2ef; border-radius: 999px; padding: 3px 8px; background: #f8fafc; font-size: 12px; }
+    .warn { border-color: #f6d98b; background: #fff7df; color: #8a5a00; }
+    .ok { color: #047857; font-weight: 700; }
+    footer { margin-top: 18px; color: #5d6e89; text-align: center; font-size: 12px; }
+    @media print { body { background: white; } main { padding: 0; } .hero, .card, table { break-inside: avoid; } }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <div class="eyebrow">Conferência de entrada</div>
+      <h1>NF-e ${escapeHtml(detail.document.documentNumber)} · ${escapeHtml(detail.document.issuerName)}</h1>
+      <p class="muted">Relatório operacional para validar vínculos, alertas fiscais, custos e quantidades antes ou depois do recebimento.</p>
+    </section>
+    <section class="grid">
+      <div class="card"><div class="label">Loja</div><div class="value">${escapeHtml(detail.document.branchName)}</div></div>
+      <div class="card"><div class="label">Status</div><div class="value">${escapeHtml(inboundStatusLabel(detail.document.status))}</div></div>
+      <div class="card"><div class="label">Total da nota</div><div class="value">${formatMoney(detail.document.totalAmount)}</div></div>
+      <div class="card"><div class="label">Total conferido</div><div class="value">${formatMoney(totalReceived)}</div></div>
+    </section>
+    <section class="grid">
+      <div class="card"><div class="label">Itens</div><div class="value">${detail.summary.itemCount}</div></div>
+      <div class="card"><div class="label">Vinculados</div><div class="value">${detail.summary.linked}</div></div>
+      <div class="card"><div class="label">Com alerta</div><div class="value">${detail.summary.withDivergence}</div></div>
+      <div class="card"><div class="label">Pendentes</div><div class="value">${unresolved}</div></div>
+    </section>
+    <p class="muted">Chave de acesso: ${escapeHtml(detail.document.accessKey)}</p>
+    <table>
+      <thead><tr><th>Linha</th><th>Produto NF-e</th><th>Vínculo</th><th>Resolução</th><th>Qtd</th><th>Custo</th><th>Total</th><th>Alertas</th></tr></thead>
+      <tbody>${htmlRows}</tbody>
+    </table>
+    <footer>Documento gerado automaticamente pela Orien em ${new Date().toLocaleString("pt-BR")}.</footer>
+  </main>
+</body>
+</html>`;
+  }
+
   async commit(context: TenantContext, input: PurchaseXmlCommitInput) {
     ensureBranchAccess(context, input.branchId);
     return this.database.tenantTransaction(context.tenantId, async (client) => {
@@ -780,3 +889,38 @@ function textValue(value: unknown) { return typeof value === "string" || typeof 
 function numberValue(value: unknown) { const normalized = typeof value === "string" || typeof value === "number" ? String(value) : "0"; const parsed = Number(normalized.replace(",", ".")); return Number.isFinite(parsed) ? parsed : 0; }
 function digits(value: unknown, length: number) { const normalized = textValue(value).replace(/\D/g, ""); return normalized.length === length ? normalized : undefined; }
 function csv(rows: Array<Array<string | number>>) { return `\uFEFF${rows.map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(";")).join("\r\n")}\r\n`; }
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+function formatMoney(value: number) {
+  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+function formatNumber(value: number) {
+  return value.toLocaleString("pt-BR", { maximumFractionDigits: 3 });
+}
+function resolutionLabel(value: string) {
+  return (
+    {
+      pending: "Pendente",
+      linked: "Vinculado",
+      created: "Produto criado",
+      ignored: "Ignorado",
+    } as Record<string, string>
+  )[value] ?? value;
+}
+function inboundStatusLabel(value: string) {
+  return (
+    {
+      ready: "Pronta",
+      review_pending: "Revisar",
+      received: "Recebida",
+      rejected: "Rejeitada",
+      cancelled: "Cancelada",
+    } as Record<string, string>
+  )[value] ?? value;
+}

@@ -1,9 +1,9 @@
 "use client";
 
 import { Badge, Button, Card, CardContent, DataTable, EmptyState, Input, PageHeader, Select, Tabs } from "@sgc/ui";
-import { AlertTriangle, ArrowRightLeft, Boxes, ClipboardCheck, Eye, FileCheck2, Plus, RefreshCw, Search, Warehouse, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, Boxes, CheckCircle2, ClipboardCheck, Download, Eye, FileCheck2, Plus, Printer, RefreshCw, Search, Warehouse, type LucideIcon } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { apiFetch, openApiDocument } from "../../../lib/api";
+import { apiFetch, downloadApiFile, openApiDocument } from "../../../lib/api";
 import { PaginationFooter } from "../../../components/pagination-footer";
 
 interface ListResponse<T> {
@@ -852,6 +852,28 @@ function InboundFiscalHistory({ branches }: { branches: Array<{ label: string; v
 }
 
 function InboundFiscalDetail({ detail, onClose }: { detail: InboundDetail; onClose: () => void }) {
+  const pendingItems = detail.items.filter((item) => item.resolution === "pending").length;
+  const linkedItems = detail.items.filter((item) => item.productName).length;
+  const receivedValue = detail.items
+    .filter((item) => item.resolution !== "ignored")
+    .reduce((sum, item) => sum + Number(item.totalAmount), 0);
+  const checklist = [
+    {
+      label: "Produtos vinculados ou tratados",
+      done: pendingItems === 0,
+      detail: pendingItems ? `${pendingItems} item(ns) ainda pendente(s)` : "Todos os itens têm decisão registrada",
+    },
+    {
+      label: "Alertas revisados",
+      done: detail.summary.withDivergence === 0 || detail.document.status === "received",
+      detail: detail.summary.withDivergence ? `${detail.summary.withDivergence} item(ns) com alerta` : "Sem divergência relevante",
+    },
+    {
+      label: "Entrada de estoque",
+      done: detail.document.status === "received",
+      detail: detail.document.status === "received" ? "Estoque atualizado" : "Aguardando confirmação de recebimento",
+    },
+  ];
   return (
     <Card>
       <CardContent className="grid gap-4">
@@ -861,7 +883,15 @@ function InboundFiscalDetail({ detail, onClose }: { detail: InboundDetail; onClo
             <h2 className="mt-1 text-xl font-semibold text-[var(--brand-primary)]">NF-e {detail.document.documentNumber} · {detail.document.issuerName}</h2>
             <p className="mt-1 break-all text-sm text-slate-500">Chave {detail.document.accessKey}</p>
           </div>
-          <Button variant="ghost" onClick={onClose}>Fechar detalhe</Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" icon={<Printer size={14} />} onClick={() => void openApiDocument(`/fiscal/inbound/${detail.document.id}/report`, true)}>
+              Imprimir conferência
+            </Button>
+            <Button variant="secondary" icon={<Download size={14} />} onClick={() => void downloadApiFile(`/fiscal/inbound/${detail.document.id}/export`, `orien-conferencia-nfe-${detail.document.documentNumber}.csv`)}>
+              Baixar CSV
+            </Button>
+            <Button variant="ghost" onClick={onClose}>Fechar detalhe</Button>
+          </div>
         </div>
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
           <ReviewMetric label="Itens" value={detail.summary.itemCount} tone="muted" />
@@ -869,6 +899,27 @@ function InboundFiscalDetail({ detail, onClose }: { detail: InboundDetail; onClo
           <ReviewMetric label="Criados" value={detail.summary.created} tone={detail.summary.created ? "warn" : "ok"} />
           <ReviewMetric label="Ignorados" value={detail.summary.ignored} tone={detail.summary.ignored ? "muted" : "ok"} />
           <ReviewMetric label="Com alerta" value={detail.summary.withDivergence} tone={detail.summary.withDivergence ? "warn" : "ok"} />
+        </div>
+        <div className="grid gap-3 rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface)] p-4 lg:grid-cols-[minmax(0,1fr)_220px]">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--brand-secondary)]">Checklist de conferência</p>
+            <div className="mt-3 grid gap-2">
+              {checklist.map((item) => (
+                <div key={item.label} className="flex items-start gap-2 text-sm">
+                  <CheckCircle2 size={18} className={item.done ? "mt-0.5 text-emerald-600" : "mt-0.5 text-amber-600"} />
+                  <div>
+                    <p className="font-medium text-[var(--brand-primary)]">{item.label}</p>
+                    <p className="text-slate-500">{item.detail}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-lg border border-[var(--brand-border)] bg-white p-3">
+            <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Valor conferido</p>
+            <p className="mt-2 text-2xl font-semibold text-[var(--brand-primary)]">{receivedValue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</p>
+            <p className="mt-2 text-xs text-slate-500">{linkedItems} item(ns) com produto vinculado.</p>
+          </div>
         </div>
         <div className="grid gap-2 text-sm md:grid-cols-3">
           <InfoLine label="Loja" value={detail.document.branchName} />

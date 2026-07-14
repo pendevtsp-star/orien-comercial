@@ -62,6 +62,29 @@ export class FiscalController {
     return this.inboundFiscal.detail(context, id);
   }
 
+  @RequirePermissions(permissions.fiscal.read)
+  @Get("inbound/:id/report")
+  inboundDocumentReport(
+    @CurrentTenant() context: TenantContext,
+    @Param("id") id: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    response.setHeader("Content-Type", "text/html; charset=utf-8");
+    return this.inboundFiscal.reportHtml(context, id);
+  }
+
+  @RequirePermissions(permissions.fiscal.read)
+  @Get("inbound/:id/export")
+  async inboundDocumentExport(
+    @CurrentTenant() context: TenantContext,
+    @Param("id") id: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    response.setHeader("Content-Type", "text/csv; charset=utf-8");
+    response.setHeader("Content-Disposition", `attachment; filename="orien-conferencia-nfe-${id.slice(0, 8)}.csv"`);
+    return new StreamableFile(Buffer.from(await this.inboundFiscal.reportCsv(context, id), "utf8"));
+  }
+
   @RequirePermissions(permissions.stock.purchase)
   @Post("inbound/:id/manifest")
   manifestInbound(
