@@ -57,6 +57,33 @@ interface StockReportRow {
   lastMovementAt?: string;
 }
 
+type PreviewItem = {
+  sourceIndex: number;
+  name: string;
+  quantity: number;
+  unitCost: number;
+  match?: { productId: string; name: string; costPrice?: number } | null;
+  suggestedAction: "link" | "create";
+};
+
+type ReceivingChoice = {
+  action: "link" | "create" | "ignore";
+  productId?: string;
+  name: string;
+  quantity: number;
+  unitCost: number;
+};
+
+function makeReceivingChoice(item: PreviewItem): ReceivingChoice {
+  return {
+    action: item.suggestedAction,
+    productId: item.match?.productId,
+    name: item.name,
+    quantity: item.quantity,
+    unitCost: item.unitCost,
+  };
+}
+
 export default function StockPage() {
   const [activeTab, setActiveTab] = useState("saldos");
   const [stock, setStock] = useState<StockRow[]>([]);
@@ -510,7 +537,7 @@ function PurchaseXmlImporter({
   const [source, setSource] = useState<"xml_upload" | "focus_key">("xml_upload");
   const [xml, setXml] = useState("");
   const [preview, setPreview] = useState<{ fiscalDocumentId: string; requiresManifestation?: boolean; document: { key: string; number: string; series?: string; issuedAt?: string; totalAmount: number }; supplier: { name: string; document?: string; match?: { id: string; name: string } | null }; purchaseOrders?: Array<{ id: string; status: string; expectedAt?: string | null; pendingItems: number }>; items: Array<{ sourceIndex: number; name: string; barcode?: string; supplierCode?: string; quantity: number; unitCost: number; ncm?: string; cfop?: string; match?: { productId: string; name: string; costPrice?: number } | null; divergences?: string[]; suggestedAction: "link" | "create" }> } | null>(null);
-  const [choices, setChoices] = useState<Record<number, { action: "link" | "create" | "ignore"; productId?: string }>>({});
+  const [choices, setChoices] = useState<Record<number, ReceivingChoice>>({});
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const reviewStats = useMemo(() => {
@@ -528,6 +555,14 @@ function PurchaseXmlImporter({
       { linked: 0, created: 0, ignored: 0, withDivergence: 0, divergences: 0 },
     );
   }, [choices, preview]);
+  const receivingTotal = useMemo(() => {
+    if (!preview) return 0;
+    return preview.items.reduce((sum, item) => {
+      const choice = choices[item.sourceIndex] ?? makeReceivingChoice(item);
+      if (choice.action === "ignore") return sum;
+      return sum + choice.quantity * choice.unitCost;
+    }, 0);
+  }, [choices, preview]);
 
   async function previewXml(file: File) {
     if (!branchId) return setError("Escolha a loja antes de importar o XML.");
@@ -537,7 +572,7 @@ function PurchaseXmlImporter({
     try {
       const result = await apiFetch<typeof preview>("/stock/purchase-imports/xml/preview", { method: "POST", body: JSON.stringify({ branchId, xml: text }) });
       setPreview(result);
-      setChoices(Object.fromEntries((result?.items ?? []).map((item) => [item.sourceIndex, { action: item.suggestedAction, productId: item.match?.productId }])));
+      setChoices(Object.fromEntries((result?.items ?? []).map((item) => [item.sourceIndex, makeReceivingChoice(item)])));
       const divergences = (result?.items ?? []).reduce((total, item) => total + (item.divergences?.length ?? 0), 0);
       setMessage(divergences ? `XML lido com ${divergences} ponto(s) para conferência.` : "XML lido sem divergências críticas. Revise os vínculos antes de confirmar a entrada.");
     } catch (cause) {
@@ -556,7 +591,7 @@ function PurchaseXmlImporter({
       });
       setPreview(result);
       setXml("");
-      setChoices(Object.fromEntries((result?.items ?? []).map((item) => [item.sourceIndex, { action: item.suggestedAction, productId: item.match?.productId }])));
+      setChoices(Object.fromEntries((result?.items ?? []).map((item) => [item.sourceIndex, makeReceivingChoice(item)])));
       setMessage("NF-e consultada. Confira os vínculos e divergências antes de receber.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível consultar a NF-e pela chave.");
@@ -567,7 +602,7 @@ function PurchaseXmlImporter({
     if (source === "xml_upload" && !xml) return;
     setError(null);
     try {
-      await apiFetch("/stock/purchase-imports/xml/commit", {
+      const result = await apiFetch<{ id: string; fiscalDocumentId: string; itemCount: number; totalAmount: number }>("/stock/purchase-imports/xml/commit", {
         method: "POST",
         body: JSON.stringify({
           branchId,
@@ -583,15 +618,15 @@ function PurchaseXmlImporter({
             sourceIndex: item.sourceIndex,
             action: choices[item.sourceIndex]?.action ?? "create",
             productId: choices[item.sourceIndex]?.productId,
-            name: item.name,
+            name: choices[item.sourceIndex]?.name ?? item.name,
             barcode: item.barcode,
             sku: item.supplierCode,
-            quantity: item.quantity,
-            unitCost: item.unitCost,
+            quantity: choices[item.sourceIndex]?.quantity ?? item.quantity,
+            unitCost: choices[item.sourceIndex]?.unitCost ?? item.unitCost,
           })),
         }),
       });
-      setMessage("Entrada confirmada. Estoque e custos foram atualizados com trilha de auditoria.");
+      setMessage(`Entrada confirmada: ${result.itemCount} item(ns), total ${result.totalAmount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}. Estoque e custos foram atualizados com trilha de auditoria.`);
       setPreview(null);
       setXml("");
       setAccessKey("");
@@ -633,11 +668,39 @@ function PurchaseXmlImporter({
             <ReviewMetric label="Com alerta" value={reviewStats.withDivergence} tone={reviewStats.withDivergence ? "warn" : "ok"} />
             <ReviewMetric label="Ignorados" value={reviewStats.ignored} tone={reviewStats.ignored ? "muted" : "ok"} />
           </div> : null}
-          {reviewStats?.divergences ? <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Revise os alertas antes de confirmar. O estoque só será movimentado para itens vinculados ou cadastrados.</p> : null}
+          <div className="rounded-md border border-[var(--brand-border)] bg-white p-3 text-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-slate-500">Total que será lançado no estoque</span>
+              <strong className="text-lg text-[var(--brand-primary)]">{receivingTotal.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong>
+            </div>
+            {reviewStats?.divergences ? <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-900">Revise os alertas antes de confirmar. O estoque só será movimentado para itens vinculados ou cadastrados.</p> : null}
+          </div>
           {!preview.supplier.match ? <label className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><input type="checkbox" checked={createSupplier} onChange={(event) => setCreateSupplier(event.target.checked)} />Cadastrar o fornecedor automaticamente ao confirmar</label> : null}
           {preview.requiresManifestation ? <div className="grid gap-3 rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950"><div><strong>Os itens completos ainda não foram liberados.</strong><p className="mt-1 text-blue-800">A SEFAZ exige a ciência da operação antes de disponibilizar o conteúdo integral desta NF-e.</p></div><Button variant="secondary" onClick={() => void acknowledgeAndReload()}>Dar ciência e carregar itens</Button></div> : null}
           {preview.purchaseOrders?.length ? <Select label="Vincular a pedido de compra" value={purchaseOrderId} onChange={(event) => setPurchaseOrderId(event.target.value)} options={[{ label: "Receber sem vincular a pedido", value: "" }, ...preview.purchaseOrders.map((order) => ({ label: `Pedido ${order.id.slice(0, 8)} · ${order.pendingItems} item(ns) pendente(s)`, value: order.id }))]} /> : null}
-          {preview.items.map((item) => { const choice = choices[item.sourceIndex] ?? { action: "create" as const }; return <div key={item.sourceIndex} className="grid gap-2 rounded-md border border-[var(--brand-border)] bg-white p-3 lg:grid-cols-[minmax(0,1fr)_150px_220px]"><div><p className="font-medium">{item.name}</p><p className="text-xs text-slate-500">{item.barcode || item.supplierCode || "Sem código"} · {item.quantity} {item.ncm ? `· NCM ${item.ncm}` : ""} · R$ {item.unitCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>{item.divergences?.length ? <div className="mt-2 flex flex-wrap gap-1">{item.divergences.map((divergence) => <Badge key={divergence} className="border-amber-200 bg-amber-50 text-amber-800">{divergence}</Badge>)}</div> : <span className="mt-2 inline-block text-xs text-emerald-700">Sem divergência relevante.</span>}</div><Select aria-label={`Ação para ${item.name}`} value={choice.action} onChange={(event) => setChoices((current) => ({ ...current, [item.sourceIndex]: { ...choice, action: event.target.value as typeof choice.action } }))} options={[{ label: "Vincular", value: "link" }, { label: "Cadastrar produto", value: "create" }, { label: "Ignorar", value: "ignore" }]} />{choice.action === "link" ? <Select aria-label={`Produto de ${item.name}`} value={choice.productId ?? ""} onChange={(event) => setChoices((current) => ({ ...current, [item.sourceIndex]: { ...choice, productId: event.target.value } }))} options={[{ label: item.match?.name ?? "Selecione o produto", value: "" }, ...products]} /> : <p className="self-center text-xs text-slate-500">{choice.action === "create" ? "Será criado com custo da nota." : "Item não entrará no estoque."}</p>}</div>; })}{preview.items.length ? <Button onClick={() => void commit()}>Confirmar recebimento e atualizar estoque</Button> : null}</div> : null}
+          {preview.items.map((item) => {
+            const choice = choices[item.sourceIndex] ?? makeReceivingChoice(item);
+            return (
+              <div key={item.sourceIndex} className="grid gap-3 rounded-md border border-[var(--brand-border)] bg-white p-3">
+                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_160px_220px]">
+                  <div>
+                    <p className="font-medium">{item.name}</p>
+                    <p className="text-xs text-slate-500">{item.barcode || item.supplierCode || "Sem código"} · NF-e: {item.quantity} un · R$ {item.unitCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}{item.ncm ? ` · NCM ${item.ncm}` : ""}</p>
+                    {item.divergences?.length ? <div className="mt-2 flex flex-wrap gap-1">{item.divergences.map((divergence) => <Badge key={divergence} className="border-amber-200 bg-amber-50 text-amber-800">{divergence}</Badge>)}</div> : <span className="mt-2 inline-block text-xs text-emerald-700">Sem divergência relevante.</span>}
+                  </div>
+                  <Select aria-label={`Ação para ${item.name}`} value={choice.action} onChange={(event) => setChoices((current) => ({ ...current, [item.sourceIndex]: { ...choice, action: event.target.value as typeof choice.action } }))} options={[{ label: "Vincular", value: "link" }, { label: "Cadastrar produto", value: "create" }, { label: "Ignorar", value: "ignore" }]} />
+                  {choice.action === "link" ? <Select aria-label={`Produto de ${item.name}`} value={choice.productId ?? ""} onChange={(event) => setChoices((current) => ({ ...current, [item.sourceIndex]: { ...choice, productId: event.target.value } }))} options={[{ label: item.match?.name ?? "Selecione o produto", value: "" }, ...products]} /> : <p className="self-center text-xs text-slate-500">{choice.action === "create" ? "Será criado com custo e saldo conferidos." : "Item não entrará no estoque."}</p>}
+                </div>
+                {choice.action !== "ignore" ? (
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <Input label="Nome para cadastro" value={choice.name} disabled={choice.action !== "create"} onChange={(event) => setChoices((current) => ({ ...current, [item.sourceIndex]: { ...choice, name: event.target.value } }))} />
+                    <Input label="Qtd recebida" type="number" min={0.001} step="0.001" value={choice.quantity} onChange={(event) => setChoices((current) => ({ ...current, [item.sourceIndex]: { ...choice, quantity: Math.max(0.001, Number(event.target.value || item.quantity)) } }))} />
+                    <Input label="Custo confirmado" type="number" min={0} step="0.01" value={choice.unitCost} onChange={(event) => setChoices((current) => ({ ...current, [item.sourceIndex]: { ...choice, unitCost: Math.max(0, Number(event.target.value || 0)) } }))} />
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}{preview.items.length ? <Button onClick={() => void commit()}>Confirmar recebimento e atualizar estoque</Button> : null}</div> : null}
       </CardContent>
     </Card>
   );

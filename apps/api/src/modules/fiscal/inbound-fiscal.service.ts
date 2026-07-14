@@ -215,24 +215,27 @@ export class InboundFiscalService {
         }
         let productId = choice.productId;
         let resolution = "linked";
+        const confirmedQuantity = Number(choice.quantity);
+        const confirmedUnitCost = Number(choice.unitCost);
         if (choice.action === "create") {
           const sku = await this.uniqueSku(client, context.tenantId, choice.sku || item.supplier_code || `NF-${document.document_number}-${item.line_number}`);
           const created = await client.query<{ id: string }>(
             `INSERT INTO products(tenant_id,branch_id,name,sku,barcode,unit,cost_price,sale_price,min_stock,is_active)
              VALUES($1,$2,$3,$4,$5,$6,$7,$7,0,true) RETURNING id`,
-            [context.tenantId, input.branchId, item.description, sku, item.barcode, item.unit || "un", Number(item.unit_cost)],
+            [context.tenantId, input.branchId, choice.name || item.description, sku, item.barcode, item.unit || "un", confirmedUnitCost],
           );
           productId = created.rows[0]!.id;
           resolution = "created";
         }
         if (!productId) throw new BadRequestException(`Selecione o produto do item ${item.line_number}.`);
         await this.assertProduct(client, context.tenantId, input.branchId, productId);
-        resolved.push({ itemId: item.id, productId, quantity: Number(item.quantity), unitCost: Number(item.unit_cost), resolution });
+        resolved.push({ itemId: item.id, productId, quantity: confirmedQuantity, unitCost: confirmedUnitCost, resolution });
       }
       if (!resolved.length) throw new BadRequestException("Selecione ao menos um item para receber no estoque.");
       const order = input.purchaseOrderId
         ? await this.lockPurchaseOrder(client, context, input.purchaseOrderId, input.branchId, supplierId)
         : null;
+      const entryTotal = resolved.reduce((sum, item) => sum + item.quantity * item.unitCost, 0);
       const entry = await client.query<{ id: string }>(
         `INSERT INTO purchase_entries(tenant_id,branch_id,supplier_id,supplier_name,document_number,purchase_order_id,
           total_amount,notes,status,document_key,source_type,source_payload)
@@ -244,7 +247,7 @@ export class InboundFiscalService {
           input.supplierName || document.issuer_name,
           document.document_number,
           order?.id ?? null,
-          resolved.reduce((sum, item) => sum + item.quantity * item.unitCost, 0),
+          entryTotal,
           input.notes ?? null,
           document.access_key,
           document.source === "focus_key" ? "nfe_focus" : "nfe_xml",
@@ -283,8 +286,9 @@ export class InboundFiscalService {
         purchaseEntryId: entry.rows[0]!.id,
         purchaseOrderId: order?.id ?? null,
         itemCount: resolved.length,
+        totalAmount: entryTotal,
       });
-      return { id: entry.rows[0]!.id, fiscalDocumentId: document.id, itemCount: resolved.length };
+      return { id: entry.rows[0]!.id, fiscalDocumentId: document.id, itemCount: resolved.length, totalAmount: entryTotal };
     });
   }
 
