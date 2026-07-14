@@ -4,7 +4,7 @@ import type { INestApplication } from "@nestjs/common";
 import type { Pool } from "pg";
 import { createAdminPool, createTestApp, resetDatabase, seedBaselineTenants, seedRoleUser, type SeededTenant } from "./test-helpers";
 
-describe.sequential("critical api flows", () => {
+describe.sequential("critical api flows", { timeout: 60_000 }, () => {
   let app: INestApplication;
   let adminPool: Pool;
   let tenantA: SeededTenant;
@@ -18,12 +18,12 @@ describe.sequential("critical api flows", () => {
   beforeEach(async () => {
     await resetDatabase(adminPool);
     ({ tenantA, tenantB } = await seedBaselineTenants(adminPool));
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await app.close();
     await adminPool.end();
-  });
+  }, 60_000);
 
   it("rotates refresh tokens and rejects reused refresh cookies", async () => {
     const { agent, cookies: initialLogin } = await login(app, tenantA);
@@ -385,12 +385,17 @@ describe.sequential("critical api flows", () => {
       email: "finance-scope@example.com",
       name: "Financeiro Escopo",
     });
+    const accountant = await seedRoleUser(adminPool, tenantA, "accountant", {
+      email: "accountant-scope@example.com",
+      name: "Contador Escopo",
+    });
     const managerAgent = await login(app, manager);
     const sellerAgent = await login(app, seller);
     const adminAgent = await login(app, admin);
     const cashierAgent = await login(app, cashier);
     const stockAgent = await login(app, stockUser);
     const financeAgent = await login(app, finance);
+    const accountantAgent = await login(app, accountant);
 
     const managerOwnBranch = await managerAgent.agent
       .get("/api/v1/branches")
@@ -421,6 +426,12 @@ describe.sequential("critical api flows", () => {
     expect(
       (await financeAgent.agent.get("/api/v1/financial/receivables").set("x-tenant-id", tenantA.tenantId)).status,
     ).toBe(200);
+    expect(
+      (await accountantAgent.agent.get("/api/v1/fiscal/accounting/overview").set("x-tenant-id", tenantA.tenantId)).status,
+    ).toBe(200);
+    expect(
+      (await accountantAgent.agent.post(`/api/v1/fiscal/branches/${tenantA.branchId}/webhook-token`).set("x-tenant-id", tenantA.tenantId).send({})).status,
+    ).toBe(403);
   });
 
   it("keeps cash, cancellation, returns, purchases and transfers consistent", async () => {

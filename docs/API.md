@@ -57,6 +57,27 @@ Base local: `http://localhost:3334/api/v1`.
 - `POST /subscriptions/checkout`
 - `POST /subscriptions/webhooks/asaas`
 
+## Fiscal
+
+- `GET/PUT /fiscal/branches/:branchId/settings`
+- `PUT /fiscal/branches/:branchId/credentials`
+- `GET /fiscal/branches/:branchId/readiness`
+- `POST /fiscal/branches/:branchId/webhook-token`
+- `POST /fiscal/branches/:branchId/production/request`
+- `POST /fiscal/branches/:branchId/production/approve`
+- `POST /fiscal/branches/:branchId/production/revoke`
+- `GET/POST /fiscal/documents`
+- `GET /fiscal/documents/:id`
+- `POST /fiscal/documents/:id/sync`
+- `POST /fiscal/documents/:id/retry`
+- `POST /fiscal/documents/:id/cancel`
+- `GET /fiscal/documents/:id/artifacts/:kind`
+- `POST /fiscal/products/:productId/review`
+- `POST /fiscal/branches/:branchId/review`
+- `GET /fiscal/accounting/overview`
+- `GET /fiscal/accounting/export`
+- `POST /fiscal/webhooks/focus` (pública, autenticada pelo token dedicado)
+
 ## Convencoes de resposta
 
 - Listagens retornam `data` e `pagination` quando paginadas.

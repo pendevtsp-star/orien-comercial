@@ -1,19 +1,30 @@
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from "@nestjs/common";
+import type { AppConfig } from "@sgc/config";
 import type {
   BranchFiscalSettingsInput,
   FiscalCancelInput,
   FiscalCredentialInput,
   FiscalDocumentListQuery,
   FiscalIssueInput,
+  FiscalProductionActionInput,
   FiscalReviewInput,
 } from "@sgc/types";
-import { createHash, randomInt } from "node:crypto";
+import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 import type { PoolClient } from "pg";
 import { ensureBranchAccess, ensureFound, pagination } from "../../shared/resource-access";
 import type { TenantContext } from "../../shared/request-context";
 import { DatabaseService } from "../database/database.service";
+import { APP_CONFIG } from "../config/config.module";
 import { IntegrationsService } from "../integrations/integrations.service";
-import { FocusNfeProvider } from "./focus-nfe.provider";
+import { FocusNfeProvider, normalizeFocusResponse } from "./focus-nfe.provider";
 import {
   FiscalProviderError,
   type FiscalDocumentType,
@@ -51,6 +62,18 @@ type FiscalSettingsRow = {
   accountant_review_status: string;
   accountant_review_note: string | null;
   accountant_reviewed_at: Date | null;
+  accountant_reviewed_by_user_id: string | null;
+  webhook_token_hash: string | null;
+  webhook_token_last4: string | null;
+  webhook_configured_at: Date | null;
+  homologation_status: string;
+  homologation_approved_at: Date | null;
+  homologation_approved_by_user_id: string | null;
+  production_requested_at: Date | null;
+  production_requested_by_user_id: string | null;
+  production_approved_at: Date | null;
+  production_approved_by_user_id: string | null;
+  production_revoked_at: Date | null;
 };
 
 type FiscalDocumentRow = {
@@ -72,6 +95,7 @@ export class FiscalService {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(IntegrationsService) private readonly integrations: IntegrationsService,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
   async branchSettings(context: TenantContext, branchId: string) {
@@ -95,6 +119,37 @@ export class FiscalService {
       branch: { id: current.id, name: current.name },
       settings: settings ? mapSettings(settings) : defaultSettings(current),
       credentials: { hasCertificate, hasCsc, hasProviderToken: Boolean(integration) },
+      webhook: {
+        configured: Boolean(settings?.webhook_token_hash),
+        tokenLast4: settings?.webhook_token_last4 ?? null,
+        configuredAt: settings?.webhook_configured_at?.toISOString() ?? null,
+        url: this.focusWebhookUrl(),
+      },
+    };
+  }
+
+  async rotateWebhookToken(context: TenantContext, branchId: string) {
+    ensureBranchAccess(context, branchId);
+    await this.branchSettings(context, branchId);
+    const token = `orien_fiscal_${randomBytes(24).toString("base64url")}`;
+    const hash = createHash("sha256").update(token).digest("hex");
+    await this.database.tenantTransaction(context.tenantId, async (client) => {
+      const result = await client.query(
+        `UPDATE branch_fiscal_settings SET webhook_token_hash=$2,webhook_token_last4=$3,
+          webhook_configured_at=now(),updated_at=now()
+         WHERE tenant_id=$1 RETURNING id`,
+        [context.tenantId, hash, token.slice(-4)],
+      );
+      ensureFound(result.rows[0], "Configuração fiscal");
+      await insertAudit(client, context, "fiscal.webhook.token.rotated", "branch", branchId, {
+        tokenLast4: token.slice(-4),
+      });
+    });
+    return {
+      url: this.focusWebhookUrl(),
+      authorizationHeader: "X-Orien-Webhook-Token",
+      authorization: token,
+      notice: "Copie o token agora. Por segurança, ele não será exibido novamente.",
     };
   }
 
@@ -130,7 +185,15 @@ export class FiscalService {
           next_nfe_number=EXCLUDED.next_nfe_number,contingency_enabled=EXCLUDED.contingency_enabled,
           certificate_mode=EXCLUDED.certificate_mode,certificate_expires_at=EXCLUDED.certificate_expires_at,
           accountant_review_status='pending',accountant_reviewed_at=NULL,
-          accountant_reviewed_by_user_id=NULL,updated_at=now()`,
+          accountant_reviewed_by_user_id=NULL,homologation_status='pending',
+          homologation_approved_at=NULL,homologation_approved_by_user_id=NULL,
+          production_requested_at=NULL,production_requested_by_user_id=NULL,
+          production_approved_at=NULL,production_approved_by_user_id=NULL,
+          production_revoked_at=CASE WHEN branch_fiscal_settings.environment='production' THEN now()
+            ELSE branch_fiscal_settings.production_revoked_at END,
+          production_revoked_by_user_id=CASE WHEN branch_fiscal_settings.environment='production' THEN $26
+            ELSE branch_fiscal_settings.production_revoked_by_user_id END,
+          updated_at=now()`,
         [
           context.tenantId,
           branchId,
@@ -157,6 +220,7 @@ export class FiscalService {
           input.contingencyEnabled,
           input.certificateMode,
           input.certificateExpiresAt ?? null,
+          context.userId ?? null,
         ],
       );
       await insertAudit(client, context, "fiscal.branch.configured", "branch", branchId, {
@@ -257,6 +321,13 @@ export class FiscalService {
     );
     const pendingProducts = products.rows.filter((product) => product.missing.length > 0);
     const pendingReviews = products.rows.filter((product) => product.review_status !== "approved");
+    const homologationDocuments = await this.database.tenantQuery<{ authorized: string }>(
+      context.tenantId,
+      `SELECT count(*) FILTER (WHERE status='authorized')::text AS authorized
+       FROM fiscal_documents WHERE tenant_id=$1 AND branch_id=$2 AND environment='homologation'`,
+      [context.tenantId, branchId],
+    );
+    const authorizedHomologation = Number(homologationDocuments.rows[0]?.authorized ?? 0);
     return {
       branchId,
       integrationConfigured: overview.credentials.hasProviderToken,
@@ -269,6 +340,17 @@ export class FiscalService {
         reviewQueue: pendingReviews.slice(0, 50),
       },
       accountantReviewStatus: settings.accountantReviewStatus ?? "pending",
+      homologation: {
+        status: settings.homologationStatus ?? "pending",
+        authorizedDocuments: authorizedHomologation,
+        approvedAt: settings.homologationApprovedAt ?? null,
+      },
+      production: {
+        requestedAt: settings.productionRequestedAt ?? null,
+        approvedAt: settings.productionApprovedAt ?? null,
+        revokedAt: settings.productionRevokedAt ?? null,
+        active: settings.environment === "production" && settings.status === "active",
+      },
       canIssueHomologation:
         overview.credentials.hasProviderToken && !missingSettings.length && !pendingProducts.length,
       canActivateProduction:
@@ -276,7 +358,8 @@ export class FiscalService {
         !missingSettings.length &&
         !pendingProducts.length &&
         !pendingReviews.length &&
-        settings.accountantReviewStatus === "approved",
+        settings.accountantReviewStatus === "approved" &&
+        authorizedHomologation > 0,
     };
   }
 
@@ -319,7 +402,9 @@ export class FiscalService {
         fd.access_key AS "accessKey",fd.protocol,fd.rejection_code AS "rejectionCode",
         fd.rejection_reason AS "rejectionReason",fd.attempt_count AS "attemptCount",
         fd.contingency_mode AS "contingency",fd.requested_at AS "requestedAt",
-        fd.issued_at AS "issuedAt",fd.cancelled_at AS "cancelledAt",fd.created_at AS "createdAt"
+        fd.issued_at AS "issuedAt",fd.cancelled_at AS "cancelledAt",fd.created_at AS "createdAt",
+        COALESCE((SELECT jsonb_object_agg(fa.kind,fa.status) FROM fiscal_artifacts fa
+          WHERE fa.tenant_id=fd.tenant_id AND fa.fiscal_document_id=fd.id),'{}'::jsonb) AS artifacts
        FROM fiscal_documents fd JOIN branches b ON b.id=fd.branch_id
        LEFT JOIN sales s ON s.id=fd.sale_id
        WHERE ${filters.join(" AND ")}
@@ -345,7 +430,15 @@ export class FiscalService {
        FROM fiscal_document_events WHERE tenant_id=$1 AND fiscal_document_id=$2 ORDER BY created_at DESC`,
       [context.tenantId, id],
     );
-    return { document, events: events.rows };
+    const artifacts = await this.database.tenantQuery(
+      context.tenantId,
+      `SELECT kind,status,content_type AS "contentType",size_bytes AS "sizeBytes",
+        sha256,attempt_count AS "attemptCount",last_error AS "lastError",
+        downloaded_at AS "downloadedAt"
+       FROM fiscal_artifacts WHERE tenant_id=$1 AND fiscal_document_id=$2 ORDER BY kind`,
+      [context.tenantId, id],
+    );
+    return { document, events: events.rows, artifacts: artifacts.rows };
   }
 
   async saleDocuments(context: TenantContext, saleId: string) {
@@ -381,8 +474,11 @@ export class FiscalService {
       if (existing.rows[0]) return { document: existing.rows[0], created: false };
       const sale = await this.saleSnapshot(client, context, input.saleId);
       const settings = await this.requiredSettings(client, context.tenantId, sale.branchId);
-      if (settings.environment === "production") {
-        throw new BadRequestException("A emissão em produção ainda não foi liberada.");
+      if (
+        settings.environment === "production" &&
+        (!settings.production_approved_at || settings.status !== "active")
+      ) {
+        throw new BadRequestException("A emissão em produção ainda não possui dupla aprovação.");
       }
       if (settings.provider !== "focus_nfe") {
         throw new BadRequestException("Selecione Focus NFe para a homologação atual.");
@@ -527,6 +623,333 @@ export class FiscalService {
     return this.branchSettings(context, branchId);
   }
 
+  async requestProduction(
+    context: TenantContext,
+    branchId: string,
+    input: FiscalProductionActionInput,
+  ) {
+    ensureBranchAccess(context, branchId);
+    const readiness = await this.readiness(context, branchId);
+    if (!readiness.canActivateProduction) {
+      throw new BadRequestException(
+        "Conclua a configuração, a revisão contábil e ao menos uma emissão autorizada em homologação.",
+      );
+    }
+    await this.database.tenantTransaction(context.tenantId, async (client) => {
+      await client.query(
+        `UPDATE branch_fiscal_settings SET homologation_status='passed',homologation_approved_at=now(),
+          homologation_approved_by_user_id=$3,production_requested_at=now(),
+          production_requested_by_user_id=$3,production_approved_at=NULL,
+          production_approved_by_user_id=NULL,updated_at=now()
+         WHERE tenant_id=$1 AND branch_id=$2`,
+        [context.tenantId, branchId, context.userId ?? null],
+      );
+      await insertAudit(client, context, "fiscal.production.requested", "branch", branchId, {
+        note: input.note,
+      });
+    });
+    return this.branchSettings(context, branchId);
+  }
+
+  async approveProduction(
+    context: TenantContext,
+    branchId: string,
+    input: FiscalProductionActionInput,
+  ) {
+    ensureBranchAccess(context, branchId);
+    const settings = await this.settingsRow(context.tenantId, branchId);
+    if (!settings?.production_requested_at || settings.homologation_status !== "passed") {
+      throw new BadRequestException("Solicite a ativação somente depois da homologação concluída.");
+    }
+    if (!settings.accountant_reviewed_by_user_id) {
+      throw new BadRequestException("A aprovação do contador ainda não foi registrada.");
+    }
+    if (settings.accountant_reviewed_by_user_id === context.userId) {
+      throw new BadRequestException(
+        "A aprovação operacional deve ser feita por uma pessoa diferente da revisão contábil.",
+      );
+    }
+    await this.database.tenantTransaction(context.tenantId, async (client) => {
+      await client.query(
+        `UPDATE branch_fiscal_settings SET environment='production',status='active',
+          production_approved_at=now(),production_approved_by_user_id=$3,
+          production_revoked_at=NULL,production_revoked_by_user_id=NULL,updated_at=now()
+         WHERE tenant_id=$1 AND branch_id=$2`,
+        [context.tenantId, branchId, context.userId ?? null],
+      );
+      await insertAudit(client, context, "fiscal.production.approved", "branch", branchId, {
+        note: input.note,
+        accountantReviewerId: settings.accountant_reviewed_by_user_id,
+      });
+    });
+    return this.branchSettings(context, branchId);
+  }
+
+  async revokeProduction(
+    context: TenantContext,
+    branchId: string,
+    input: FiscalProductionActionInput,
+  ) {
+    ensureBranchAccess(context, branchId);
+    await this.database.tenantTransaction(context.tenantId, async (client) => {
+      const result = await client.query(
+        `UPDATE branch_fiscal_settings SET environment='homologation',status='blocked',
+          production_revoked_at=now(),production_revoked_by_user_id=$3,
+          production_approved_at=NULL,production_approved_by_user_id=NULL,updated_at=now()
+         WHERE tenant_id=$1 AND branch_id=$2 RETURNING id`,
+        [context.tenantId, branchId, context.userId ?? null],
+      );
+      ensureFound(result.rows[0], "Configuração fiscal");
+      await insertAudit(client, context, "fiscal.production.revoked", "branch", branchId, {
+        note: input.note,
+      });
+    });
+    return this.branchSettings(context, branchId);
+  }
+
+  async accountingOverview(context: TenantContext, branchId?: string) {
+    if (branchId) ensureBranchAccess(context, branchId);
+    const selectedBranch = context.branchId ?? branchId ?? null;
+    const branchValues: unknown[] = [context.tenantId];
+    const branchFilter = selectedBranch ? "AND b.id=$2" : "";
+    if (selectedBranch) branchValues.push(selectedBranch);
+    const [branches, products, documents] = await Promise.all([
+      this.database.tenantQuery(
+        context.tenantId,
+        `SELECT b.id,b.name,COALESCE(fs.accountant_review_status,'pending') AS "reviewStatus",
+          COALESCE(fs.homologation_status,'pending') AS "homologationStatus",fs.environment,fs.status,
+          fs.production_requested_at AS "productionRequestedAt",
+          fs.production_approved_at AS "productionApprovedAt"
+         FROM branches b LEFT JOIN branch_fiscal_settings fs ON fs.branch_id=b.id AND fs.tenant_id=b.tenant_id
+         WHERE b.tenant_id=$1 AND b.deleted_at IS NULL ${branchFilter} ORDER BY b.name`,
+        branchValues,
+      ),
+      this.database.tenantQuery(
+        context.tenantId,
+        `SELECT p.id,p.name,p.sku,COALESCE(pf.accountant_review_status,'pending') AS "reviewStatus",
+          pf.accountant_review_note AS "reviewNote",pf.ncm,pf.cest
+         FROM products p LEFT JOIN product_fiscal_profiles pf ON pf.product_id=p.id AND pf.tenant_id=p.tenant_id
+         WHERE p.tenant_id=$1 AND p.deleted_at IS NULL
+           ${selectedBranch ? "AND (p.branch_id=$2 OR p.branch_id IS NULL)" : ""}
+           AND COALESCE(pf.accountant_review_status,'pending')<>'approved'
+         ORDER BY p.name LIMIT 100`,
+        branchValues,
+      ),
+      this.database.tenantQuery(
+        context.tenantId,
+        `SELECT fd.id,fd.branch_id AS "branchId",b.name AS "branchName",fd.document_type AS "documentType",
+          fd.status,fd.reference,fd.access_key AS "accessKey",fd.rejection_code AS "rejectionCode",
+          fd.rejection_reason AS "rejectionReason",fd.created_at AS "createdAt",
+          COALESCE(jsonb_object_agg(fa.kind,fa.status) FILTER (WHERE fa.id IS NOT NULL),'{}'::jsonb) AS artifacts
+         FROM fiscal_documents fd JOIN branches b ON b.id=fd.branch_id
+         LEFT JOIN fiscal_artifacts fa ON fa.fiscal_document_id=fd.id
+         WHERE fd.tenant_id=$1 ${selectedBranch ? "AND fd.branch_id=$2" : ""}
+         GROUP BY fd.id,b.name ORDER BY fd.created_at DESC LIMIT 100`,
+        branchValues,
+      ),
+    ]);
+    return { branches: branches.rows, products: products.rows, documents: documents.rows };
+  }
+
+  async accountingExport(context: TenantContext, branchId?: string) {
+    const overview = await this.accountingOverview(context, branchId);
+    const rows = [
+      ["Loja", "Documento", "Referência", "Situação", "Chave", "Rejeição", "Emissão"],
+      ...overview.documents.map((item) => {
+        const row = item as Record<string, unknown>;
+        return [
+          row.branchName,
+          typeof row.documentType === "string" ? row.documentType.toUpperCase() : "",
+          row.reference,
+          row.status,
+          row.accessKey,
+          [row.rejectionCode, row.rejectionReason].filter(Boolean).join(" - "),
+          row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
+        ];
+      }),
+    ];
+    return Buffer.from(`\uFEFF${rows.map((row) => row.map(csvCell).join(";")).join("\n")}`, "utf8");
+  }
+
+  async receiveFocusWebhook(token: string | undefined, eventId: string | undefined, body: unknown) {
+    const normalized = normalizeFocusWebhook(body);
+    const found = await this.database.pool.query<FiscalDocumentRow & { webhook_token_hash: string }>(
+      `SELECT fd.*,fs.webhook_token_hash FROM fiscal_documents fd
+       JOIN branch_fiscal_settings fs ON fs.tenant_id=fd.tenant_id AND fs.branch_id=fd.branch_id
+       WHERE fd.provider='focus_nfe' AND fd.reference=$1`,
+      [normalized.reference],
+    );
+    const document = found.rows.find(
+      (candidate) =>
+        candidate.webhook_token_hash && validWebhookToken(token, candidate.webhook_token_hash),
+    );
+    if (!document) {
+      throw new UnauthorizedException("Webhook fiscal não autorizado.");
+    }
+    const payloadDigest = createHash("sha256").update(JSON.stringify(normalized.payload)).digest("hex");
+    const eventKey = `${document.reference}:${eventId?.trim() || payloadDigest}`.slice(0, 128);
+    const context = systemContext(document.tenant_id, document.branch_id);
+    const inserted = await this.database.tenantQuery<{ id: string }>(
+      document.tenant_id,
+      `INSERT INTO fiscal_webhook_events(
+        tenant_id,fiscal_document_id,provider,event_key,reference,event_type,payload,payload_digest,status,attempt_count
+       ) VALUES($1,$2,'focus_nfe',$3,$4,$5,$6::jsonb,$7,'processing',1)
+       ON CONFLICT(provider,event_key) DO NOTHING RETURNING id`,
+      [
+        document.tenant_id,
+        document.id,
+        eventKey,
+        document.reference,
+        normalized.eventType,
+        JSON.stringify(normalized.payload),
+        payloadDigest,
+      ],
+    );
+    if (!inserted.rows[0]) return { accepted: true, duplicate: true };
+    try {
+      await this.applyProviderResult(context, document, normalized.result, "webhook_received");
+      await this.database.tenantQuery(
+        document.tenant_id,
+        "UPDATE fiscal_webhook_events SET status='processed',processed_at=now(),updated_at=now() WHERE tenant_id=$1 AND id=$2",
+        [document.tenant_id, inserted.rows[0].id],
+      );
+      return { accepted: true, duplicate: false };
+    } catch (error) {
+      await this.database.tenantQuery(
+        document.tenant_id,
+        "UPDATE fiscal_webhook_events SET status='failed',last_error=$3,updated_at=now() WHERE tenant_id=$1 AND id=$2",
+        [document.tenant_id, inserted.rows[0].id, safeError(error)],
+      );
+      throw new ServiceUnavailableException("O evento fiscal será processado novamente.");
+    }
+  }
+
+  async processScheduledDocument(tenantId: string, branchId: string, id: string) {
+    return this.transmit(systemContext(tenantId, branchId), id);
+  }
+
+  async reprocessWebhookEvent(tenantId: string, id: string) {
+    const result = await this.database.tenantQuery<{
+      fiscal_document_id: string;
+      branch_id: string;
+      payload: Record<string, unknown>;
+    }>(
+      tenantId,
+      `SELECT we.fiscal_document_id,fd.branch_id,we.payload FROM fiscal_webhook_events we
+       JOIN fiscal_documents fd ON fd.id=we.fiscal_document_id
+       WHERE we.tenant_id=$1 AND we.id=$2`,
+      [tenantId, id],
+    );
+    const row = ensureFound(result.rows[0], "Evento fiscal");
+    const document = await this.documentRow(systemContext(tenantId, row.branch_id), row.fiscal_document_id);
+    const normalized = normalizeFocusWebhook(row.payload);
+    await this.applyProviderResult(
+      systemContext(tenantId, row.branch_id),
+      document,
+      normalized.result,
+      "webhook_reprocessed",
+    );
+    await this.database.tenantQuery(
+      tenantId,
+      `UPDATE fiscal_webhook_events SET status='processed',processed_at=now(),
+        attempt_count=attempt_count+1,last_error=NULL,updated_at=now() WHERE tenant_id=$1 AND id=$2`,
+      [tenantId, id],
+    );
+  }
+
+  async processArtifact(tenantId: string, artifactId: string) {
+    const found = await this.database.tenantQuery<{
+      id: string;
+      fiscal_document_id: string;
+      branch_id: string;
+      kind: "xml" | "danfe" | "cancellation_xml";
+      source_url: string;
+      attempt_count: number;
+    }>(
+      tenantId,
+      `SELECT fa.id,fa.fiscal_document_id,fd.branch_id,fa.kind,fa.source_url,fa.attempt_count
+       FROM fiscal_artifacts fa JOIN fiscal_documents fd ON fd.id=fa.fiscal_document_id
+       WHERE fa.tenant_id=$1 AND fa.id=$2`,
+      [tenantId, artifactId],
+    );
+    const artifact = ensureFound(found.rows[0], "Artefato fiscal");
+    const context = systemContext(tenantId, artifact.branch_id);
+    const document = await this.documentRow(context, artifact.fiscal_document_id);
+    const provider = await this.provider(context, document);
+    await this.database.tenantQuery(
+      tenantId,
+      "UPDATE fiscal_artifacts SET status='downloading',attempt_count=attempt_count+1,updated_at=now() WHERE tenant_id=$1 AND id=$2",
+      [tenantId, artifactId],
+    );
+    try {
+      const downloaded = await provider.downloadArtifact(artifact.source_url);
+      const extension = artifact.kind === "danfe" ? "pdf" : "xml";
+      const storageKey = `fiscal/${tenantId}/${artifact.fiscal_document_id}/${artifact.kind}.${extension}`;
+      const target = resolve(this.config.UPLOAD_DIR, storageKey);
+      const temporary = `${target}.${randomBytes(6).toString("hex")}.tmp`;
+      await mkdir(dirname(target), { recursive: true });
+      await writeFile(temporary, downloaded.content, { flag: "wx" });
+      await rename(temporary, target);
+      await this.database.tenantQuery(
+        tenantId,
+        `UPDATE fiscal_artifacts SET status='ready',storage_key=$3,content_type=$4,sha256=$5,
+          size_bytes=$6,downloaded_at=now(),last_error=NULL,updated_at=now()
+         WHERE tenant_id=$1 AND id=$2`,
+        [
+          tenantId,
+          artifactId,
+          storageKey,
+          downloaded.contentType,
+          createHash("sha256").update(downloaded.content).digest("hex"),
+          downloaded.content.length,
+        ],
+      );
+    } catch (error) {
+      const retryMinutes = Math.min(60, 2 ** Math.min(artifact.attempt_count + 1, 5));
+      await this.database.tenantQuery(
+        tenantId,
+        `UPDATE fiscal_artifacts SET status='failed',last_error=$3,
+          next_retry_at=now()+($4||' minutes')::interval,updated_at=now()
+         WHERE tenant_id=$1 AND id=$2`,
+        [tenantId, artifactId, safeError(error), retryMinutes],
+      );
+    }
+  }
+
+  async artifact(context: TenantContext, documentId: string, kind: string) {
+    if (!["xml", "danfe", "cancellation_xml"].includes(kind)) {
+      throw new BadRequestException("Artefato fiscal inválido.");
+    }
+    const result = await this.database.tenantQuery<{
+      branch_id: string;
+      storage_key: string | null;
+      content_type: string | null;
+      status: string;
+    }>(
+      context.tenantId,
+      `SELECT fd.branch_id,fa.storage_key,fa.content_type,fa.status
+       FROM fiscal_artifacts fa JOIN fiscal_documents fd ON fd.id=fa.fiscal_document_id
+       WHERE fa.tenant_id=$1 AND fa.fiscal_document_id=$2 AND fa.kind=$3`,
+      [context.tenantId, documentId, kind],
+    );
+    const artifact = ensureFound(result.rows[0], "Artefato fiscal");
+    ensureBranchAccess(context, artifact.branch_id);
+    if (artifact.status !== "ready" || !artifact.storage_key) {
+      throw new BadRequestException("O artefato ainda está sendo preparado.");
+    }
+    const root = resolve(this.config.UPLOAD_DIR);
+    const target = resolve(root, artifact.storage_key);
+    const pathWithinStorage = relative(root, target);
+    if (pathWithinStorage.startsWith("..") || isAbsolute(pathWithinStorage)) {
+      throw new BadRequestException("Caminho de artefato inválido.");
+    }
+    return {
+      content: await readFile(target),
+      contentType: artifact.content_type ?? (kind === "danfe" ? "application/pdf" : "application/xml"),
+      filename: `${kind}-${documentId.slice(0, 8)}.${kind === "danfe" ? "pdf" : "xml"}`,
+    };
+  }
+
   private async transmit(context: TenantContext, id: string) {
     let document = await this.documentRow(context, id);
     const provider = await this.provider(context, document);
@@ -630,6 +1053,15 @@ export class FiscalService {
           providerCode: result.rejectionCode ?? null,
         },
       );
+      await queueArtifacts(client, context.tenantId, document.id, result);
+      if (result.status === "rejected") {
+        await queueFiscalAlert(
+          client,
+          context,
+          document,
+          result.rejectionReason ?? "O documento fiscal foi rejeitado pelo provedor.",
+        );
+      }
     });
   }
 
@@ -669,6 +1101,9 @@ export class FiscalService {
         providerError.code ?? null,
         providerError.message,
       );
+      if (!providerError.retryable) {
+        await queueFiscalAlert(client, context, document, providerError.message);
+      }
     });
   }
 
@@ -775,6 +1210,12 @@ export class FiscalService {
       items: items.rows,
       payments: payments.rows,
     };
+  }
+
+  private focusWebhookUrl() {
+    const base = (this.config.NEXT_PUBLIC_API_URL ?? `http://localhost:${this.config.API_PORT}/api/v1`)
+      .replace(/\/$/, "");
+    return `${base}/fiscal/webhooks/focus`;
   }
 }
 
@@ -883,6 +1324,11 @@ function mapSettings(row: FiscalSettingsRow) {
     accountantReviewStatus: row.accountant_review_status,
     accountantReviewNote: row.accountant_review_note,
     accountantReviewedAt: row.accountant_reviewed_at?.toISOString() ?? null,
+    homologationStatus: row.homologation_status,
+    homologationApprovedAt: row.homologation_approved_at?.toISOString() ?? null,
+    productionRequestedAt: row.production_requested_at?.toISOString() ?? null,
+    productionApprovedAt: row.production_approved_at?.toISOString() ?? null,
+    productionRevokedAt: row.production_revoked_at?.toISOString() ?? null,
   };
 }
 
@@ -913,6 +1359,11 @@ function defaultSettings(branch: Record<string, unknown>) {
     certificateMode: "provider_managed",
     certificateExpiresAt: "",
     accountantReviewStatus: "pending",
+    homologationStatus: "pending",
+    homologationApprovedAt: null,
+    productionRequestedAt: null,
+    productionApprovedAt: null,
+    productionRevokedAt: null,
   };
 }
 
@@ -1002,5 +1453,173 @@ async function insertAudit(
       entityId,
       JSON.stringify({ ...metadata, digest }),
     ],
+  );
+}
+
+export function normalizeFocusWebhook(body: unknown) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new BadRequestException("Evento fiscal inválido.");
+  }
+  const envelope = body as Record<string, unknown>;
+  const source = envelope.data && typeof envelope.data === "object" && !Array.isArray(envelope.data)
+    ? envelope.data as Record<string, unknown>
+    : envelope;
+  const reference = firstString(source.reference, source.referencia, source.ref);
+  if (!reference || reference.length > 160) {
+    throw new BadRequestException("O evento fiscal não possui uma referência válida.");
+  }
+  const providerPayload: Record<string, unknown> = {
+    ref: reference,
+    status: firstString(source.status, source.situacao, source.providerStatus),
+    chave: firstString(source.chave, source.chave_nfe, source.chave_nfce, source.accessKey),
+    protocolo: firstString(source.protocolo, source.numero_protocolo, source.protocol),
+    codigo_status_sefaz: firstString(
+      source.codigo_status_sefaz,
+      source.codigo,
+      source.rejectionCode,
+    ),
+    mensagem_sefaz: firstString(
+      source.mensagem_sefaz,
+      source.mensagem,
+      source.rejectionReason,
+    ),
+    caminho_xml: firstString(
+      source.caminho_xml,
+      source.caminho_xml_nota_fiscal,
+      source.url_xml,
+      source.xmlUrl,
+    ),
+    caminho_danfe: firstString(
+      source.caminho_danfe,
+      source.caminho_danfe_nfce,
+      source.url_danfe,
+      source.pdfUrl,
+    ),
+  };
+  const result = normalizeFocusResponse(providerPayload, reference);
+  return {
+    reference,
+    eventType: firstString(source.event, source.evento, source.tipo_evento) || "document_updated",
+    payload: {
+      reference,
+      eventType: firstString(source.event, source.evento, source.tipo_evento) || null,
+      status: result.providerStatus ?? null,
+      accessKey: result.accessKey ?? null,
+      protocol: result.protocol ?? null,
+      rejectionCode: result.rejectionCode ?? null,
+      rejectionReason: result.rejectionReason ?? null,
+      xmlUrl: result.xmlUrl ?? null,
+      pdfUrl: result.pdfUrl ?? null,
+    },
+    result,
+  };
+}
+
+function firstString(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number") return String(value);
+  }
+  return "";
+}
+
+function validWebhookToken(token: string | undefined, expectedHash: string) {
+  if (!token) return false;
+  const supplied = Buffer.from(createHash("sha256").update(token).digest("hex"), "utf8");
+  const expected = Buffer.from(expectedHash, "utf8");
+  return supplied.length === expected.length && timingSafeEqual(supplied, expected);
+}
+
+function systemContext(tenantId: string, branchId: string): TenantContext {
+  return {
+    tenantId,
+    branchId,
+    membershipId: "system",
+    roleSlug: "system",
+    permissions: [],
+  };
+}
+
+function safeError(error: unknown) {
+  if (error instanceof Error) return error.message.slice(0, 500);
+  return "Falha interna durante o processamento fiscal.";
+}
+
+function csvCell(value: unknown) {
+  const normalized = typeof value === "string"
+    ? value
+    : typeof value === "number" || typeof value === "boolean" || typeof value === "bigint"
+      ? String(value)
+      : value instanceof Date
+        ? value.toISOString()
+        : "";
+  return `"${normalized.replace(/"/g, '""')}"`;
+}
+
+async function queueArtifacts(
+  client: PoolClient,
+  tenantId: string,
+  documentId: string,
+  result: FiscalProviderResult,
+) {
+  const artifacts: Array<["xml" | "danfe" | "cancellation_xml", string | undefined]> =
+    result.status === "cancelled"
+      ? [["cancellation_xml", result.xmlUrl]]
+      : [
+          ["xml", result.xmlUrl],
+          ["danfe", result.pdfUrl],
+        ];
+  for (const [kind, sourceUrl] of artifacts) {
+    if (!sourceUrl) continue;
+    await client.query(
+      `INSERT INTO fiscal_artifacts(tenant_id,fiscal_document_id,kind,source_url,status,next_retry_at)
+       VALUES($1,$2,$3,$4,'pending',now())
+       ON CONFLICT(fiscal_document_id,kind) DO UPDATE SET
+         source_url=EXCLUDED.source_url,
+         status=CASE WHEN fiscal_artifacts.source_url=EXCLUDED.source_url
+           AND fiscal_artifacts.status='ready' THEN 'ready' ELSE 'pending' END,
+         next_retry_at=now(),last_error=NULL,updated_at=now()`,
+      [tenantId, documentId, kind, sourceUrl],
+    );
+  }
+}
+
+async function queueFiscalAlert(
+  client: PoolClient,
+  context: TenantContext,
+  document: FiscalDocumentRow,
+  message: string,
+) {
+  const title = "Documento fiscal requer atenção";
+  const detail = `${document.document_type.toUpperCase()} ${document.reference}: ${message}`.slice(0, 500);
+  await client.query(
+    `INSERT INTO internal_notifications(
+       tenant_id,user_id,branch_id,type,title,message,severity,entity_type,entity_id
+     )
+     SELECT $1,m.user_id,$2,'fiscal_rejection',$3,$4,'error','fiscal_document',$5
+     FROM memberships m JOIN roles r ON r.id=m.role_id
+     WHERE m.tenant_id=$1 AND m.status='active' AND m.deleted_at IS NULL
+       AND r.slug IN ('owner','admin','manager','accountant')
+       AND (m.branch_id IS NULL OR m.branch_id=$2)
+       AND NOT EXISTS (
+         SELECT 1 FROM internal_notifications n
+         WHERE n.tenant_id=$1 AND n.user_id=m.user_id AND n.type='fiscal_rejection'
+           AND n.entity_id=$5 AND n.read_at IS NULL
+       )`,
+    [context.tenantId, document.branch_id, title, detail, document.id],
+  );
+  await client.query(
+    `INSERT INTO fiscal_alert_deliveries(
+       tenant_id,fiscal_document_id,kind,recipient,status,next_retry_at
+     )
+     SELECT DISTINCT $1,$2,'rejection',u.email,'pending',now()
+     FROM memberships m JOIN roles r ON r.id=m.role_id JOIN users u ON u.id=m.user_id
+     WHERE m.tenant_id=$1 AND m.status='active' AND m.deleted_at IS NULL
+       AND u.deleted_at IS NULL AND r.slug IN ('owner','admin','manager','accountant')
+       AND (m.branch_id IS NULL OR m.branch_id=$3)
+     ON CONFLICT(fiscal_document_id,kind,recipient) DO UPDATE SET
+       status=CASE WHEN fiscal_alert_deliveries.status='sent' THEN 'sent' ELSE 'pending' END,
+       next_retry_at=now(),last_error=NULL,updated_at=now()`,
+    [context.tenantId, document.id, document.branch_id],
   );
 }

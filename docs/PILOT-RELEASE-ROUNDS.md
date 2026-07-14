@@ -18,6 +18,8 @@ Cada rodada deve ser concluída localmente, validada por lint, testes, build, mi
 - Contrato `FiscalProvider` e primeiro adaptador.
 - Certificado A1, CSC, série e numeração por estabelecimento.
 - NFC-e e NF-e em homologação, webhooks, rejeições e contingência.
+- Retentativas automáticas, armazenamento de XML/DANFE e alertas operacionais.
+- Dupla aprovação auditada antes de produção.
 
 ## Rodada C: compras e financeiro
 
@@ -29,6 +31,8 @@ Cada rodada deve ser concluída localmente, validada por lint, testes, build, mi
 
 - Fechamento mensal, pacote de XMLs, pendências fiscais e comentários.
 - Exportações versionadas para EFD ICMS/IPI e EFD Contribuições.
+- Primeira versão do Espaço do Contador entregue com revisão por loja/produto e exportação
+  da conferência fiscal. Pacote mensal e arquivos SPED permanecem na rodada contábil seguinte.
 
 ## Rodada E: inteligência gerencial
 

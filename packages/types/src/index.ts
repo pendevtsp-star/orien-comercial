@@ -664,6 +664,10 @@ export const fiscalReviewSchema = z
     "Informe o motivo da reprovação.",
   );
 
+export const fiscalProductionActionSchema = z.object({
+  note: z.string().trim().min(5).max(1000),
+});
+
 export const fiscalDocumentListQuerySchema = paginationQuerySchema.extend({
   branchId: uuidSchema.optional(),
   status: z
@@ -737,4 +741,5 @@ export type FiscalCredentialInput = z.infer<typeof fiscalCredentialSchema>;
 export type FiscalIssueInput = z.infer<typeof fiscalIssueSchema>;
 export type FiscalCancelInput = z.infer<typeof fiscalCancelSchema>;
 export type FiscalReviewInput = z.infer<typeof fiscalReviewSchema>;
+export type FiscalProductionActionInput = z.infer<typeof fiscalProductionActionSchema>;
 export type FiscalDocumentListQuery = z.infer<typeof fiscalDocumentListQuerySchema>;

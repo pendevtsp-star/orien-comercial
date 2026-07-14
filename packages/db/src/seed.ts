@@ -53,6 +53,12 @@ const permissionSlugs = [
   "subscriptions.manage",
   "subscriptions.webhook",
   "dashboard.read",
+  "fiscal.read",
+  "fiscal.configure",
+  "fiscal.issue",
+  "fiscal.cancel",
+  "fiscal.review",
+  "fiscal.activate",
 ] as const;
 
 const roleSlugs = {
@@ -63,6 +69,7 @@ const roleSlugs = {
   cashier: "cashier",
   stock: "stock",
   finance: "finance",
+  accountant: "accountant",
   support: "support",
   viewer: "viewer",
 } as const;
@@ -77,6 +84,7 @@ const roleNames: Record<RoleSlug, string> = {
   cashier: "Caixa",
   stock: "Estoquista",
   finance: "Financeiro",
+  accountant: "Contador",
   support: "Suporte",
   viewer: "Consulta",
 };
@@ -116,6 +124,12 @@ const defaultRolePermissions: Record<RoleSlug, string[]> = {
     "subscriptions.read",
     "subscriptions.manage",
     "dashboard.read",
+    "fiscal.read",
+    "fiscal.configure",
+    "fiscal.issue",
+    "fiscal.cancel",
+    "fiscal.review",
+    "fiscal.activate",
   ],
   manager: [
     "branches.read",
@@ -142,6 +156,10 @@ const defaultRolePermissions: Record<RoleSlug, string[]> = {
     "users.invite",
     "subscriptions.read",
     "dashboard.read",
+    "fiscal.read",
+    "fiscal.issue",
+    "fiscal.cancel",
+    "fiscal.review",
   ],
   seller: [
     "products.read",
@@ -152,6 +170,8 @@ const defaultRolePermissions: Record<RoleSlug, string[]> = {
     "sales.create",
     "sales.history",
     "dashboard.read",
+    "fiscal.read",
+    "fiscal.issue",
   ],
   cashier: [
     "products.read",
@@ -160,6 +180,8 @@ const defaultRolePermissions: Record<RoleSlug, string[]> = {
     "sales.create",
     "sales.history",
     "dashboard.read",
+    "fiscal.read",
+    "fiscal.issue",
   ],
   stock: [
     "branches.read",
@@ -173,6 +195,7 @@ const defaultRolePermissions: Record<RoleSlug, string[]> = {
     "stock.purchase",
     "stock.reports",
     "dashboard.read",
+    "fiscal.read",
   ],
   finance: [
     "customers.read",
@@ -185,6 +208,15 @@ const defaultRolePermissions: Record<RoleSlug, string[]> = {
     "financial.categories.manage",
     "subscriptions.read",
     "dashboard.read",
+    "fiscal.read",
+  ],
+  accountant: [
+    "products.read",
+    "stock.reports",
+    "financial.read",
+    "dashboard.read",
+    "fiscal.read",
+    "fiscal.review",
   ],
   support: ["tenants.read", "users.read", "subscriptions.read", "dashboard.read"],
   viewer: ["branches.read", "products.read", "customers.read", "dashboard.read"],

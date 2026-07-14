@@ -110,7 +110,7 @@ async function bootstrap() {
     const config = new DocumentBuilder()
       .setTitle("SaaS Gestao Comercial API")
       .setDescription("API versionada para o SaaS multitenant de gestao comercial.")
-      .setVersion("1.2.0")
+      .setVersion("1.3.0")
       .addBearerAuth()
       .build();
     const document = SwaggerModule.createDocument(app, config);

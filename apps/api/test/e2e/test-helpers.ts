@@ -63,10 +63,11 @@ const permissionSlugs = [
   "fiscal.configure",
   "fiscal.issue",
   "fiscal.cancel",
-  "fiscal.review"
+  "fiscal.review",
+  "fiscal.activate"
 ] as const;
 
-const roleSlugs = ["owner", "admin", "manager", "seller", "cashier", "stock", "finance", "support", "viewer"] as const;
+const roleSlugs = ["owner", "admin", "manager", "seller", "cashier", "stock", "finance", "accountant", "support", "viewer"] as const;
 
 type RoleSlug = (typeof roleSlugs)[number];
 
@@ -159,6 +160,7 @@ const defaultRolePermissions: Record<RoleSlug, string[]> = {
     "subscriptions.read",
     "dashboard.read"
   ],
+  accountant: ["products.read", "stock.reports", "financial.read", "dashboard.read", "fiscal.read", "fiscal.review"],
   support: ["tenants.read", "users.read", "subscriptions.read", "dashboard.read"],
   viewer: ["branches.read", "products.read", "customers.read", "dashboard.read"]
 };
@@ -266,17 +268,15 @@ export async function seedTenant(
 
     for (const roleSlug of roleSlugs) {
       const roleId = roleIds[roleSlug];
-      for (const permissionSlug of defaultRolePermissions[roleSlug]) {
-        await client.query(
-          `
-          INSERT INTO role_permissions (role_id, permission_id)
-          SELECT $1, id
-          FROM permissions
-          WHERE slug = $2
-          `,
-          [roleId, permissionSlug]
-        );
-      }
+      await client.query(
+        `
+        INSERT INTO role_permissions (role_id, permission_id)
+        SELECT $1, id
+        FROM permissions
+        WHERE slug = ANY($2::text[])
+        `,
+        [roleId, defaultRolePermissions[roleSlug]],
+      );
     }
 
     await client.query(
@@ -372,16 +372,15 @@ export async function seedRoleUser(
 }
 
 async function ensurePermissions(pool: Pool) {
-  for (const slug of permissionSlugs) {
-    await pool.query(
-      `
-      INSERT INTO permissions (slug, description)
-      VALUES ($1, $2)
-      ON CONFLICT (slug) DO UPDATE SET description = EXCLUDED.description
-      `,
-      [slug, slug.replaceAll(".", " ")]
-    );
-  }
+  await pool.query(
+    `
+    INSERT INTO permissions (slug, description)
+    SELECT requested.slug, replace(requested.slug, '.', ' ')
+    FROM unnest($1::text[]) AS requested(slug)
+    ON CONFLICT (slug) DO UPDATE SET description = EXCLUDED.description
+    `,
+    [[...permissionSlugs]],
+  );
 }
 
 function loadEnvFile() {

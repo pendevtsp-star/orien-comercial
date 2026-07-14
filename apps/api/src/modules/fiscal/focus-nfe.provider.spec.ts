@@ -33,4 +33,20 @@ describe("FocusNfeProvider", () => {
       `Basic ${Buffer.from("token-teste:").toString("base64")}`,
     );
   });
+
+  it("baixa artefatos apenas do domínio oficial com autenticação", async () => {
+    let authorization = "";
+    const provider = new FocusNfeProvider("token-teste", "homologation", (_input, init) => {
+      authorization = new Headers(init?.headers).get("Authorization") ?? "";
+      return Promise.resolve(
+        new Response("<nfeProc />", { status: 200, headers: { "Content-Type": "application/xml" } }),
+      );
+    });
+    const artifact = await provider.downloadArtifact("/arquivos/nota.xml");
+    expect(artifact.content.toString()).toBe("<nfeProc />");
+    expect(authorization).toBe(`Basic ${Buffer.from("token-teste:").toString("base64")}`);
+    await expect(provider.downloadArtifact("https://example.com/nota.xml")).rejects.toThrow(
+      "endereço de artefato inválido",
+    );
+  });
 });

@@ -4,12 +4,14 @@ import { TenantContextGuard } from "../../shared/tenant-context.guard";
 import { DatabaseModule } from "../database/database.module";
 import { IntegrationsModule } from "../integrations/integrations.module";
 import { FiscalController } from "./fiscal.controller";
+import { FiscalWebhookController } from "./fiscal-webhook.controller";
+import { FiscalOperationsService } from "./fiscal-operations.service";
 import { FiscalService } from "./fiscal.service";
 
 @Module({
   imports: [DatabaseModule, IntegrationsModule],
-  controllers: [FiscalController],
-  providers: [FiscalService, PermissionsGuard, TenantContextGuard],
+  controllers: [FiscalController, FiscalWebhookController],
+  providers: [FiscalService, FiscalOperationsService, PermissionsGuard, TenantContextGuard],
   exports: [FiscalService],
 })
 export class FiscalModule {}

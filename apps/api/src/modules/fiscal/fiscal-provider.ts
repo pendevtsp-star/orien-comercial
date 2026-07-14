@@ -31,6 +31,7 @@ export interface FiscalProvider {
     reference: string,
     justification: string,
   ): Promise<FiscalProviderResult>;
+  downloadArtifact(url: string): Promise<{ content: Buffer; contentType: string }>;
 }
 
 export class FiscalProviderError extends Error {

@@ -1,0 +1,206 @@
+"use client";
+
+import { Badge, Button, Card, CardContent, EmptyState, PageHeader } from "@sgc/ui";
+import { CheckCircle2, Download, FileCheck2, RefreshCw, XCircle } from "lucide-react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { apiFetch, downloadApiFile } from "../../../lib/api";
+
+type Branch = { id: string; name: string };
+type Overview = {
+  branches: Array<{
+    id: string;
+    name: string;
+    reviewStatus: string;
+    homologationStatus: string;
+    environment?: string | null;
+    productionRequestedAt?: string | null;
+    productionApprovedAt?: string | null;
+  }>;
+  products: Array<{
+    id: string;
+    name: string;
+    sku: string;
+    reviewStatus: string;
+    reviewNote?: string | null;
+    ncm?: string | null;
+    cest?: string | null;
+  }>;
+  documents: Array<{
+    id: string;
+    branchName: string;
+    documentType: string;
+    status: string;
+    reference: string;
+    accessKey?: string | null;
+    rejectionCode?: string | null;
+    rejectionReason?: string | null;
+    createdAt: string;
+    artifacts: Record<string, string>;
+  }>;
+};
+
+export default function AccountingPage() {
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [branchId, setBranchId] = useState("");
+  const [overview, setOverview] = useState<Overview | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    void Promise.all([
+      apiFetch<{ data: Branch[] }>("/branches?page=1&pageSize=100"),
+      loadOverview(""),
+    ])
+      .then(([result]) => setBranches(result.data))
+      .catch((err) => setError(message(err)))
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function loadOverview(selected = branchId) {
+    const result = await apiFetch<Overview>(
+      `/fiscal/accounting/overview${selected ? `?branchId=${selected}` : ""}`,
+    );
+    setOverview(result);
+    setError(null);
+  }
+
+  async function selectBranch(value: string) {
+    setBranchId(value);
+    setLoading(true);
+    try {
+      await loadOverview(value);
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function reviewProduct(productId: string, status: "approved" | "rejected") {
+    const note = window.prompt(
+      status === "approved" ? "Registre a evidência da conferência:" : "Descreva a correção necessária:",
+    );
+    if (!note) return;
+    await action(async () => {
+      await apiFetch(`/fiscal/products/${productId}/review`, {
+        method: "POST",
+        body: JSON.stringify({ status, note }),
+      });
+      setNotice(status === "approved" ? "Produto aprovado." : "Produto devolvido para correção.");
+    });
+  }
+
+  async function reviewBranch(id: string, status: "approved" | "rejected") {
+    const note = window.prompt(
+      status === "approved" ? "Registre a conferência da loja:" : "Descreva a correção necessária:",
+    );
+    if (!note) return;
+    await action(async () => {
+      await apiFetch(`/fiscal/branches/${id}/review`, {
+        method: "POST",
+        body: JSON.stringify({ status, note }),
+      });
+      setNotice(status === "approved" ? "Loja aprovada pelo contador." : "Loja devolvida para correção.");
+    });
+  }
+
+  async function action(callback: () => Promise<void>) {
+    try {
+      setError(null);
+      await callback();
+      await loadOverview();
+    } catch (err) {
+      setError(message(err));
+    }
+  }
+
+  return (
+    <div className="grid gap-6">
+      <PageHeader
+        title="Espaço do contador"
+        description="Revise cadastros tributários, acompanhe rejeições e exporte documentos fiscais por loja."
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" icon={<RefreshCw size={16} />} onClick={() => void loadOverview()} disabled={loading}>
+              Atualizar
+            </Button>
+            <Button icon={<Download size={16} />} onClick={() => void downloadApiFile(`/fiscal/accounting/export${branchId ? `?branchId=${branchId}` : ""}`, "orien-fiscal-contabilidade.csv")}>
+              Exportar conferência
+            </Button>
+          </div>
+        }
+      />
+      {error ? <p className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</p> : null}
+      {notice ? <p className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p> : null}
+
+      <Card>
+        <CardContent>
+          <label className="grid max-w-xl gap-1 text-sm font-medium">
+            Loja analisada
+            <select value={branchId} onChange={(event) => void selectBranch(event.target.value)} className="h-11 rounded-md border border-[var(--brand-border)] bg-white px-3">
+              <option value="">Todas as lojas</option>
+              {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+            </select>
+          </label>
+        </CardContent>
+      </Card>
+
+      <section className="grid gap-3 lg:grid-cols-2">
+        {overview?.branches.map((branch) => (
+          <Card key={branch.id}>
+            <CardContent className="grid gap-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div><h2 className="font-semibold text-[var(--brand-primary)]">{branch.name}</h2><p className="text-sm text-slate-500">Ambiente: {branch.environment === "production" ? "produção" : "homologação"}</p></div>
+                <Badge>{label(branch.reviewStatus)}</Badge>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="secondary" icon={<CheckCircle2 size={15} />} onClick={() => void reviewBranch(branch.id, "approved")}>Aprovar</Button>
+                <Button variant="ghost" icon={<XCircle size={15} />} onClick={() => void reviewBranch(branch.id, "rejected")}>Solicitar correção</Button>
+                <Link href={`/fiscal?branchId=${branch.id}`} className="inline-flex h-10 items-center rounded-md border border-[var(--brand-border)] px-4 text-sm font-medium">Abrir Central Fiscal</Link>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </section>
+
+      <Card>
+        <CardContent>
+          <h2 className="text-lg font-semibold text-[var(--brand-primary)]">Produtos aguardando revisão</h2>
+          <div className="mt-4 grid gap-2">
+            {overview?.products.map((product) => (
+              <div key={product.id} className="grid gap-3 rounded-md border border-[var(--brand-border)] p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+                <div><strong>{product.name}</strong><p className="text-xs text-slate-500">SKU {product.sku} · NCM {product.ncm || "pendente"} · CEST {product.cest || "não informado"}</p></div>
+                <div className="flex gap-2"><Button variant="secondary" onClick={() => void reviewProduct(product.id, "approved")}>Aprovar</Button><Button variant="ghost" onClick={() => void reviewProduct(product.id, "rejected")}>Corrigir</Button></div>
+              </div>
+            ))}
+          </div>
+          {!loading && !overview?.products.length ? <div className="mt-4"><EmptyState eyebrow="Revisão tributária" title="Nenhum produto pendente." description="Todos os produtos filtrados possuem revisão contábil aprovada." icon={<FileCheck2 size={20} />} /></div> : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent>
+          <h2 className="text-lg font-semibold text-[var(--brand-primary)]">Documentos recentes</h2>
+          <div className="mt-4 grid gap-2">
+            {overview?.documents.map((document) => (
+              <div key={document.id} className="grid gap-2 rounded-md border border-[var(--brand-border)] p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+                <div><strong>{document.documentType.toUpperCase()} · {document.branchName}</strong><p className="text-xs text-slate-500">{document.reference} · {new Date(document.createdAt).toLocaleString("pt-BR")}</p>{document.rejectionReason ? <p className="mt-1 text-sm text-rose-700">{document.rejectionCode ? `${document.rejectionCode} · ` : ""}{document.rejectionReason}</p> : null}</div>
+                <div className="flex flex-wrap gap-2"><Badge>{label(document.status)}</Badge>{Object.entries(document.artifacts || {}).filter(([, status]) => status === "ready").map(([kind]) => <Button key={kind} variant="ghost" icon={<Download size={14} />} onClick={() => void downloadApiFile(`/fiscal/documents/${document.id}/artifacts/${kind}`, `${kind}-${document.reference}.${kind === "danfe" ? "pdf" : "xml"}`)}>{kind === "danfe" ? "DANFE" : "XML"}</Button>)}</div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function label(status: string) {
+  return ({ approved: "Aprovada", pending: "Pendente", rejected: "Rejeitada", passed: "Concluída", authorized: "Autorizada", cancelled: "Cancelada", retry_pending: "Nova tentativa", error: "Erro", queued: "Na fila", transmitting: "Transmitindo" } as Record<string, string>)[status] ?? status;
+}
+
+function message(error: unknown) {
+  return error instanceof Error ? error.message : "Não foi possível concluir a operação contábil.";
+}

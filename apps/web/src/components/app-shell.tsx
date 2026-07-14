@@ -12,6 +12,7 @@ import {
   Boxes,
   Building2,
   CircleDollarSign,
+  Calculator,
   ClipboardList,
   CreditCard,
   ChevronDown,
@@ -127,6 +128,12 @@ const navigation: NavigationItem[] = [
     icon: ReceiptText,
     anyPermissions: ["fiscal.read", "fiscal.configure"],
   },
+  {
+    href: "/accounting",
+    label: "Espaço do contador",
+    icon: Calculator,
+    permissions: ["fiscal.review"],
+  },
   { href: "/preferences", label: "Preferências", icon: Palette },
   { href: "/sessions", label: "Dispositivos", icon: ShieldCheck },
 ];
@@ -174,6 +181,7 @@ const navigationGroups = [
       "/settings",
       "/integrations",
       "/fiscal",
+      "/accounting",
       "/preferences",
       "/sessions",
     ],
@@ -204,6 +212,7 @@ function roleLabel(slug?: string | null) {
         cashier: "Caixa",
         stock: "Estoquista",
         finance: "Financeiro",
+        accountant: "Contador",
         support: "Suporte",
         viewer: "Consulta",
       } as Record<string, string>

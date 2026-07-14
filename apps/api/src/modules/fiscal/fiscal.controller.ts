@@ -8,6 +8,8 @@ import {
   Post,
   Put,
   Query,
+  Res,
+  StreamableFile,
   UseGuards,
 } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
@@ -18,8 +20,10 @@ import {
   fiscalCredentialSchema,
   fiscalDocumentListQuerySchema,
   fiscalIssueSchema,
+  fiscalProductionActionSchema,
   fiscalReviewSchema,
 } from "@sgc/types";
+import type { Response } from "express";
 import { JwtAuthGuard } from "../../shared/auth.guard";
 import { CurrentTenant } from "../../shared/current-user.decorator";
 import { PermissionsGuard } from "../../shared/permissions.guard";
@@ -67,6 +71,63 @@ export class FiscalController {
     return this.fiscal.readiness(context, branchId);
   }
 
+  @RequirePermissions(permissions.fiscal.configure)
+  @Post("branches/:branchId/webhook-token")
+  webhookToken(@CurrentTenant() context: TenantContext, @Param("branchId") branchId: string) {
+    return this.fiscal.rotateWebhookToken(context, branchId);
+  }
+
+  @RequirePermissions(permissions.fiscal.configure)
+  @Post("branches/:branchId/production/request")
+  requestProduction(
+    @CurrentTenant() context: TenantContext,
+    @Param("branchId") branchId: string,
+    @Body(new ZodValidationPipe(fiscalProductionActionSchema)) body: never,
+  ) {
+    return this.fiscal.requestProduction(context, branchId, body);
+  }
+
+  @RequirePermissions(permissions.fiscal.activate)
+  @Post("branches/:branchId/production/approve")
+  approveProduction(
+    @CurrentTenant() context: TenantContext,
+    @Param("branchId") branchId: string,
+    @Body(new ZodValidationPipe(fiscalProductionActionSchema)) body: never,
+  ) {
+    return this.fiscal.approveProduction(context, branchId, body);
+  }
+
+  @RequirePermissions(permissions.fiscal.activate)
+  @Post("branches/:branchId/production/revoke")
+  revokeProduction(
+    @CurrentTenant() context: TenantContext,
+    @Param("branchId") branchId: string,
+    @Body(new ZodValidationPipe(fiscalProductionActionSchema)) body: never,
+  ) {
+    return this.fiscal.revokeProduction(context, branchId, body);
+  }
+
+  @RequirePermissions(permissions.fiscal.review)
+  @Get("accounting/overview")
+  accountingOverview(
+    @CurrentTenant() context: TenantContext,
+    @Query("branchId") branchId?: string,
+  ) {
+    return this.fiscal.accountingOverview(context, branchId);
+  }
+
+  @RequirePermissions(permissions.fiscal.review)
+  @Get("accounting/export")
+  async accountingExport(
+    @CurrentTenant() context: TenantContext,
+    @Res({ passthrough: true }) response: Response,
+    @Query("branchId") branchId?: string,
+  ) {
+    response.setHeader("Content-Type", "text/csv; charset=utf-8");
+    response.setHeader("Content-Disposition", 'attachment; filename="orien-fiscal-contabilidade.csv"');
+    return new StreamableFile(await this.fiscal.accountingExport(context, branchId));
+  }
+
   @RequirePermissions(permissions.fiscal.read)
   @Get("documents")
   documents(
@@ -80,6 +141,20 @@ export class FiscalController {
   @Get("documents/:id")
   document(@CurrentTenant() context: TenantContext, @Param("id") id: string) {
     return this.fiscal.getDocument(context, id);
+  }
+
+  @RequirePermissions(permissions.fiscal.read)
+  @Get("documents/:id/artifacts/:kind")
+  async artifact(
+    @CurrentTenant() context: TenantContext,
+    @Param("id") id: string,
+    @Param("kind") kind: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const artifact = await this.fiscal.artifact(context, id, kind);
+    response.setHeader("Content-Type", artifact.contentType);
+    response.setHeader("Content-Disposition", `attachment; filename="${artifact.filename}"`);
+    return new StreamableFile(artifact.content);
   }
 
   @RequirePermissions(permissions.fiscal.issue)

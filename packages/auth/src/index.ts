@@ -66,6 +66,7 @@ export const permissions = {
     issue: "fiscal.issue",
     cancel: "fiscal.cancel",
     review: "fiscal.review",
+    activate: "fiscal.activate",
   },
 } as const;
 
@@ -85,6 +86,7 @@ export const roleSlugs = {
   cashier: "cashier",
   stock: "stock",
   finance: "finance",
+  accountant: "accountant",
   support: "support",
   viewer: "viewer",
 } as const;
@@ -131,6 +133,7 @@ export const defaultRolePermissions: Record<RoleSlug, Permission[]> = {
     permissions.fiscal.issue,
     permissions.fiscal.cancel,
     permissions.fiscal.review,
+    permissions.fiscal.activate,
   ],
   manager: [
     permissions.branches.read,
@@ -210,6 +213,14 @@ export const defaultRolePermissions: Record<RoleSlug, Permission[]> = {
     permissions.subscriptions.read,
     permissions.dashboard.read,
     permissions.fiscal.read,
+  ],
+  accountant: [
+    permissions.products.read,
+    permissions.stock.reports,
+    permissions.financial.read,
+    permissions.dashboard.read,
+    permissions.fiscal.read,
+    permissions.fiscal.review,
   ],
   support: [
     permissions.tenants.read,

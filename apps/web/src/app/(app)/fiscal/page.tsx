@@ -5,6 +5,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   FileCheck2,
+  Download,
+  KeyRound,
   RefreshCw,
   RotateCcw,
   Save,
@@ -13,7 +15,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
-import { apiFetch } from "../../../lib/api";
+import { apiFetch, downloadApiFile, getTenantId } from "../../../lib/api";
 
 type Branch = { id: string; name: string };
 type Settings = {
@@ -42,11 +44,17 @@ type Settings = {
   certificateMode: "provider_managed" | "orien_vault";
   certificateExpiresAt: string;
   accountantReviewStatus: string;
+  homologationStatus: string;
+  homologationApprovedAt?: string | null;
+  productionRequestedAt?: string | null;
+  productionApprovedAt?: string | null;
+  productionRevokedAt?: string | null;
 };
 type Overview = {
   branch: Branch;
   settings: Settings;
   credentials: { hasCertificate: boolean; hasCsc: boolean; hasProviderToken: boolean };
+  webhook: { configured: boolean; tokenLast4?: string | null; configuredAt?: string | null; url: string };
 };
 type Readiness = {
   integrationConfigured: boolean;
@@ -61,6 +69,13 @@ type Readiness = {
   accountantReviewStatus: string;
   canIssueHomologation: boolean;
   canActivateProduction: boolean;
+  homologation: { status: string; authorizedDocuments: number; approvedAt?: string | null };
+  production: {
+    requestedAt?: string | null;
+    approvedAt?: string | null;
+    revokedAt?: string | null;
+    active: boolean;
+  };
 };
 type FiscalDocument = {
   id: string;
@@ -76,6 +91,7 @@ type FiscalDocument = {
   attemptCount: number;
   contingency: boolean;
   createdAt: string;
+  artifacts?: Record<string, string>;
 };
 
 export default function FiscalPage() {
@@ -87,12 +103,22 @@ export default function FiscalPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [webhookSecret, setWebhookSecret] = useState<{
+    url: string;
+    authorizationHeader: string;
+    authorization: string;
+  } | null>(null);
+  const [granted, setGranted] = useState<string[]>([]);
 
   useEffect(() => {
-    apiFetch<{ data: Branch[] }>("/branches?page=1&pageSize=100")
-      .then((result) => {
+    Promise.all([
+      apiFetch<{ data: Branch[] }>("/branches?page=1&pageSize=100"),
+      apiFetch<{ memberships: Array<{ tenantId: string; permissions: string[] }> }>("/me"),
+    ])
+      .then(([result, me]) => {
         setBranches(result.data);
         setBranchId((current) => current || result.data[0]?.id || "");
+        setGranted(me.memberships.find((item) => item.tenantId === getTenantId())?.permissions ?? []);
       })
       .catch((err) => setError(message(err)))
       .finally(() => setLoading(false));
@@ -113,6 +139,7 @@ export default function FiscalPage() {
       setOverview(settings);
       setReadiness(currentReadiness);
       setDocuments(currentDocuments.data);
+      setWebhookSecret(null);
       setError(null);
     } catch (err) {
       setError(message(err));
@@ -230,17 +257,72 @@ export default function FiscalPage() {
     });
   }
 
-  async function act(callback: () => Promise<void>) {
+  async function rotateWebhookToken() {
+    await act(async () => {
+      const result = await apiFetch<{
+        url: string;
+        authorizationHeader: string;
+        authorization: string;
+      }>(`/fiscal/branches/${branchId}/webhook-token`, { method: "POST", body: "{}" });
+      setWebhookSecret(result);
+      setOverview((current) =>
+        current
+          ? {
+              ...current,
+              webhook: {
+                ...current.webhook,
+                configured: true,
+                tokenLast4: result.authorization.slice(-4),
+                configuredAt: new Date().toISOString(),
+              },
+            }
+          : current,
+      );
+      setNotice("Webhook renovado. Copie o token agora; ele não será exibido novamente.");
+    }, false);
+  }
+
+  async function productionAction(action: "request" | "approve" | "revoke") {
+    const labels = {
+      request: "Solicitar ativação em produção",
+      approve: "Aprovar ativação em produção",
+      revoke: "Suspender emissão em produção",
+    };
+    const note = window.prompt(`${labels[action]}. Registre o motivo ou a evidência:`);
+    if (!note) return;
+    await act(async () => {
+      await apiFetch(`/fiscal/branches/${branchId}/production/${action}`, {
+        method: "POST",
+        body: JSON.stringify({ note }),
+      });
+      setNotice(`${labels[action]} registrada com sucesso.`);
+    });
+  }
+
+  async function downloadArtifact(document: FiscalDocument, kind: string) {
+    await act(async () => {
+      const extension = kind === "danfe" ? "pdf" : "xml";
+      await downloadApiFile(
+        `/fiscal/documents/${document.id}/artifacts/${kind}`,
+        `${kind}-${document.reference}.${extension}`,
+      );
+    }, false);
+  }
+
+  async function act(callback: () => Promise<void>, reload = true) {
     try {
       setError(null);
       await callback();
-      await loadBranch(branchId);
+      if (reload) await loadBranch(branchId);
     } catch (err) {
       setError(message(err));
     }
   }
 
   const settings = overview?.settings;
+  const canConfigure = granted.includes("fiscal.configure");
+  const canReview = granted.includes("fiscal.review");
+  const canActivate = granted.includes("fiscal.activate");
   return (
     <div className="grid gap-6">
       <PageHeader
@@ -314,6 +396,52 @@ export default function FiscalPage() {
             ok={readiness.accountantReviewStatus === "approved"}
           />
         </section>
+      ) : null}
+
+      {readiness ? (
+        <Card>
+          <CardContent className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--brand-secondary)]">
+                Liberação controlada
+              </p>
+              <h2 className="mt-1 text-lg font-semibold text-[var(--brand-primary)]">
+                Homologação e produção
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                {readiness.production.active
+                  ? "Emissão em produção ativa com dupla aprovação registrada."
+                  : `${readiness.homologation.authorizedDocuments} documento(s) autorizado(s) em homologação. A ativação exige revisão contábil e aprovação de outra pessoa.`}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Badge>Homologação: {statusLabel(readiness.homologation.status)}</Badge>
+                <Badge>
+                  Produção: {readiness.production.active ? "Ativa" : readiness.production.requestedAt ? "Aguardando aprovação" : "Bloqueada"}
+                </Badge>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2 lg:justify-end">
+              {canConfigure && !readiness.production.requestedAt && !readiness.production.active ? (
+                <Button
+                  onClick={() => void productionAction("request")}
+                  disabled={!readiness.canActivateProduction}
+                >
+                  Solicitar produção
+                </Button>
+              ) : null}
+              {canActivate && readiness.production.requestedAt && !readiness.production.active ? (
+                <Button icon={<ShieldCheck size={16} />} onClick={() => void productionAction("approve")}>
+                  Segunda aprovação
+                </Button>
+              ) : null}
+              {canActivate && readiness.production.active ? (
+                <Button variant="danger" onClick={() => void productionAction("revoke")}>
+                  Suspender produção
+                </Button>
+              ) : null}
+            </div>
+          </CardContent>
+        </Card>
       ) : null}
 
       {settings ? (
@@ -475,32 +603,32 @@ export default function FiscalPage() {
                 </label>
               </fieldset>
               <div className="flex flex-wrap gap-2">
-                <Button type="submit" icon={<Save size={16} />}>
+                {canConfigure ? <Button type="submit" icon={<Save size={16} />}>
                   Salvar configuração
-                </Button>
-                <Button
+                </Button> : null}
+                {canReview ? <Button
                   type="button"
                   variant="secondary"
                   icon={<CheckCircle2 size={16} />}
                   onClick={() => void reviewBranch("approved")}
                 >
                   Aprovar conferência
-                </Button>
-                <Button
+                </Button> : null}
+                {canReview ? <Button
                   type="button"
                   variant="secondary"
                   icon={<XCircle size={16} />}
                   onClick={() => void reviewBranch("rejected")}
                 >
                   Solicitar correção
-                </Button>
+                </Button> : null}
               </div>
             </form>
           </CardContent>
         </Card>
       ) : null}
 
-      <Card>
+      {canConfigure ? <Card>
         <CardContent>
           <h2 className="text-lg font-semibold text-[var(--brand-primary)]">
             Credenciais protegidas
@@ -551,7 +679,39 @@ export default function FiscalPage() {
             </div>
           </form>
         </CardContent>
-      </Card>
+      </Card> : null}
+
+      {canConfigure ? <Card>
+        <CardContent>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-[var(--brand-primary)]">Retorno automático da Focus</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Configure esta URL como webhook na Focus para receber autorizações e rejeições sem atualização manual.
+              </p>
+            </div>
+            <Badge>{overview?.webhook.configured ? `Ativo · final ${overview.webhook.tokenLast4}` : "Pendente"}</Badge>
+          </div>
+          <div className="mt-4 grid gap-3 rounded-md border border-[var(--brand-border)] bg-[var(--brand-surface)] p-4">
+            <div>
+              <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">URL do webhook</span>
+              <code className="mt-1 block break-all text-sm">{overview?.webhook.url}</code>
+            </div>
+            {webhookSecret ? (
+              <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+                <strong>Token exibido uma única vez</strong>
+                <p className="mt-1 break-all">Cabeçalho: {webhookSecret.authorizationHeader}</p>
+                <code className="mt-1 block break-all">{webhookSecret.authorization}</code>
+              </div>
+            ) : null}
+            <div>
+              <Button variant="secondary" icon={<KeyRound size={16} />} onClick={() => void rotateWebhookToken()}>
+                {overview?.webhook.configured ? "Renovar token" : "Gerar token do webhook"}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card> : null}
 
       <Card>
         <CardContent>
@@ -592,7 +752,7 @@ export default function FiscalPage() {
               ))}
             </div>
           ) : null}
-          {readiness?.products.reviewQueue.length ? (
+          {canReview && readiness?.products.reviewQueue.length ? (
             <div className="mt-4 grid gap-2">
               {readiness.products.reviewQueue
                 .filter(
@@ -681,6 +841,21 @@ export default function FiscalPage() {
                   ) : null}
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  {document.artifacts?.xml === "ready" ? (
+                    <Button variant="ghost" icon={<Download size={15} />} onClick={() => void downloadArtifact(document, "xml")}>
+                      XML
+                    </Button>
+                  ) : null}
+                  {document.artifacts?.danfe === "ready" ? (
+                    <Button variant="ghost" icon={<Download size={15} />} onClick={() => void downloadArtifact(document, "danfe")}>
+                      DANFE
+                    </Button>
+                  ) : null}
+                  {document.artifacts?.cancellation_xml === "ready" ? (
+                    <Button variant="ghost" icon={<Download size={15} />} onClick={() => void downloadArtifact(document, "cancellation_xml")}>
+                      XML do cancelamento
+                    </Button>
+                  ) : null}
                   <Button
                     variant="secondary"
                     icon={<RefreshCw size={15} />}
@@ -829,6 +1004,9 @@ function statusLabel(status: string) {
         retry_pending: "Nova tentativa",
         error: "Erro",
         contingency: "Contingência",
+        passed: "Concluída",
+        in_progress: "Em andamento",
+        failed: "Falhou",
       } as Record<string, string>
     )[status] ?? status
   );

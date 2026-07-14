@@ -53,6 +53,42 @@ export class FocusNfeProvider implements FiscalProvider {
     return normalizeFocusResponse(payload, reference);
   }
 
+  async downloadArtifact(url: string) {
+    const target = new URL(url, this.baseUrl);
+    if (target.origin !== new URL(this.baseUrl).origin) {
+      throw new FiscalProviderError("O provedor retornou um endereço de artefato inválido.", "invalid_artifact_url");
+    }
+    let response: Response;
+    try {
+      response = await this.fetcher(target, {
+        method: "GET",
+        signal: AbortSignal.timeout(20_000),
+        headers: { Authorization: this.authorization, Accept: "application/xml,application/pdf" },
+      });
+    } catch {
+      throw new FiscalProviderError(
+        "O artefato fiscal está temporariamente indisponível.",
+        "artifact_unavailable",
+        true,
+      );
+    }
+    if (!response.ok) {
+      throw new FiscalProviderError(
+        "O provedor não disponibilizou o artefato fiscal.",
+        `artifact_${response.status}`,
+        response.status >= 500 || response.status === 429,
+      );
+    }
+    const content = Buffer.from(await response.arrayBuffer());
+    if (!content.length || content.length > 10 * 1024 * 1024) {
+      throw new FiscalProviderError("O artefato fiscal possui tamanho inválido.", "invalid_artifact_size");
+    }
+    return {
+      content,
+      contentType: response.headers.get("content-type")?.split(";")[0] ?? "application/octet-stream",
+    };
+  }
+
   private async request(path: string, init: RequestInit): Promise<FocusResponse> {
     let response: Response;
     try {

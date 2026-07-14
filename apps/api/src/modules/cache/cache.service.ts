@@ -10,9 +10,10 @@ export class CacheService implements OnModuleDestroy {
 
   constructor(@Inject(APP_CONFIG) config: AppConfig) {
     this.client = createClient({ url: config.REDIS_URL });
-    this.client.on("error", (error) =>
-      console.warn(JSON.stringify({ type: "redis_error", message: error.message })),
-    );
+    this.client.on("error", (error: unknown) => {
+      const message = error instanceof Error ? error.message : "Redis indisponível";
+      console.warn(JSON.stringify({ type: "redis_error", message }));
+    });
   }
 
   async get(key: string): Promise<string | null> {
@@ -28,7 +29,9 @@ export class CacheService implements OnModuleDestroy {
     try {
       await this.connect();
       await this.client.set(key, value, { EX: ttlSeconds });
-    } catch {}
+    } catch {
+      return;
+    }
   }
 
   async delete(...keys: string[]): Promise<void> {
@@ -36,7 +39,9 @@ export class CacheService implements OnModuleDestroy {
     try {
       await this.connect();
       await this.client.del(keys);
-    } catch {}
+    } catch {
+      return;
+    }
   }
 
   async increment(key: string, ttlSeconds: number): Promise<number | null> {
@@ -47,6 +52,27 @@ export class CacheService implements OnModuleDestroy {
       return value;
     } catch {
       return null;
+    }
+  }
+
+  async acquireLock(key: string, token: string, ttlSeconds: number): Promise<boolean> {
+    try {
+      await this.connect();
+      return (await this.client.set(key, token, { EX: ttlSeconds, NX: true })) === "OK";
+    } catch {
+      return false;
+    }
+  }
+
+  async releaseLock(key: string, token: string): Promise<void> {
+    try {
+      await this.connect();
+      await this.client.eval(
+        "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+        { keys: [key], arguments: [token] },
+      );
+    } catch {
+      return;
     }
   }
 
