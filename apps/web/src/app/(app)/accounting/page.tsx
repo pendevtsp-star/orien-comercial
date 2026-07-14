@@ -8,6 +8,14 @@ import { apiFetch, downloadApiFile } from "../../../lib/api";
 
 type Branch = { id: string; name: string };
 type Overview = {
+  metrics: {
+    totalDocuments: number;
+    authorizedDocuments: number;
+    cancelledDocuments: number;
+    attentionDocuments: number;
+    contingencyDocuments: number;
+    xmlEligibleDocuments: number;
+  };
   branches: Array<{
     id: string;
     name: string;
@@ -37,6 +45,16 @@ type Overview = {
     rejectionReason?: string | null;
     createdAt: string;
     artifacts: Record<string, string>;
+  }>;
+  numberVoids: Array<{
+    id: string;
+    branchName: string;
+    series: number;
+    numberStart: number;
+    numberEnd: number;
+    status: string;
+    protocol?: string | null;
+    requestedAt: string;
   }>;
 };
 
@@ -168,6 +186,16 @@ export default function AccountingPage() {
         </CardContent>
       </Card>
 
+      {overview ? (
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <Metric label="Documentos" value={overview.metrics.totalDocuments} />
+          <Metric label="Autorizados" value={overview.metrics.authorizedDocuments} ok />
+          <Metric label="Cancelados" value={overview.metrics.cancelledDocuments} />
+          <Metric label="Atenção" value={overview.metrics.attentionDocuments} danger />
+          <Metric label="Contingência" value={overview.metrics.contingencyDocuments} warning />
+        </section>
+      ) : null}
+
       <Card>
         <CardContent>
           <div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-lg font-semibold text-[var(--brand-primary)]">Fechamentos recentes</h2><p className="text-sm text-slate-500">Histórico de pacotes entregues e competências encerradas.</p></div><Badge>{closures.length} registro(s)</Badge></div>
@@ -222,12 +250,57 @@ export default function AccountingPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Card>
+        <CardContent>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-lg font-semibold text-[var(--brand-primary)]">Inutilizações recentes</h2>
+              <p className="text-sm text-slate-500">Faixas de numeração NFC-e inutilizadas e auditadas por loja.</p>
+            </div>
+            <Badge>{overview?.numberVoids.length ?? 0} registro(s)</Badge>
+          </div>
+          <div className="mt-4 grid gap-2 md:grid-cols-2">
+            {overview?.numberVoids.map((item) => (
+              <div key={item.id} className="rounded-md border border-[var(--brand-border)] p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <strong>{item.branchName}</strong>
+                  <Badge>{label(item.status)}</Badge>
+                </div>
+                <p className="mt-2 text-sm text-slate-500">
+                  Série {item.series} · {item.numberStart} a {item.numberEnd} · {new Date(item.requestedAt).toLocaleString("pt-BR")}
+                </p>
+                {item.protocol ? <p className="mt-1 text-sm text-slate-600">Protocolo: {item.protocol}</p> : null}
+              </div>
+            ))}
+          </div>
+          {!overview?.numberVoids.length ? <p className="mt-4 text-sm text-slate-500">Nenhuma inutilização registrada.</p> : null}
+        </CardContent>
+      </Card>
     </div>
   );
 }
 
+function Metric({ label, value, ok, warning, danger }: { label: string; value: number; ok?: boolean; warning?: boolean; danger?: boolean }) {
+  const tone = danger
+    ? "text-rose-700"
+    : warning
+      ? "text-amber-700"
+      : ok
+        ? "text-emerald-700"
+        : "text-[var(--brand-primary)]";
+  return (
+    <Card>
+      <CardContent>
+        <p className="text-sm text-slate-500">{label}</p>
+        <strong className={`mt-2 block text-2xl ${tone}`}>{value}</strong>
+      </CardContent>
+    </Card>
+  );
+}
+
 function label(status: string) {
-  return ({ approved: "Aprovada", pending: "Pendente", rejected: "Rejeitada", passed: "Concluída", authorized: "Autorizada", cancelled: "Cancelada", retry_pending: "Nova tentativa", error: "Erro", queued: "Na fila", transmitting: "Transmitindo" } as Record<string, string>)[status] ?? status;
+  return ({ approved: "Aprovada", pending: "Pendente", rejected: "Rejeitada", passed: "Concluída", authorized: "Autorizada", cancelled: "Cancelada", retry_pending: "Nova tentativa", error: "Erro", queued: "Na fila", transmitting: "Transmitindo", requested: "Solicitada", processed: "Processada", failed: "Falhou", contingency: "Contingência" } as Record<string, string>)[status] ?? status;
 }
 
 function message(error: unknown) {

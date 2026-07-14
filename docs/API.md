@@ -80,6 +80,7 @@ Base local: `http://localhost:3334/api/v1`.
 - `POST /fiscal/branches/:branchId/review`
 - `GET /fiscal/accounting/overview`
 - `GET /fiscal/accounting/export`
+- `GET /sales/:id/fiscal` retorna o ciclo fiscal da venda com artifacts e eventos
 - `POST /fiscal/webhooks/focus` (pública, autenticada pelo token dedicado)
 
 ## Convencoes de resposta

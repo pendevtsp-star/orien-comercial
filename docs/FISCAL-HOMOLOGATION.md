@@ -1,6 +1,6 @@
 # Homologação fiscal Orien
 
-## Escopo da versão 1.3.0
+## Escopo da versão 1.6.0
 
 A Central Fiscal prepara cada loja para NFC-e e NF-e sem habilitar documentos com validade
 jurídica. O primeiro adaptador é a Focus NFe no ambiente de homologação.
@@ -18,6 +18,9 @@ Fluxos disponíveis:
 - alertas internos e por e-mail para gerente, proprietário e contador;
 - Espaço do Contador com revisão, exportação e pendências por loja;
 - histórico de eventos por documento fiscal.
+- detalhe fiscal direto na venda, com chave, protocolo, rejeição, XML e DANFE;
+- métricas contábeis de saída, contingência, cancelamento e inutilização;
+- presets fiscais assistidos no cadastro de produtos, sempre com confirmação humana.
 
 ## Decisão Focus NFe versus Spedy
 
@@ -93,3 +96,16 @@ erro registrado.
 Quando uma faixa de numeração não puder ser usada, a Central Fiscal permite registrar a
 inutilização por série e intervalo. A solicitação é enviada ao provedor, recebe protocolo quando
 processada e fica auditada para suporte e contabilidade.
+
+## Operação por venda
+
+Na tela Vendas, o operador não precisa alternar para a Central Fiscal para tarefas comuns:
+
+- consultar status fiscal da venda;
+- visualizar referência, chave de acesso, protocolo e rejeição;
+- baixar XML, DANFE ou XML de cancelamento quando o artefato estiver pronto;
+- consultar novamente o provedor;
+- solicitar cancelamento fiscal com justificativa.
+
+A Central Fiscal permanece como painel técnico-operacional por loja. O Espaço do Contador
+consolida os documentos de saída, produtos pendentes, inutilizações e pacotes mensais.

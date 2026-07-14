@@ -5,7 +5,7 @@ import { Ban, ChevronDown, CircleDollarSign, Package2, Plus, RefreshCw, Shopping
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { apiFetch, openApiDocument } from "../../../lib/api";
+import { apiFetch, downloadApiFile, openApiDocument } from "../../../lib/api";
 import { PaginationFooter } from "../../../components/pagination-footer";
 
 interface ListResponse<T> {
@@ -65,14 +65,24 @@ interface SaleHistory {
 }
 interface FiscalDocument {
   id: string;
+  documentType?: string;
   provider?: string;
   environment?: string;
   status: string;
   externalId?: string | null;
+  reference?: string | null;
+  accessKey?: string | null;
+  protocol?: string | null;
+  rejectionCode?: string | null;
+  rejectionReason?: string | null;
+  contingency?: boolean;
+  artifacts?: Record<string, string>;
+  events?: Array<{ eventType: string; message?: string | null; createdAt: string }>;
   attemptCount: number;
   lastError?: string | null;
   requestedAt?: string | null;
   issuedAt?: string | null;
+  cancelledAt?: string | null;
   createdAt: string;
 }
 
@@ -298,6 +308,35 @@ export default function SalesPage() {
       setFiscalHistory((current) => ({ ...current, [id]: response.data }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível carregar o histórico fiscal.");
+    }
+  }
+
+  async function fiscalDocumentAction(saleId: string, documentId: string, action: "sync" | "cancel") {
+    let body = "{}";
+    if (action === "cancel") {
+      const justification = window.prompt("Informe a justificativa do cancelamento fiscal (mínimo 15 caracteres):");
+      if (!justification) return;
+      body = JSON.stringify({ justification });
+    }
+    try {
+      await apiFetch(`/fiscal/documents/${documentId}/${action}`, { method: "POST", body });
+      setNotice(action === "cancel" ? "Cancelamento fiscal solicitado." : "Situação fiscal consultada.");
+      await loadFiscal(saleId);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível executar a ação fiscal.");
+    }
+  }
+
+  async function downloadFiscalArtifact(document: FiscalDocument, kind: string) {
+    try {
+      const extension = kind === "danfe" ? "pdf" : "xml";
+      await downloadApiFile(
+        `/fiscal/documents/${document.id}/artifacts/${kind}`,
+        `${kind}-${document.reference || document.id.slice(0, 8)}.${extension}`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Arquivo fiscal ainda não disponível.");
     }
   }
 
@@ -608,12 +647,46 @@ export default function SalesPage() {
                   {docs.length ? docs.map((doc) => (
                     <div key={doc.id} className="grid gap-1 rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface)] p-4 text-sm">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <strong>NFC-e · {fiscalLabel(doc.status)}</strong>
-                        <Badge>{doc.provider || "provedor pendente"} · {doc.environment || "homologação"}</Badge>
+                        <strong>{(doc.documentType || "nfce").toUpperCase()} · {fiscalLabel(doc.status)}</strong>
+                        <Badge>{providerLabel(doc.provider)} · {environmentLabel(doc.environment)}</Badge>
                       </div>
-                      <p className="text-slate-600">Tentativas: {doc.attemptCount} · Criada em {new Date(doc.createdAt).toLocaleString("pt-BR")}</p>
-                      {doc.externalId ? <p className="text-slate-600">ID externo: {doc.externalId}</p> : null}
+                      <p className="text-slate-600">
+                        Referência: {doc.reference || "-"} · Tentativas: {doc.attemptCount} · Criada em {new Date(doc.createdAt).toLocaleString("pt-BR")}
+                      </p>
+                      {doc.protocol ? <p className="text-slate-600">Protocolo: {doc.protocol}</p> : null}
+                      {doc.accessKey ? <p className="break-all text-slate-600">Chave de acesso: {doc.accessKey}</p> : null}
+                      {doc.contingency ? <p className="text-amber-700">Documento em contingência. Acompanhe até a autorização definitiva.</p> : null}
+                      {doc.rejectionReason ? (
+                        <p className="rounded-md border border-rose-200 bg-rose-50 p-2 text-rose-700">
+                          {doc.rejectionCode ? `${doc.rejectionCode} · ` : ""}{doc.rejectionReason}
+                        </p>
+                      ) : null}
                       {doc.lastError ? <p className="text-rose-700">{doc.lastError}</p> : null}
+                      {doc.events?.length ? (
+                        <div className="mt-2 grid gap-1 border-t border-[var(--brand-border)] pt-2 text-xs text-slate-500">
+                          {doc.events.slice(0, 3).map((event, index) => (
+                            <p key={`${event.eventType}-${index}`}>
+                              {new Date(event.createdAt).toLocaleString("pt-BR")} · {fiscalEventLabel(event.eventType)}
+                              {event.message ? ` · ${event.message}` : ""}
+                            </p>
+                          ))}
+                        </div>
+                      ) : null}
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {doc.artifacts?.xml === "ready" ? (
+                          <Button variant="secondary" onClick={() => void downloadFiscalArtifact(doc, "xml")}>Baixar XML</Button>
+                        ) : null}
+                        {doc.artifacts?.danfe === "ready" ? (
+                          <Button variant="secondary" onClick={() => void downloadFiscalArtifact(doc, "danfe")}>Baixar DANFE</Button>
+                        ) : null}
+                        {doc.artifacts?.cancellation_xml === "ready" ? (
+                          <Button variant="secondary" onClick={() => void downloadFiscalArtifact(doc, "cancellation_xml")}>XML do cancelamento</Button>
+                        ) : null}
+                        <Button variant="secondary" onClick={() => void fiscalDocumentAction(sale.id, doc.id, "sync")}>Consultar SEFAZ</Button>
+                        {doc.status === "authorized" ? (
+                          <Button variant="danger" onClick={() => void fiscalDocumentAction(sale.id, doc.id, "cancel")}>Cancelar fiscal</Button>
+                        ) : null}
+                      </div>
                     </div>
                   )) : <p className="text-sm text-slate-500">Nenhuma solicitação fiscal registrada para esta venda.</p>}
                 </CardContent>
@@ -641,13 +714,42 @@ function fiscalLabel(status?: string | null) {
   if (!status) return "Não solicitada";
   const labels: Record<string, string> = {
     queued: "Na fila",
+    transmitting: "Transmitindo",
     pending_provider: "Aguardando provedor",
     processing: "Processando",
+    authorized: "Autorizada",
     issued: "Emitida",
+    rejected: "Rejeitada",
+    retry_pending: "Nova tentativa",
+    contingency: "Contingência",
     error: "Erro",
     cancelled: "Cancelada",
   };
   return labels[status] ?? status;
+}
+
+function providerLabel(provider?: string | null) {
+  const labels: Record<string, string> = { focus_nfe: "Focus NFe", spedy: "Spedy" };
+  return labels[provider ?? ""] ?? "Provedor pendente";
+}
+
+function environmentLabel(environment?: string | null) {
+  const labels: Record<string, string> = { homologation: "Homologação", production: "Produção" };
+  return labels[environment ?? ""] ?? "Homologação";
+}
+
+function fiscalEventLabel(eventType: string) {
+  const labels: Record<string, string> = {
+    queued: "Incluído na fila",
+    transmission_started: "Transmissão iniciada",
+    transmitted: "Transmitido",
+    synced: "Consulta realizada",
+    cancelled: "Cancelamento fiscal",
+    sync_failed: "Falha na consulta",
+    transmission_failed: "Falha na transmissão",
+    webhook_received: "Retorno do provedor",
+  };
+  return labels[eventType] ?? eventType;
 }
 
 const paymentOptions = [

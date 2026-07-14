@@ -454,11 +454,31 @@ export class FiscalService {
     ensureBranchAccess(context, row.branch_id);
     const documents = await this.database.tenantQuery(
       context.tenantId,
-      `SELECT id,provider,environment,status,external_id AS "externalId",reference,
+      `SELECT id,provider,environment,document_type AS "documentType",status,
+        external_id AS "externalId",reference,
         access_key AS "accessKey",protocol,attempt_count AS "attemptCount",
         rejection_code AS "rejectionCode",rejection_reason AS "rejectionReason",
-        metadata,requested_at AS "requestedAt",issued_at AS "issuedAt",created_at AS "createdAt"
-       FROM fiscal_documents WHERE tenant_id=$1 AND sale_id=$2 ORDER BY created_at DESC`,
+        contingency_mode AS "contingency",contingency_deadline_at AS "contingencyDeadlineAt",
+        contingency_synced_at AS "contingencySyncedAt",
+        metadata,requested_at AS "requestedAt",issued_at AS "issuedAt",
+        cancelled_at AS "cancelledAt",created_at AS "createdAt",
+        COALESCE((SELECT jsonb_object_agg(fa.kind,fa.status) FROM fiscal_artifacts fa
+          WHERE fa.tenant_id=fiscal_documents.tenant_id
+            AND fa.fiscal_document_id=fiscal_documents.id),'{}'::jsonb) AS artifacts,
+        COALESCE((SELECT jsonb_agg(jsonb_build_object(
+            'eventType',fde.event_type,
+            'statusFrom',fde.status_from,
+            'statusTo',fde.status_to,
+            'providerCode',fde.provider_code,
+            'message',fde.message,
+            'createdAt',fde.created_at
+          ) ORDER BY fde.created_at DESC)
+          FROM fiscal_document_events fde
+          WHERE fde.tenant_id=fiscal_documents.tenant_id
+            AND fde.fiscal_document_id=fiscal_documents.id),'[]'::jsonb) AS events
+       FROM fiscal_documents
+       WHERE tenant_id=$1 AND sale_id=$2
+       ORDER BY created_at DESC`,
       [context.tenantId, saleId],
     );
     return { data: documents.rows };
@@ -521,6 +541,8 @@ export class FiscalService {
       saleId,
       branchId: row.branch_id,
       branchName: row.branch_name,
+      saleStatus: row.status,
+      totalAmount: row.total_amount,
       ready: blockers.length === 0,
       status: blockers.length ? "blocked" : "ready",
       blockers,
@@ -903,7 +925,7 @@ export class FiscalService {
     const branchValues: unknown[] = [context.tenantId];
     const branchFilter = selectedBranch ? "AND b.id=$2" : "";
     if (selectedBranch) branchValues.push(selectedBranch);
-    const [branches, products, documents] = await Promise.all([
+    const [branches, products, documents, metrics, numberVoids] = await Promise.all([
       this.database.tenantQuery(
         context.tenantId,
         `SELECT b.id,b.name,COALESCE(fs.accountant_review_status,'pending') AS "reviewStatus",
@@ -937,8 +959,43 @@ export class FiscalService {
          GROUP BY fd.id,b.name ORDER BY fd.created_at DESC LIMIT 100`,
         branchValues,
       ),
+      this.database.tenantQuery(
+        context.tenantId,
+        `SELECT
+          count(*)::int AS "totalDocuments",
+          count(*) FILTER (WHERE status='authorized')::int AS "authorizedDocuments",
+          count(*) FILTER (WHERE status='cancelled')::int AS "cancelledDocuments",
+          count(*) FILTER (WHERE status IN ('rejected','error','retry_pending'))::int AS "attentionDocuments",
+          count(*) FILTER (WHERE contingency_mode=true OR status='contingency')::int AS "contingencyDocuments",
+          count(*) FILTER (WHERE access_key IS NOT NULL)::int AS "xmlEligibleDocuments"
+         FROM fiscal_documents
+         WHERE tenant_id=$1 ${selectedBranch ? "AND branch_id=$2" : ""}`,
+        branchValues,
+      ),
+      this.database.tenantQuery(
+        context.tenantId,
+        `SELECT v.id,b.name AS "branchName",v.series,v.number_start AS "numberStart",
+          v.number_end AS "numberEnd",v.status,v.protocol,v.requested_at AS "requestedAt"
+         FROM fiscal_number_voids v JOIN branches b ON b.id=v.branch_id
+         WHERE v.tenant_id=$1 ${selectedBranch ? "AND v.branch_id=$2" : ""}
+         ORDER BY v.requested_at DESC LIMIT 20`,
+        branchValues,
+      ),
     ]);
-    return { branches: branches.rows, products: products.rows, documents: documents.rows };
+    return {
+      metrics: metrics.rows[0] ?? {
+        totalDocuments: 0,
+        authorizedDocuments: 0,
+        cancelledDocuments: 0,
+        attentionDocuments: 0,
+        contingencyDocuments: 0,
+        xmlEligibleDocuments: 0,
+      },
+      branches: branches.rows,
+      products: products.rows,
+      documents: documents.rows,
+      numberVoids: numberVoids.rows,
+    };
   }
 
   async accountingExport(context: TenantContext, branchId?: string) {

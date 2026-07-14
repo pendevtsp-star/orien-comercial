@@ -14,6 +14,7 @@ import {
   XCircle,
 } from "lucide-react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch, downloadApiFile, getTenantId } from "../../../lib/api";
 
@@ -120,6 +121,7 @@ type NumberVoid = {
 };
 
 export default function FiscalPage() {
+  const searchParams = useSearchParams();
   const [branches, setBranches] = useState<Branch[]>([]);
   const [branchId, setBranchId] = useState("");
   const [overview, setOverview] = useState<Overview | null>(null);
@@ -138,18 +140,21 @@ export default function FiscalPage() {
   const [granted, setGranted] = useState<string[]>([]);
 
   useEffect(() => {
+    const branchFromUrl = searchParams.get("branchId");
     Promise.all([
       apiFetch<{ data: Branch[] }>("/branches?page=1&pageSize=100"),
       apiFetch<{ memberships: Array<{ tenantId: string; permissions: string[] }> }>("/me"),
     ])
       .then(([result, me]) => {
         setBranches(result.data);
-        setBranchId((current) => current || result.data[0]?.id || "");
+        setBranchId((current) =>
+          current || result.data.find((branch) => branch.id === branchFromUrl)?.id || result.data[0]?.id || "",
+        );
         setGranted(me.memberships.find((item) => item.tenantId === getTenantId())?.permissions ?? []);
       })
       .catch((err) => setError(message(err)))
       .finally(() => setLoading(false));
-  }, []);
+  }, [searchParams]);
 
   useEffect(() => {
     if (branchId) void loadBranch(branchId);
@@ -494,6 +499,22 @@ export default function FiscalPage() {
           </CardContent>
         </Card>
       ) : null}
+
+      <Card>
+        <CardContent className="grid gap-3 lg:grid-cols-3">
+          {[
+            ["1", "Corrija pendências", "Complete loja, produto, NCM, CFOP, CST/CSOSN e revisão contábil."],
+            ["2", "Emita pela venda", "Na tela Vendas, use Emitir NFC-e. A Orien valida antes de transmitir."],
+            ["3", "Acompanhe retorno", "Autorização, rejeição, DANFE, XML, contingência e cancelamento ficam nesta central."],
+          ].map(([step, title, detail]) => (
+            <div key={step} className="rounded-md border border-[var(--brand-border)] bg-[var(--brand-surface)] p-4">
+              <span className="grid h-7 w-7 place-items-center rounded-full bg-[var(--brand-primary)] text-sm font-bold text-white">{step}</span>
+              <h2 className="mt-3 font-semibold text-[var(--brand-primary)]">{title}</h2>
+              <p className="mt-1 text-sm leading-6 text-slate-500">{detail}</p>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
 
       {settings ? (
         <Card>

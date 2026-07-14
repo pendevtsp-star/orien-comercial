@@ -321,7 +321,8 @@ function CatalogAssistant() {
       .catch(() => undefined);
   }, []);
 
-  const field = (name: string) => document.querySelector<HTMLInputElement>(`input[name="${name}"]`);
+  const field = (name: string) =>
+    document.querySelector<HTMLInputElement | HTMLSelectElement>(`[name="${name}"]`);
   const setField = (name: string, value?: string) => {
     const input = field(name);
     if (!input || !value) return;
@@ -364,6 +365,39 @@ function CatalogAssistant() {
     } catch {
       setLookupStatus("Não foi possível gerar o SKU agora.");
     }
+  }
+  function applyFiscalPreset(preset: "simples_retail" | "st_retail" | "normal_retail") {
+    const presets = {
+      simples_retail: {
+        fiscalTaxOrigin: "0",
+        fiscalCfopDomestic: "5102",
+        fiscalCfopInterstate: "6102",
+        fiscalIcmsTaxCode: "102",
+        fiscalPisTaxCode: "49",
+        fiscalCofinsTaxCode: "49",
+        fiscalSubjectToIcmsSt: "false",
+      },
+      st_retail: {
+        fiscalTaxOrigin: "0",
+        fiscalCfopDomestic: "5405",
+        fiscalCfopInterstate: "6404",
+        fiscalIcmsTaxCode: "500",
+        fiscalPisTaxCode: "49",
+        fiscalCofinsTaxCode: "49",
+        fiscalSubjectToIcmsSt: "true",
+      },
+      normal_retail: {
+        fiscalTaxOrigin: "0",
+        fiscalCfopDomestic: "5102",
+        fiscalCfopInterstate: "6102",
+        fiscalIcmsTaxCode: "00",
+        fiscalPisTaxCode: "01",
+        fiscalCofinsTaxCode: "01",
+        fiscalSubjectToIcmsSt: "false",
+      },
+    } satisfies Record<string, Record<string, string>>;
+    Object.entries(presets[preset]).forEach(([name, value]) => setField(name, value));
+    setLookupStatus("Preset fiscal aplicado. Revise NCM, CEST e alíquotas com a contabilidade antes de salvar.");
   }
   return (
     <div className="grid gap-3 rounded-md border border-[var(--brand-border)] bg-[var(--brand-surface)] p-3">
@@ -414,6 +448,25 @@ function CatalogAssistant() {
           </li>
         ))}
       </ol>
+      <div className="grid gap-2 rounded-md border border-amber-200 bg-amber-50 p-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-900">
+          Atalho fiscal controlado
+        </p>
+        <p className="text-xs leading-5 text-amber-900">
+          Use presets apenas como ponto de partida. NCM, CEST, CFOP, CST/CSOSN e alíquotas continuam exigindo conferência humana.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="secondary" onClick={() => applyFiscalPreset("simples_retail")}>
+            Simples · revenda
+          </Button>
+          <Button type="button" variant="secondary" onClick={() => applyFiscalPreset("st_retail")}>
+            Substituição tributária
+          </Button>
+          <Button type="button" variant="secondary" onClick={() => applyFiscalPreset("normal_retail")}>
+            Regime normal
+          </Button>
+        </div>
+      </div>
       {lookupStatus ? <p className="text-xs leading-5 text-slate-600">{lookupStatus}</p> : null}
       <div className="rounded-md border border-dashed border-[var(--brand-border)] bg-white p-2">
         <div className="flex items-center gap-3">
