@@ -79,6 +79,13 @@ export default function StockPage() {
   const [stockPagination, setStockPagination] = useState({ total: 0, page: 1, pageSize: 10 });
   const [movementPagination, setMovementPagination] = useState({ total: 0, page: 1, pageSize: 10 });
 
+  useEffect(() => {
+    const tab = new URLSearchParams(window.location.search).get("tab");
+    if (tab && ["saldos", "operacoes", "notas", "relatorios", "movimentos"].includes(tab)) {
+      setActiveTab(tab);
+    }
+  }, []);
+
   const branchOptions = useMemo(() => branches.map((branch) => ({ label: branch.name, value: branch.id })), [branches]);
   const productOptions = useMemo(
     () => products.map((product) => ({ label: `${product.name}${product.sku ? ` · ${product.sku}` : ""}`, value: product.id })),
@@ -506,6 +513,22 @@ function PurchaseXmlImporter({
   const [choices, setChoices] = useState<Record<number, { action: "link" | "create" | "ignore"; productId?: string }>>({});
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const reviewStats = useMemo(() => {
+    if (!preview) return null;
+    return preview.items.reduce(
+      (acc, item) => {
+        const action = choices[item.sourceIndex]?.action ?? item.suggestedAction;
+        if (action === "link") acc.linked += 1;
+        if (action === "create") acc.created += 1;
+        if (action === "ignore") acc.ignored += 1;
+        if (item.divergences?.length) acc.withDivergence += 1;
+        acc.divergences += item.divergences?.length ?? 0;
+        return acc;
+      },
+      { linked: 0, created: 0, ignored: 0, withDivergence: 0, divergences: 0 },
+    );
+  }, [choices, preview]);
+
   async function previewXml(file: File) {
     if (!branchId) return setError("Escolha a loja antes de importar o XML.");
     setError(null);
@@ -540,7 +563,8 @@ function PurchaseXmlImporter({
     }
   }
   async function commit() {
-    if (!preview || !branchId || !xml) return;
+    if (!preview || !branchId) return;
+    if (source === "xml_upload" && !xml) return;
     setError(null);
     try {
       await apiFetch("/stock/purchase-imports/xml/commit", {
@@ -603,6 +627,13 @@ function PurchaseXmlImporter({
         {error ? <p className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</p> : null}
         {message ? <p className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{message}</p> : null}
         {preview ? <div className="grid gap-3 rounded-md border border-[var(--brand-border)] bg-[var(--brand-surface)] p-3"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-medium">NF-e {preview.document.number}{preview.document.series ? ` · série ${preview.document.series}` : ""} · {preview.supplier.name}</p><p className="text-xs text-slate-500">Total R$ {preview.document.totalAmount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} · chave {preview.document.key}</p></div><Badge className={preview.supplier.match ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}>{preview.supplier.match ? `Fornecedor vinculado: ${preview.supplier.match.name}` : "Fornecedor ainda não cadastrado"}</Badge></div>
+          {reviewStats ? <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            <ReviewMetric label="Vinculados" value={reviewStats.linked} tone="ok" />
+            <ReviewMetric label="Novos produtos" value={reviewStats.created} tone={reviewStats.created ? "warn" : "ok"} />
+            <ReviewMetric label="Com alerta" value={reviewStats.withDivergence} tone={reviewStats.withDivergence ? "warn" : "ok"} />
+            <ReviewMetric label="Ignorados" value={reviewStats.ignored} tone={reviewStats.ignored ? "muted" : "ok"} />
+          </div> : null}
+          {reviewStats?.divergences ? <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Revise os alertas antes de confirmar. O estoque só será movimentado para itens vinculados ou cadastrados.</p> : null}
           {!preview.supplier.match ? <label className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><input type="checkbox" checked={createSupplier} onChange={(event) => setCreateSupplier(event.target.checked)} />Cadastrar o fornecedor automaticamente ao confirmar</label> : null}
           {preview.requiresManifestation ? <div className="grid gap-3 rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950"><div><strong>Os itens completos ainda não foram liberados.</strong><p className="mt-1 text-blue-800">A SEFAZ exige a ciência da operação antes de disponibilizar o conteúdo integral desta NF-e.</p></div><Button variant="secondary" onClick={() => void acknowledgeAndReload()}>Dar ciência e carregar itens</Button></div> : null}
           {preview.purchaseOrders?.length ? <Select label="Vincular a pedido de compra" value={purchaseOrderId} onChange={(event) => setPurchaseOrderId(event.target.value)} options={[{ label: "Receber sem vincular a pedido", value: "" }, ...preview.purchaseOrders.map((order) => ({ label: `Pedido ${order.id.slice(0, 8)} · ${order.pendingItems} item(ns) pendente(s)`, value: order.id }))]} /> : null}
@@ -650,6 +681,29 @@ function InboundFiscalHistory({ branches }: { branches: Array<{ label: string; v
       { key: "manifest", header: "Manifestação", render: (row) => <div className="flex flex-wrap gap-1">{row.manifestationStatus === "pending" || row.manifestationStatus === "ciencia" ? <><Button variant="ghost" onClick={() => void manifest(row.id, "ciencia")}>Dar ciência</Button><Button variant="ghost" onClick={() => void manifest(row.id, "confirmacao")}>Confirmar</Button><Button variant="ghost" onClick={() => void manifest(row.id, "desconhecimento")}>Não reconheço</Button><Button variant="ghost" onClick={() => void manifest(row.id, "nao_realizada")}>Não realizada</Button></> : <Badge>{row.manifestationStatus === "confirmacao" ? "Operação confirmada" : row.manifestationStatus === "desconhecimento" ? "Não reconhecida" : "Não realizada"}</Badge>}</div> },
     ]} />
   </div>;
+}
+
+function ReviewMetric({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: "ok" | "warn" | "muted";
+}) {
+  const toneClass =
+    tone === "warn"
+      ? "border-amber-200 bg-amber-50 text-amber-900"
+      : tone === "muted"
+        ? "border-slate-200 bg-slate-50 text-slate-700"
+        : "border-emerald-200 bg-emerald-50 text-emerald-800";
+  return (
+    <div className={`rounded-md border p-3 ${toneClass}`}>
+      <p className="text-xs uppercase tracking-[0.14em] opacity-75">{label}</p>
+      <p className="mt-1 text-2xl font-semibold">{value}</p>
+    </div>
+  );
 }
 
 function StockFormCard({

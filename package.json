@@ -1,6 +1,6 @@
 {
   "name": "saas-gestao-comercial",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "private": true,
   "description": "Monorepo do SaaS multitenant para gestao comercial, estoque, financeiro e relacionamento.",
   "packageManager": "pnpm@11.7.0",

@@ -180,6 +180,28 @@ export default function PurchasesPage() {
           {error}
         </p>
       ) : null}
+      <Card>
+        <CardContent className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-[0.16em] text-[var(--brand-secondary)]">
+              Recebimento assistido
+            </p>
+            <h2 className="mt-1 text-lg font-semibold text-[var(--brand-primary)]">
+              Entrada por XML ou chave da NF-e
+            </h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
+              Use quando a mercadoria chegar: o Orien confere fornecedor, produtos, custos e
+              divergências antes de atualizar o estoque.
+            </p>
+          </div>
+          <a
+            className="inline-flex h-11 items-center justify-center rounded-md bg-[var(--brand-primary)] px-4 text-sm font-semibold text-white transition hover:opacity-90"
+            href="/stock?tab=operacoes"
+          >
+            Receber por XML/chave
+          </a>
+        </CardContent>
+      </Card>
       <div className="grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1fr)_380px]">
         <Card className="min-w-0">
           <CardContent className="grid gap-4">
