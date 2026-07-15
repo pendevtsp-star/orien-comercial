@@ -79,6 +79,14 @@ interface CashSummary {
   payments: Array<{ method: string; amount: string }>;
   movements: Array<{ id: string; type: "supply" | "withdrawal"; amount: string; reason: string; createdAt: string }>;
 }
+interface CashCloseResult {
+  id: string;
+  expectedAmount: string;
+  closingAmount: string;
+  differenceAmount: string;
+  approvalStatus: string;
+  closedAt: string;
+}
 interface CartItem {
   productId: string;
   name: string;
@@ -116,6 +124,8 @@ export default function PosPage() {
   const [movementReason, setMovementReason] = useState("");
   const [closingAmount, setClosingAmount] = useState("");
   const [closingNotes, setClosingNotes] = useState("");
+  const [showClosingPanel, setShowClosingPanel] = useState(false);
+  const [lastCashClose, setLastCashClose] = useState<CashCloseResult | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [scanner, setScanner] = useState("");
   const [scanQuantity, setScanQuantity] = useState(1);
@@ -365,12 +375,16 @@ export default function PosPage() {
   }
   async function closeCash() {
     if (!cash) return;
+    if (cart.length) {
+      setError("Conclua ou limpe a venda em montagem antes de fechar o caixa.");
+      return;
+    }
     if (!closingAmount) {
       setError("Informe o valor contado para fechar o caixa.");
       return;
     }
     try {
-      await apiFetch(`/cash-registers/${cash.id}/close`, {
+      const result = await apiFetch<CashCloseResult>(`/cash-registers/${cash.id}/close`, {
         method: "POST",
         body: JSON.stringify({ closingAmount: Number(closingAmount), notes: closingNotes || undefined }),
       });
@@ -378,11 +392,18 @@ export default function PosPage() {
         `/cash-registers?branchId=${branchId}`,
       );
       setCashHistory(history.data);
+      setLastCashClose(result);
+      setNotice(
+        Number(result.differenceAmount) === 0
+          ? "Caixa fechado sem divergência. A conferência foi registrada."
+          : "Caixa fechado com divergência. A aprovação gerencial ficou pendente na trilha de caixa.",
+      );
       setCash(null);
       setCashSummary(null);
       setCart([]);
       setClosingAmount("");
       setClosingNotes("");
+      setShowClosingPanel(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao fechar caixa.");
     }
@@ -436,6 +457,18 @@ export default function PosPage() {
     setNotice("");
     setError(null);
     window.setTimeout(() => scannerRef.current?.focus(), 0);
+  }
+  function changeItemQuantity(productId: string, quantity: number) {
+    setCart((current) =>
+      current.map((item) =>
+        item.productId === productId ? { ...item, quantity: Math.max(1, Number(quantity) || 1) } : item,
+      ),
+    );
+  }
+  function openClosingPanel() {
+    if (!cash) return;
+    setShowClosingPanel(true);
+    window.setTimeout(() => document.getElementById("cash-closing-amount")?.focus(), 0);
   }
   useEffect(() => {
     function shortcut(event: KeyboardEvent) {
@@ -607,7 +640,7 @@ export default function PosPage() {
             >
               Sangria
             </Button>
-            <Button variant="secondary" onClick={() => void closeCash()} disabled={!cash}>
+            <Button variant="secondary" onClick={openClosingPanel} disabled={!cash}>
               Fechar caixa
             </Button>
           </div>
@@ -669,6 +702,17 @@ export default function PosPage() {
               Nova venda
             </Button>
           </div>
+        </section>
+      ) : null}
+      {lastCashClose ? (
+        <section className="grid gap-3 rounded-md border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+          <div>
+            <strong>Conferência do caixa concluída</strong>
+            <p className="mt-1 text-emerald-800">
+              Contado {Number(lastCashClose.closingAmount).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} · esperado {Number(lastCashClose.expectedAmount).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} · diferença {Number(lastCashClose.differenceAmount).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}.
+            </p>
+          </div>
+          <Button variant="ghost" onClick={() => setLastCashClose(null)}>Ocultar resumo</Button>
         </section>
       ) : null}
       <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
@@ -800,8 +844,15 @@ export default function PosPage() {
                           currency: "BRL",
                         })}
                       </p>
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {[1, 2, 3, 5, 10].map((quantity) => (
+                          <button key={quantity} type="button" className="rounded border border-[var(--brand-border)] px-2 py-1 text-xs text-slate-600 transition hover:bg-[var(--brand-surface)]" onClick={() => changeItemQuantity(item.productId, quantity)}>
+                            {quantity} un.
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1" aria-label={`Quantidade de ${item.name}`}>
                       <button
                         type="button"
                         className="grid h-12 w-12 place-items-center rounded-md border border-[var(--brand-border)] bg-white text-[var(--brand-primary)] transition hover:bg-[var(--brand-surface)]"
@@ -824,14 +875,7 @@ export default function PosPage() {
                         min={1}
                         value={item.quantity}
                         onChange={(event) => {
-                          const nextQuantity = Math.max(1, Number(event.target.value || 1));
-                          setCart((current) =>
-                            current.map((row) =>
-                              row.productId === item.productId
-                                ? { ...row, quantity: nextQuantity }
-                                : row,
-                            ),
-                          );
+                          changeItemQuantity(item.productId, Number(event.target.value || 1));
                         }}
                       />
                       <button
@@ -1091,7 +1135,7 @@ export default function PosPage() {
       </div>
       {cash ? (
         <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-          <Card>
+          <Card id="cash-closing-panel" className={showClosingPanel ? "ring-2 ring-[var(--brand-accent)]" : ""}>
             <CardContent className="grid gap-4">
               <div>
                 <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Operação de caixa</p>
@@ -1143,19 +1187,13 @@ export default function PosPage() {
                 <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Fechamento do turno</p>
                 <h2 className="mt-1 text-lg font-semibold text-[var(--brand-primary)]">Conferência cega do caixa</h2>
               </div>
-              <div className="grid gap-3 sm:grid-cols-3">
-                {(cashSummary?.payments ?? []).map((payment) => (
-                  <div key={payment.method} className="rounded-md border border-[var(--brand-border)] bg-[var(--brand-surface)] p-3">
-                    <p className="text-xs uppercase tracking-[0.12em] text-[var(--brand-secondary)]">{paymentMethodLabel(payment.method)}</p>
-                    <strong className="mt-1 block text-lg text-[var(--brand-primary)]">{Number(payment.amount).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong>
-                  </div>
-                ))}
-                {!cashSummary?.payments?.length ? <p className="text-sm text-slate-500 sm:col-span-3">Nenhum pagamento registrado neste caixa ainda.</p> : null}
+              <div className="rounded-md border border-dashed border-[var(--brand-border)] bg-[var(--brand-surface)] p-3 text-sm text-slate-600">
+                Faça a contagem sem consultar os valores esperados. O sistema compara e revela a diferença somente depois de confirmar o fechamento.
               </div>
               <div className="grid gap-3 md:grid-cols-[180px_minmax(0,1fr)_auto] md:items-end">
-                <Input label="Valor contado" type="number" step="0.01" value={closingAmount} onChange={(event) => setClosingAmount(event.target.value)} />
+                <Input id="cash-closing-amount" label="Valor contado" type="number" step="0.01" value={closingAmount} onChange={(event) => setClosingAmount(event.target.value)} />
                 <Input label="Observação" value={closingNotes} placeholder="Opcional, mas recomendado se houver diferença" onChange={(event) => setClosingNotes(event.target.value)} />
-                <Button variant="secondary" onClick={() => void closeCash()}>
+                <Button variant="secondary" onClick={() => void closeCash()} disabled={!showClosingPanel}>
                   Fechar caixa
                 </Button>
               </div>

@@ -92,7 +92,8 @@ export class CashRegistersService {
       const differenceAmount = input.closingAmount - expectedAmount;
       const approvalStatus = Math.abs(differenceAmount) > 0.01 ? "pending" : "not_required";
       const result = await client.query(
-        `UPDATE cash_register_sessions SET status = 'closed', closed_by_user_id = $3, expected_amount = $4, closing_amount = $5, blind_closing_amount=$5, difference_amount = $6, approval_status=$8, notes = COALESCE($7, notes), closed_at = now() WHERE tenant_id = $1 AND id = $2 RETURNING *`,
+        `UPDATE cash_register_sessions SET status = 'closed', closed_by_user_id = $3, expected_amount = $4, closing_amount = $5, blind_closing_amount=$5, difference_amount = $6, approval_status=$8, notes = COALESCE($7, notes), closed_at = now() WHERE tenant_id = $1 AND id = $2
+         RETURNING id, expected_amount::text AS "expectedAmount", closing_amount::text AS "closingAmount", difference_amount::text AS "differenceAmount", approval_status AS "approvalStatus", closed_at AS "closedAt"`,
         [
           context.tenantId,
           id,
