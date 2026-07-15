@@ -17,6 +17,7 @@ export class DashboardService {
       products,
       customers,
       operators,
+      activeOperators,
       stockBalances,
       testSales,
       openCash,
@@ -24,6 +25,7 @@ export class DashboardService {
       overdueReceivables,
       pendingTasks,
       integrationErrors,
+      lowMarginProducts,
       printingSettings,
       fiscalSettings,
       paymentAccounts,
@@ -47,6 +49,14 @@ export class DashboardService {
       this.database.tenantQuery<{ total: string }>(
         context.tenantId,
         `SELECT count(*)::text total FROM memberships WHERE tenant_id=$1 AND status='active' AND deleted_at IS NULL ${branchOrGlobalFilter}`,
+        params,
+      ),
+      this.database.tenantQuery<{ total: string }>(
+        context.tenantId,
+        `SELECT count(DISTINCT m.user_id)::text total
+         FROM memberships m
+         JOIN sessions s ON s.user_id=m.user_id AND s.revoked_at IS NULL AND s.expires_at > now()
+         WHERE m.tenant_id=$1 AND m.status='active' AND m.deleted_at IS NULL ${context.branchId ? "AND (m.branch_id IS NULL OR m.branch_id=$2)" : ""}`,
         params,
       ),
       this.database.tenantQuery<{ total: string }>(
@@ -92,6 +102,12 @@ export class DashboardService {
       ),
       this.database.tenantQuery<{ total: string }>(
         context.tenantId,
+        `SELECT count(*)::text total FROM products WHERE tenant_id=$1 AND deleted_at IS NULL
+         AND cost_price > 0 AND sale_price <= cost_price ${branchOrGlobalFilter}`,
+        params,
+      ),
+      this.database.tenantQuery<{ total: string }>(
+        context.tenantId,
         "SELECT count(*)::text total FROM tenant_settings WHERE tenant_id=$1 AND key='printing' AND deleted_at IS NULL",
         [context.tenantId],
       ),
@@ -117,6 +133,7 @@ export class DashboardService {
       products: Number(products.rows[0]?.total ?? 0),
       customers: Number(customers.rows[0]?.total ?? 0),
       operators: Number(operators.rows[0]?.total ?? 0),
+      activeOperators: Number(activeOperators.rows[0]?.total ?? 0),
       stockBalances: Number(stockBalances.rows[0]?.total ?? 0),
       testSales: Number(testSales.rows[0]?.total ?? 0),
       openCash: Number(openCash.rows[0]?.total ?? 0),
@@ -124,6 +141,7 @@ export class DashboardService {
       overdueReceivables: Number(overdueReceivables.rows[0]?.total ?? 0),
       pendingTasks: Number(pendingTasks.rows[0]?.total ?? 0),
       integrationErrors: Number(integrationErrors.rows[0]?.total ?? 0),
+      lowMarginProducts: Number(lowMarginProducts.rows[0]?.total ?? 0),
       printingSettings: Number(printingSettings.rows[0]?.total ?? 0),
       fiscalSettings: Number(fiscalSettings.rows[0]?.total ?? 0),
       paymentAccounts: Number(paymentAccounts.rows[0]?.total ?? 0),
@@ -168,6 +186,8 @@ export class DashboardService {
       ...(counts.openCash ? [{ severity: openHours >= 9 ? "warning" : "info", title: `Caixa aberto há ${openHours} hora(s)`, detail: "Confira suprimentos, sangrias e o turno do operador.", href: "/pos" }] : []),
       ...(Number(dueToday.rows[0]?.total ?? 0) ? [{ severity: "warning", title: `${dueToday.rows[0]?.total} conta(s) vencendo hoje`, detail: `${Number(dueToday.rows[0]?.amount ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} para acompanhar no financeiro.`, href: "/financial" }] : []),
       ...(Number(pendingPurchases.rows[0]?.total ?? 0) ? [{ severity: "info", title: `${pendingPurchases.rows[0]?.total} compra(s) aguardando recebimento`, detail: "Confirme a entrada para atualizar custo e saldo.", href: "/purchases" }] : []),
+      ...(counts.lowMarginProducts ? [{ severity: "warning", title: `${counts.lowMarginProducts} produto(s) sem margem`, detail: "Custo igual ou maior que o preço de venda. Revise a precificação.", href: "/products" }] : []),
+      ...(counts.integrationErrors ? [{ severity: "warning", title: `${counts.integrationErrors} integração(ões) com erro`, detail: "Verifique o último erro e teste a conexão antes de operar.", href: "/integrations" }] : []),
     ];
     return {
       counts,

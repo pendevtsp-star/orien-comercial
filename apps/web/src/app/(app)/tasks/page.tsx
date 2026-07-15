@@ -14,10 +14,14 @@ type Task = {
   branchName?: string;
   assigneeName?: string;
 };
+type Branch = { id: string; name: string };
+type Member = { userId: string; userName: string; branchId?: string | null; status: string };
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [status, setStatus] = useState("open");
   const [error, setError] = useState<string | null>(null);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
   async function load() {
     try {
       setTasks(
@@ -32,6 +36,17 @@ export default function TasksPage() {
   useEffect(() => {
     void load();
   }, [status]);
+  useEffect(() => {
+    void Promise.all([
+      apiFetch<{ data: Branch[] }>("/branches?pageSize=100"),
+      apiFetch<{ data: Member[] }>("/memberships?pageSize=100&status=active"),
+    ])
+      .then(([branchResponse, memberResponse]) => {
+        setBranches(branchResponse.data);
+        setMembers(memberResponse.data);
+      })
+      .catch(() => undefined);
+  }, []);
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
@@ -47,6 +62,9 @@ export default function TasksPage() {
           priority: f.get("priority"),
           dueAt,
           type: "operational",
+          branchId: f.get("branchId") || undefined,
+          assigneeUserId: f.get("assigneeUserId") || undefined,
+          recurrence: f.get("recurrence") || undefined,
         }),
       });
       e.currentTarget.reset();
@@ -95,6 +113,28 @@ export default function TasksPage() {
                 />
                 <Input name="dueAt" label="Prazo" type="datetime-local" />
               </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Select
+                  name="branchId"
+                  label="Loja"
+                  options={[{ label: "Todas as lojas", value: "" }, ...branches.map((branch) => ({ label: branch.name, value: branch.id }))]}
+                />
+                <Select
+                  name="assigneeUserId"
+                  label="Responsável"
+                  options={[{ label: "Definir depois", value: "" }, ...members.map((member) => ({ label: member.userName, value: member.userId }))]}
+                />
+              </div>
+              <Select
+                name="recurrence"
+                label="Recorrência"
+                options={[
+                  { label: "Não repetir", value: "" },
+                  { label: "Todos os dias", value: "daily" },
+                  { label: "Toda semana", value: "weekly" },
+                  { label: "Todo mês", value: "monthly" },
+                ]}
+              />
               <Button type="submit" icon={<Plus size={16} />}>
                 Criar tarefa
               </Button>
@@ -125,6 +165,8 @@ export default function TasksPage() {
                     <h2 className="mt-2 font-semibold text-[var(--brand-primary)]">{task.title}</h2>
                     <p className="mt-1 text-sm text-slate-500">
                       {task.description || "Sem detalhes"}
+                      {task.assigneeName ? ` · Responsável: ${task.assigneeName}` : ""}
+                      {task.branchName ? ` · ${task.branchName}` : ""}
                       {task.dueAt ? ` · Prazo ${new Date(task.dueAt).toLocaleString("pt-BR")}` : ""}
                     </p>
                   </div>

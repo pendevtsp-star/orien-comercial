@@ -22,11 +22,13 @@ interface OperationalStatus {
     products: number;
     customers: number;
     operators: number;
+    activeOperators: number;
     openCash: number;
     criticalStock: number;
     overdueReceivables: number;
     pendingTasks: number;
     integrationErrors: number;
+    lowMarginProducts: number;
   };
   checklist: Array<{ key: string; label: string; done: boolean; href: string }>;
   progressPercent: number;
@@ -105,6 +107,13 @@ export default function StoreCentralPage() {
       href: "/integrations",
       icon: ShieldAlert,
     },
+    {
+      title: "Margem sob revisão",
+      value: status?.counts.lowMarginProducts ?? 0,
+      detail: "produto(s) sem margem positiva",
+      href: "/products",
+      icon: AlertTriangle,
+    },
   ];
 
   return (
@@ -163,7 +172,7 @@ export default function StoreCentralPage() {
         </Card>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         {blockers.map((item) => {
           const Icon = item.icon;
           return (
@@ -204,10 +213,11 @@ export default function StoreCentralPage() {
               <Store className="text-[var(--brand-secondary)]" size={22} />
               <h2 className="font-semibold text-[var(--brand-primary)]">Base operacional</h2>
             </div>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-4">
               <MiniStat label="Lojas" value={status?.counts.branches ?? 0} icon={Store} />
               <MiniStat label="Produtos" value={status?.counts.products ?? 0} icon={Boxes} />
               <MiniStat label="Clientes" value={status?.counts.customers ?? 0} icon={UsersRound} />
+              <MiniStat label="Operadores ativos" value={status?.counts.activeOperators ?? 0} icon={UsersRound} />
             </div>
           </CardContent>
         </Card>
