@@ -12,7 +12,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "migrate": "tsx src/migrate.ts",
     "seed": "tsx src/seed.ts",
-    "seed:homologation": "tsx src/seed-homologation.ts"
+    "seed:homologation": "tsx src/seed-homologation.ts",
+    "seed:operational-test": "tsx src/seed-operational-test.ts",
+    "cleanup:operational-test": "tsx src/cleanup-operational-test.ts"
   },
   "dependencies": {
     "argon2": "^0.44.0",

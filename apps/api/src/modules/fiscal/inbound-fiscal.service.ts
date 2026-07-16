@@ -869,11 +869,84 @@ export class InboundFiscalService {
             [context.tenantId, branchId, supplierMatch.id],
           )
         : { rows: [] };
+      const orderIds = orders.rows.map((order) => order.id);
+      const orderItems = orderIds.length
+        ? await client.query<{ purchase_order_id: string; product_id: string; product_name: string; pending_quantity: string; unit_cost: string }>(
+            `SELECT poi.purchase_order_id,poi.product_id,p.name AS product_name,
+                    (poi.quantity-poi.received_quantity)::text AS pending_quantity,poi.unit_cost::text
+             FROM purchase_order_items poi
+             JOIN products p ON p.id=poi.product_id AND p.tenant_id=poi.tenant_id
+             WHERE poi.tenant_id=$1 AND poi.purchase_order_id=ANY($2::uuid[])
+             ORDER BY p.name`,
+            [context.tenantId, orderIds],
+          )
+        : { rows: [] };
+      const supplierHistory = supplierMatch
+        ? await client.query<{ id: string; document_number: string | null; total_amount: string; created_at: Date; branch_name: string; item_count: number }>(
+            `SELECT pe.id,pe.document_number,pe.total_amount::text,pe.created_at,b.name AS branch_name,count(pei.id)::int AS item_count
+             FROM purchase_entries pe
+             JOIN branches b ON b.id=pe.branch_id
+             LEFT JOIN purchase_entry_items pei ON pei.purchase_entry_id=pe.id AND pei.tenant_id=pe.tenant_id
+             WHERE pe.tenant_id=$1 AND pe.supplier_id=$2
+             GROUP BY pe.id,b.name
+             ORDER BY pe.created_at DESC LIMIT 5`,
+            [context.tenantId, supplierMatch.id],
+          )
+        : { rows: [] };
+      const purchaseOrders = orders.rows.map((order) => {
+        const expected = orderItems.rows.filter((item) => item.purchase_order_id === order.id);
+        const comparison = prepared.map((row) => {
+          const expectedItem = row.match ? expected.find((item) => item.product_id === row.match?.id) : undefined;
+          const expectedQuantity = Number(expectedItem?.pending_quantity ?? 0);
+          const expectedCost = Number(expectedItem?.unit_cost ?? 0);
+          const quantityDifference = expectedItem ? row.item.quantity - expectedQuantity : null;
+          const costDifference = expectedItem ? row.item.unitCost - expectedCost : null;
+          const status = !row.match
+            ? "unmatched"
+            : !expectedItem
+              ? "not_ordered"
+              : Math.abs(quantityDifference ?? 0) >= 0.001
+                ? "quantity_difference"
+                : Math.abs(costDifference ?? 0) >= 0.005
+                  ? "cost_difference"
+                  : "matched";
+          return {
+            sourceIndex: row.index,
+            productName: row.item.name,
+            invoiceQuantity: row.item.quantity,
+            invoiceCost: row.item.unitCost,
+            expectedQuantity: expectedItem ? expectedQuantity : null,
+            expectedCost: expectedItem ? expectedCost : null,
+            quantityDifference,
+            costDifference,
+            status,
+          };
+        });
+        return {
+          id: order.id,
+          status: order.status,
+          expectedAt: order.expected_at?.toISOString() ?? null,
+          pendingItems: order.pending_items,
+          comparison: {
+            matchedLines: comparison.filter((item) => item.status === "matched").length,
+            divergentLines: comparison.filter((item) => item.status !== "matched").length,
+            lines: comparison,
+          },
+        };
+      });
       return {
         fiscalDocumentId: documentId,
         document: parsed.document,
         supplier: { ...parsed.supplier, match: supplierMatch ?? null },
-        purchaseOrders: orders.rows.map((order) => ({ id: order.id, status: order.status, expectedAt: order.expected_at?.toISOString() ?? null, pendingItems: order.pending_items })),
+        purchaseOrders,
+        supplierHistory: supplierHistory.rows.map((entry) => ({
+          id: entry.id,
+          documentNumber: entry.document_number,
+          totalAmount: Number(entry.total_amount),
+          createdAt: entry.created_at.toISOString(),
+          branchName: entry.branch_name,
+          itemCount: entry.item_count,
+        })),
         requiresManifestation: source.source === "focus_key" && !prepared.length,
         items: prepared.map((row) => ({
           ...row.item,

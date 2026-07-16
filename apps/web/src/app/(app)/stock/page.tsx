@@ -85,7 +85,28 @@ type PurchasePreview = {
   requiresManifestation?: boolean;
   document: { key: string; number: string; series?: string; issuedAt?: string; totalAmount: number };
   supplier: { name: string; document?: string; match?: { id: string; name: string } | null };
-  purchaseOrders?: Array<{ id: string; status: string; expectedAt?: string | null; pendingItems: number }>;
+  purchaseOrders?: Array<{
+    id: string;
+    status: string;
+    expectedAt?: string | null;
+    pendingItems: number;
+    comparison?: {
+      matchedLines: number;
+      divergentLines: number;
+      lines: Array<{
+        sourceIndex: number;
+        productName: string;
+        invoiceQuantity: number;
+        invoiceCost: number;
+        expectedQuantity?: number | null;
+        expectedCost?: number | null;
+        quantityDifference?: number | null;
+        costDifference?: number | null;
+        status: "matched" | "quantity_difference" | "cost_difference" | "not_ordered" | "unmatched";
+      }>;
+    };
+  }>;
+  supplierHistory?: Array<{ id: string; documentNumber?: string | null; totalAmount: number; createdAt: string; branchName: string; itemCount: number }>;
   items: Array<
     PreviewItem & {
       barcode?: string;
@@ -645,6 +666,10 @@ function PurchaseXmlImporter({
       return true;
     });
   }, [choices, preview, reviewFilter]);
+  const selectedPurchaseOrder = useMemo(
+    () => preview?.purchaseOrders?.find((order) => order.id === purchaseOrderId) ?? null,
+    [preview, purchaseOrderId],
+  );
   function setAllMatchedToLink() {
     if (!preview) return;
     setChoices((current) =>
@@ -785,6 +810,8 @@ function PurchaseXmlImporter({
           {!preview.supplier.match ? <label className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><input type="checkbox" checked={createSupplier} onChange={(event) => setCreateSupplier(event.target.checked)} />Cadastrar o fornecedor automaticamente ao confirmar</label> : null}
           {preview.requiresManifestation ? <div className="grid gap-3 rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950"><div><strong>Os itens completos ainda não foram liberados.</strong><p className="mt-1 text-blue-800">A SEFAZ exige a ciência da operação antes de disponibilizar o conteúdo integral desta NF-e.</p></div><Button variant="secondary" onClick={() => void acknowledgeAndReload()}>Dar ciência e carregar itens</Button></div> : null}
           {preview.purchaseOrders?.length ? <Select label="Vincular a pedido de compra" value={purchaseOrderId} onChange={(event) => setPurchaseOrderId(event.target.value)} options={[{ label: "Receber sem vincular a pedido", value: "" }, ...preview.purchaseOrders.map((order) => ({ label: `Pedido ${order.id.slice(0, 8)} · ${order.pendingItems} item(ns) pendente(s)`, value: order.id }))]} /> : null}
+          {selectedPurchaseOrder?.comparison ? <PurchaseOrderComparison comparison={selectedPurchaseOrder.comparison} /> : null}
+          {preview.supplierHistory?.length ? <SupplierHistory entries={preview.supplierHistory} /> : null}
           <div className="grid gap-3 rounded-md border border-[var(--brand-border)] bg-white p-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
             <Select
               label="Filtrar conferência"
@@ -1175,6 +1202,47 @@ function resolutionLabel(value: string) {
       ignored: "Ignorado",
     } as Record<string, string>
   )[value] ?? value;
+}
+
+function PurchaseOrderComparison({
+  comparison,
+}: {
+  comparison: NonNullable<NonNullable<PurchasePreview["purchaseOrders"]>[number]["comparison"]>;
+}) {
+  const statusCopy: Record<(typeof comparison.lines)[number]["status"], { label: string; className: string }> = {
+    matched: { label: "Conferido", className: "border-emerald-200 bg-emerald-50 text-emerald-800" },
+    quantity_difference: { label: "Qtd divergente", className: "border-amber-200 bg-amber-50 text-amber-900" },
+    cost_difference: { label: "Custo divergente", className: "border-amber-200 bg-amber-50 text-amber-900" },
+    not_ordered: { label: "Fora do pedido", className: "border-rose-200 bg-rose-50 text-rose-800" },
+    unmatched: { label: "Sem vínculo", className: "border-rose-200 bg-rose-50 text-rose-800" },
+  };
+  return (
+    <section className="grid gap-3 rounded-md border border-[var(--brand-border)] bg-slate-50 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div><p className="text-sm font-semibold text-[var(--brand-primary)]">Conferência do pedido selecionado</p><p className="text-xs text-slate-500">Compare a nota com o saldo pendente antes de registrar a entrada.</p></div>
+        <div className="flex gap-2 text-xs"><Badge className="border-emerald-200 bg-emerald-50 text-emerald-800">{comparison.matchedLines} conferido(s)</Badge><Badge className={comparison.divergentLines ? "border-amber-200 bg-amber-50 text-amber-900" : "border-slate-200 bg-white text-slate-600"}>{comparison.divergentLines} ponto(s) a revisar</Badge></div>
+      </div>
+      <div className="overflow-x-auto rounded-md border border-[var(--brand-border)] bg-white">
+        <table className="min-w-[760px] w-full text-left text-sm">
+          <thead className="border-b border-[var(--brand-border)] bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500"><tr><th className="p-3">Item da nota</th><th className="p-3">Pedido pendente</th><th className="p-3">Nota fiscal</th><th className="p-3">Custo</th><th className="p-3">Situação</th></tr></thead>
+          <tbody>{comparison.lines.map((line) => {
+            const copy = statusCopy[line.status];
+            return <tr key={line.sourceIndex} className="border-b border-[var(--brand-border)] last:border-b-0"><td className="p-3 font-medium">{line.productName}</td><td className="p-3">{line.expectedQuantity ?? "-"}</td><td className="p-3">{line.invoiceQuantity}</td><td className="p-3">{line.expectedCost == null ? `NF-e R$ ${line.invoiceCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : `Pedido R$ ${line.expectedCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} · NF-e R$ ${line.invoiceCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}</td><td className="p-3"><Badge className={copy.className}>{copy.label}</Badge></td></tr>;
+          })}</tbody>
+        </table>
+      </div>
+      {comparison.divergentLines ? <p className="text-xs text-amber-900">A confirmação continua sob seu controle: ajuste quantidade, custo ou vínculo de cada item antes de concluir o recebimento.</p> : null}
+    </section>
+  );
+}
+
+function SupplierHistory({ entries }: { entries: NonNullable<PurchasePreview["supplierHistory"]> }) {
+  return (
+    <section className="rounded-md border border-[var(--brand-border)] bg-white p-3">
+      <p className="text-sm font-semibold text-[var(--brand-primary)]">Últimas compras deste fornecedor</p>
+      <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-5">{entries.map((entry) => <div key={entry.id} className="rounded-md border border-[var(--brand-border)] p-2 text-xs"><strong className="block text-sm text-[var(--brand-primary)]">{entry.documentNumber ? `Nota ${entry.documentNumber}` : "Entrada sem nota"}</strong><span>{new Date(entry.createdAt).toLocaleDateString("pt-BR")} · {entry.branchName}</span><span className="mt-1 block">{entry.itemCount} item(ns) · {entry.totalAmount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</span></div>)}</div>
+    </section>
+  );
 }
 
 function ReviewMetric({
