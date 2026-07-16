@@ -63,7 +63,7 @@ type PreviewItem = {
   quantity: number;
   unitCost: number;
   salePrice?: number;
-  match?: { productId: string; name: string; costPrice?: number } | null;
+  match?: { productId: string; name: string; costPrice?: number; salePrice?: number } | null;
   suggestedAction: "link" | "create";
 };
 
@@ -74,6 +74,8 @@ type ReceivingChoice = {
   quantity: number;
   unitCost: number;
   salePrice?: number;
+  applyCost: boolean;
+  applySalePrice: boolean;
 };
 
 type ReceivingFilter = "all" | "alerts" | "linked" | "create" | "ignored";
@@ -127,6 +129,10 @@ type InboundDetail = {
     cest?: string | null;
     cfop?: string | null;
     suggestedSalePrice?: string | null;
+    currentCostPrice?: string | null;
+    currentSalePrice?: string | null;
+    applyCost: boolean;
+    applySalePrice: boolean;
     resolution: string;
     divergences: string[];
     productId?: string | null;
@@ -143,6 +149,8 @@ function makeReceivingChoice(item: PreviewItem): ReceivingChoice {
     quantity: item.quantity,
     unitCost: item.unitCost,
     salePrice: item.salePrice ?? suggestedSalePrice(item.unitCost),
+    applyCost: false,
+    applySalePrice: false,
   };
 }
 
@@ -720,10 +728,12 @@ function PurchaseXmlImporter({
             quantity: choices[item.sourceIndex]?.quantity ?? item.quantity,
             unitCost: choices[item.sourceIndex]?.unitCost ?? item.unitCost,
             salePrice: choices[item.sourceIndex]?.salePrice ?? item.salePrice,
+            applyCost: choices[item.sourceIndex]?.applyCost ?? false,
+            applySalePrice: choices[item.sourceIndex]?.applySalePrice ?? false,
           })),
         }),
       });
-      setMessage(`Entrada confirmada: ${result.itemCount} item(ns), total ${result.totalAmount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}. Estoque e custos foram atualizados com trilha de auditoria.`);
+      setMessage(`Entrada confirmada: ${result.itemCount} item(ns), total ${result.totalAmount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}. Estoque, financeiro e decisões de catálogo foram registrados na auditoria.`);
       setPreview(null);
       setXml("");
       setAccessKey("");
@@ -811,9 +821,10 @@ function PurchaseXmlImporter({
                     <Input label="Nome para cadastro" value={choice.name} disabled={choice.action !== "create"} onChange={(event) => setChoices((current) => ({ ...current, [item.sourceIndex]: { ...choice, name: event.target.value } }))} />
                     <Input label="Qtd recebida" type="number" min={0.001} step="0.001" value={choice.quantity} onChange={(event) => setChoices((current) => ({ ...current, [item.sourceIndex]: { ...choice, quantity: Math.max(0.001, Number(event.target.value || item.quantity)) } }))} />
                     <Input label="Custo confirmado" type="number" min={0} step="0.01" value={choice.unitCost} onChange={(event) => setChoices((current) => ({ ...current, [item.sourceIndex]: { ...choice, unitCost: Math.max(0, Number(event.target.value || 0)) } }))} />
-                    <Input label="Preço sugerido" type="number" min={0} step="0.01" disabled={choice.action !== "create"} value={choice.salePrice ?? suggestedSalePrice(choice.unitCost)} onChange={(event) => setChoices((current) => ({ ...current, [item.sourceIndex]: { ...choice, salePrice: Math.max(0, Number(event.target.value || 0)) } }))} />
+                    <Input label={choice.action === "create" ? "Preço de venda" : "Preço sugerido"} type="number" min={0} step="0.01" value={choice.salePrice ?? suggestedSalePrice(choice.unitCost)} onChange={(event) => setChoices((current) => ({ ...current, [item.sourceIndex]: { ...choice, salePrice: Math.max(0, Number(event.target.value || 0)) } }))} />
                   </div>
                 ) : null}
+                {choice.action === "link" && item.match ? <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"><span>Cadastro atual: custo {Number(item.match.costPrice ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} · venda {Number(item.match.salePrice ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</span><label className="inline-flex items-center gap-2"><input type="checkbox" checked={choice.applyCost} onChange={(event) => setChoices((current) => ({ ...current, [item.sourceIndex]: { ...choice, applyCost: event.target.checked } }))} />Atualizar custo</label><label className="inline-flex items-center gap-2"><input type="checkbox" checked={choice.applySalePrice} onChange={(event) => setChoices((current) => ({ ...current, [item.sourceIndex]: { ...choice, applySalePrice: event.target.checked } }))} />Atualizar preço de venda</label><span className="text-xs text-amber-800">Nenhum valor do catálogo muda sem sua confirmação.</span></div> : null}
               </div>
             );
           }) : <EmptyState eyebrow="Conferência" title="Nenhum item neste filtro." description="Altere o filtro para revisar os demais itens da nota." icon={<FileCheck2 size={20} />} />}{preview.items.length ? <Button onClick={() => void commit()}>Confirmar recebimento e atualizar estoque</Button> : null}</div> : null}
@@ -1071,6 +1082,8 @@ type DetailChoice = {
   quantity?: number;
   unitCost?: number;
   salePrice?: number;
+  applyCost: boolean;
+  applySalePrice: boolean;
 };
 
 function makeDetailChoice(item: InboundDetail["items"][number]): DetailChoice {
@@ -1082,6 +1095,8 @@ function makeDetailChoice(item: InboundDetail["items"][number]): DetailChoice {
     quantity: Number(item.quantity),
     unitCost: Number(item.unitCost),
     salePrice: Number(item.suggestedSalePrice ?? suggestedSalePrice(Number(item.unitCost))),
+    applyCost: item.applyCost,
+    applySalePrice: item.applySalePrice,
   };
 }
 
@@ -1129,6 +1144,7 @@ function ItemResolutionEditor({
           <Input aria-label={`Custo do item ${row.lineNumber}`} type="number" min={0} step="0.01" value={choice.unitCost ?? Number(row.unitCost)} onChange={(event) => onChange({ ...choice, unitCost: Number(event.target.value || 0) })} />
         </div>
       ) : null}
+      {choice.action === "link" && row.productName ? <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-950"><p>Cadastro atual: custo {Number(row.currentCostPrice ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} · venda {Number(row.currentSalePrice ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</p><div className="mt-2 flex flex-wrap gap-3"><label className="inline-flex items-center gap-1"><input type="checkbox" checked={choice.applyCost} onChange={(event) => onChange({ ...choice, applyCost: event.target.checked })} />Atualizar custo</label><label className="inline-flex items-center gap-1"><input type="checkbox" checked={choice.applySalePrice} onChange={(event) => onChange({ ...choice, applySalePrice: event.target.checked })} />Atualizar preço</label></div></div> : null}
       {choice.action === "create" ? (
         <p className="text-xs text-slate-500">O produto será criado com custo conferido e preço sugerido. Revise margem, NCM e tributação depois no cadastro.</p>
       ) : null}

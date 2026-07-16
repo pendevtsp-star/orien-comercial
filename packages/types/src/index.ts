@@ -460,6 +460,8 @@ export const purchaseXmlCommitSchema = z
           quantity: z.coerce.number().positive(),
           unitCost: z.coerce.number().min(0),
           salePrice: z.coerce.number().min(0).optional(),
+          applyCost: z.boolean().default(false),
+          applySalePrice: z.boolean().default(false),
         }),
       )
       .min(1)
@@ -496,6 +498,8 @@ export const inboundFiscalItemResolutionSchema = z
     quantity: z.coerce.number().positive().optional(),
     unitCost: z.coerce.number().min(0).optional(),
     salePrice: z.coerce.number().min(0).optional(),
+    applyCost: z.boolean().default(false),
+    applySalePrice: z.boolean().default(false),
   })
   .refine((value) => value.action !== "link" || Boolean(value.productId), {
     message: "Selecione o produto para vincular este item.",
