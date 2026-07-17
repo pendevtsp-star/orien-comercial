@@ -28,6 +28,9 @@ export default function UpdatesPage() {
       const result = await apiFetch<{ data: ReleaseNote[]; unread: number }>("/updates");
       setNotes(result.data);
       setUnread(result.unread);
+      window.dispatchEvent(
+        new CustomEvent("sgc:updates-changed", { detail: { unread: result.unread } }),
+      );
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível carregar as novidades.");
@@ -47,7 +50,11 @@ export default function UpdatesPage() {
         note.id === id ? { ...note, readAt: new Date().toISOString() } : note,
       ),
     );
-    setUnread((current) => Math.max(0, current - 1));
+    setUnread((current) => {
+      const next = Math.max(0, current - 1);
+      window.dispatchEvent(new CustomEvent("sgc:updates-changed", { detail: { unread: next } }));
+      return next;
+    });
   }
 
   async function markAllRead() {
@@ -55,6 +62,7 @@ export default function UpdatesPage() {
     const readAt = new Date().toISOString();
     setNotes((current) => current.map((note) => ({ ...note, readAt: note.readAt ?? readAt })));
     setUnread(0);
+    window.dispatchEvent(new CustomEvent("sgc:updates-changed", { detail: { unread: 0 } }));
   }
 
   return (
@@ -80,22 +88,22 @@ export default function UpdatesPage() {
           {error}
         </p>
       ) : null}
-      <Card className="border-[var(--brand-border)] bg-[var(--brand-primary)] text-white">
+      <Card className="orien-product-communication border-[var(--brand-border)]">
         <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--brand-accent)]">
+            <p className="orien-product-communication-eyebrow text-xs font-semibold uppercase tracking-[0.18em]">
               Comunicação do produto
             </p>
-            <h2 className="mt-2 text-2xl font-semibold">
+            <h2 className="orien-product-communication-title mt-2 text-2xl font-semibold">
               {unread ? `${unread} atualização(ões) aguardando leitura` : "Você está em dia"}
             </h2>
-            <p className="mt-2 text-sm text-white/72">
+            <p className="orien-product-communication-copy mt-2 text-sm">
               Avisos operacionais continuam separados das novidades do sistema.
             </p>
           </div>
           <Link
             href="/alerts"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-white/20 px-4 text-sm font-medium text-white hover:bg-white/10"
+            className="orien-product-communication-link inline-flex h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium"
           >
             <BellRing size={16} /> Ver alertas operacionais
           </Link>

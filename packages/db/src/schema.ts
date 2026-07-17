@@ -422,6 +422,9 @@ export const releaseNotes = pgTable("release_notes", {
   summary: text("summary").notNull(),
   changes: text("changes").array().notNull().default([]),
   audienceRoles: text("audience_roles").array().notNull().default([]),
+  priority: varchar("priority", { length: 16 }).notNull().default("normal"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  isPinned: boolean("is_pinned").notNull().default(false),
   publishedAt: timestamp("published_at", { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

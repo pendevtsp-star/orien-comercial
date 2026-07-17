@@ -189,7 +189,9 @@
   display: none !important;
 }
 :root:not([data-dashboard-widgets~="role-focus"]) [data-dashboard-widget="role-focus"],
-:root:not([data-dashboard-widgets~="health"]) [data-dashboard-widget="health"] { display: none !important; }
+:root:not([data-dashboard-widgets~="health"]) [data-dashboard-widget="health"] {
+  display: none !important;
+}
 
 html,
 body {
@@ -326,4 +328,30 @@ h3,
 
 .orien-sidebar-scroll::-webkit-scrollbar-thumb:hover {
   background: rgba(191, 211, 239, 0.82);
+}
+
+.orien-product-communication {
+  background: var(--brand-primary) !important;
+  color: #fff !important;
+}
+
+.orien-product-communication .orien-product-communication-eyebrow {
+  color: var(--brand-accent) !important;
+}
+
+.orien-product-communication .orien-product-communication-title {
+  color: #fff !important;
+}
+
+.orien-product-communication .orien-product-communication-copy {
+  color: rgb(255 255 255 / 0.78) !important;
+}
+
+.orien-product-communication .orien-product-communication-link {
+  border: 1px solid rgb(255 255 255 / 0.28);
+  color: #fff !important;
+}
+
+.orien-product-communication .orien-product-communication-link:hover {
+  background: rgb(255 255 255 / 0.12);
 }

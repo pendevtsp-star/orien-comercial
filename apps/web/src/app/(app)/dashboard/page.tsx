@@ -11,6 +11,7 @@ import {
   CircleDollarSign,
   ShoppingCart,
   UsersRound,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -42,7 +43,12 @@ interface Summary {
     stockTurnover: number;
     overdueReceivables: number;
     stockoutRisk: number;
-    purchaseSuggestions: Array<{ name: string; quantity: string; minStock: string; suggestedQuantity: string }>;
+    purchaseSuggestions: Array<{
+      name: string;
+      quantity: string;
+      minStock: string;
+      suggestedQuantity: string;
+    }>;
   };
   salesHistory: Array<{ date: string; total: string }>;
   branchGoals: Array<{ branchId: string; name: string; target: string; sales: string }>;
@@ -69,7 +75,13 @@ interface AbcItem {
   suggestion: string;
 }
 
-type ChecklistItem = { key: string; label: string; done: boolean; autoDone?: boolean; href: string };
+type ChecklistItem = {
+  key: string;
+  label: string;
+  done: boolean;
+  autoDone?: boolean;
+  href: string;
+};
 
 const onboardingFallback: ChecklistItem[] = [
   { key: "branch", label: "Cadastrar loja", done: false, href: "/branches" },
@@ -84,7 +96,13 @@ const cards = [
   { key: "branches", label: "Lojas ativas", icon: Building2, tone: "secondary", href: "/branches" },
   { key: "products", label: "Produtos", icon: Boxes, tone: "primary", href: "/products" },
   { key: "customers", label: "Clientes", icon: UsersRound, tone: "highlight", href: "/customers" },
-  { key: "lowStockProducts", label: "Alerta de estoque", icon: AlertCircle, tone: "accent", href: "/stock" },
+  {
+    key: "lowStockProducts",
+    label: "Alerta de estoque",
+    icon: AlertCircle,
+    tone: "accent",
+    href: "/stock",
+  },
 ] as const;
 
 export default function DashboardPage() {
@@ -171,14 +189,28 @@ export default function DashboardPage() {
   return (
     <div className="grid gap-6">
       {showSetupWizard ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4">
-          <section className="w-full max-w-2xl rounded-2xl border border-[var(--brand-border)] bg-white p-6 shadow-2xl">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div
+          className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/45 p-3 sm:grid sm:place-items-center sm:p-4"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setShowSetupWizard(false);
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="onboarding-title"
+            className="my-auto max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl overflow-y-auto rounded-2xl border border-[var(--brand-border)] bg-white p-4 shadow-2xl sm:p-6"
+          >
+            <div className="sticky top-0 z-10 -mx-4 -mt-4 flex flex-col gap-3 border-b border-[var(--brand-border)] bg-white px-4 py-4 sm:-mx-6 sm:-mt-6 sm:flex-row sm:items-start sm:justify-between sm:px-6 sm:py-5">
               <div>
                 <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">
                   Primeiro acesso
                 </p>
-                <h2 className="mt-2 text-2xl font-semibold text-[var(--brand-primary)]">
+                <h2
+                  id="onboarding-title"
+                  className="mt-2 text-2xl font-semibold text-[var(--brand-primary)]"
+                >
                   Vamos deixar a operação pronta para vender.
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
@@ -186,7 +218,17 @@ export default function DashboardPage() {
                   roteiro evita loja sem produto, produto sem estoque ou venda sem operador.
                 </p>
               </div>
-              <Badge>{status?.progressPercent ?? 0}% concluído</Badge>
+              <div className="flex items-center gap-2">
+                <Badge>{status?.progressPercent ?? 0}% concluído</Badge>
+                <button
+                  type="button"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-[var(--brand-border)] text-[var(--brand-primary)] hover:bg-[var(--brand-surface)]"
+                  aria-label="Fechar checklist de implantação"
+                  onClick={() => setShowSetupWizard(false)}
+                >
+                  <X size={18} />
+                </button>
+              </div>
             </div>
             <div className="mt-5 grid gap-2">
               {(status?.checklist?.length ? status.checklist : onboardingFallback).map((item) => (
@@ -197,7 +239,11 @@ export default function DashboardPage() {
                   <div className="min-w-0">
                     <span className="font-medium text-[var(--brand-primary)]">{item.label}</span>
                     <p className="text-xs text-slate-500">
-                      {item.autoDone ? "Concluído pelos dados do tenant." : item.done ? "Marcado como concluído." : "Pendente para operação real."}
+                      {item.autoDone
+                        ? "Concluído pelos dados do tenant."
+                        : item.done
+                          ? "Marcado como concluído."
+                          : "Pendente para operação real."}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -221,7 +267,7 @@ export default function DashboardPage() {
                 </div>
               ))}
             </div>
-            <div className="mt-5 flex flex-wrap justify-end gap-2">
+            <div className="sticky bottom-0 -mx-4 -mb-4 mt-5 flex flex-wrap justify-end gap-2 border-t border-[var(--brand-border)] bg-white px-4 py-4 sm:-mx-6 sm:-mb-6 sm:px-6 sm:py-5">
               <Button
                 variant="secondary"
                 onClick={() => {
@@ -280,11 +326,7 @@ export default function DashboardPage() {
       ) : null}
 
       <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-        <Card
-          data-dashboard-widget="executive"
-          variant="brand"
-          className="overflow-hidden"
-        >
+        <Card data-dashboard-widget="executive" variant="brand" className="overflow-hidden">
           <CardContent className="relative grid gap-5 p-5 lg:grid-cols-[1.2fr_0.8fr]">
             <div className="relative">
               <Badge className="border-white/10 bg-white/10 text-white">Leitura executiva</Badge>
@@ -405,9 +447,7 @@ export default function DashboardPage() {
                     className={item.done ? "text-emerald-700" : "text-slate-400"}
                   />
                   <span className="min-w-0 flex-1">{item.label}</span>
-                  <span className="text-xs font-medium">
-                    {item.done ? "feito" : "pendente"}
-                  </span>
+                  <span className="text-xs font-medium">{item.done ? "feito" : "pendente"}</span>
                 </Link>
               ))}
             </div>
@@ -416,7 +456,8 @@ export default function DashboardPage() {
                 href={(status?.nextAction ?? onboardingFallback.find((item) => !item.done))!.href}
                 className="inline-flex min-h-10 w-fit items-center rounded-md bg-[var(--brand-primary)] px-4 py-2 text-sm font-medium text-white"
               >
-                Próxima ação: {(status?.nextAction ?? onboardingFallback.find((item) => !item.done))!.label}
+                Próxima ação:{" "}
+                {(status?.nextAction ?? onboardingFallback.find((item) => !item.done))!.label}
               </Link>
             ) : null}
           </CardContent>
@@ -433,14 +474,33 @@ export default function DashboardPage() {
             </div>
             <div className="grid gap-2">
               {abc.slice(0, 4).map((item) => (
-                <div key={item.id} className="flex items-center justify-between gap-3 rounded-md border border-[var(--brand-border)] px-3 py-2 text-sm">
-                  <span className="min-w-0 truncate font-medium text-[var(--brand-primary)]">{item.name}</span>
-                  <span className="flex shrink-0 items-center gap-2"><Badge>Classe {item.class}</Badge><strong>{Number(item.revenue).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong></span>
+                <div
+                  key={item.id}
+                  className="flex items-center justify-between gap-3 rounded-md border border-[var(--brand-border)] px-3 py-2 text-sm"
+                >
+                  <span className="min-w-0 truncate font-medium text-[var(--brand-primary)]">
+                    {item.name}
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <Badge>Classe {item.class}</Badge>
+                    <strong>
+                      {Number(item.revenue).toLocaleString("pt-BR", {
+                        style: "currency",
+                        currency: "BRL",
+                      })}
+                    </strong>
+                  </span>
                 </div>
               ))}
-              {!abc.length ? <p className="text-sm text-slate-500">Registre vendas para classificar os produtos por relevância.</p> : null}
+              {!abc.length ? (
+                <p className="text-sm text-slate-500">
+                  Registre vendas para classificar os produtos por relevância.
+                </p>
+              ) : null}
             </div>
-            <Link href="/stock" className="text-sm font-medium text-[var(--brand-secondary)]">Abrir análise de estoque</Link>
+            <Link href="/stock" className="text-sm font-medium text-[var(--brand-secondary)]">
+              Abrir análise de estoque
+            </Link>
           </CardContent>
         </Card>
       </section>
@@ -525,32 +585,172 @@ export default function DashboardPage() {
         <Card data-dashboard-widget="role-focus">
           <CardContent className="grid gap-4">
             <div>
-              <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Seu foco hoje</p>
-              <h2 className="mt-2 text-lg font-semibold text-[var(--brand-primary)]">{roleFocus(summary?.roleFocus)}</h2>
+              <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">
+                Seu foco hoje
+              </p>
+              <h2 className="mt-2 text-lg font-semibold text-[var(--brand-primary)]">
+                {roleFocus(summary?.roleFocus)}
+              </h2>
               <p className="mt-1 text-sm text-slate-500">{roleDescription(summary?.roleFocus)}</p>
             </div>
-            {summary?.roleFocus === "seller" || summary?.roleFocus === "sales" ? <Metric label="Comissão no período" value={summary.sellerCommission} money loading={loading} /> : null}
-            {summary?.roleFocus === "manager" ? <Metric label="Estoque crítico na loja" value={summary.health.stockoutRisk} loading={loading} /> : null}
-            {summary?.roleFocus === "owner" || summary?.roleFocus === "admin" ? <Metric label="Margem bruta no período" value={summary.health.grossMargin} money loading={loading} /> : null}
+            {summary?.roleFocus === "seller" || summary?.roleFocus === "sales" ? (
+              <Metric
+                label="Comissão no período"
+                value={summary.sellerCommission}
+                money
+                loading={loading}
+              />
+            ) : null}
+            {summary?.roleFocus === "manager" ? (
+              <Metric
+                label="Estoque crítico na loja"
+                value={summary.health.stockoutRisk}
+                loading={loading}
+              />
+            ) : null}
+            {summary?.roleFocus === "owner" || summary?.roleFocus === "admin" ? (
+              <Metric
+                label="Margem bruta no período"
+                value={summary.health.grossMargin}
+                money
+                loading={loading}
+              />
+            ) : null}
           </CardContent>
         </Card>
         <Card data-dashboard-widget="health">
           <CardContent className="grid gap-4">
-            <div><p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Saúde operacional</p><h2 className="mt-2 text-lg font-semibold text-[var(--brand-primary)]">Risco e sugestão de compra</h2></div>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">
+                Saúde operacional
+              </p>
+              <h2 className="mt-2 text-lg font-semibold text-[var(--brand-primary)]">
+                Risco e sugestão de compra
+              </h2>
+            </div>
             <div className="grid gap-3 sm:grid-cols-3">
-              <Metric label="Margem" value={summary?.health.grossMargin ?? 0} money loading={loading} />
-              <Metric label="Giro de estoque" value={`${(summary?.health.stockTurnover ?? 0).toFixed(2)}x`} loading={loading} />
-              <Metric label="Inadimplência" value={summary?.health.overdueReceivables ?? 0} money loading={loading} />
+              <Metric
+                label="Margem"
+                value={summary?.health.grossMargin ?? 0}
+                money
+                loading={loading}
+              />
+              <Metric
+                label="Giro de estoque"
+                value={`${(summary?.health.stockTurnover ?? 0).toFixed(2)}x`}
+                loading={loading}
+              />
+              <Metric
+                label="Inadimplência"
+                value={summary?.health.overdueReceivables ?? 0}
+                money
+                loading={loading}
+              />
             </div>
             <div className="grid divide-y divide-[var(--brand-border)] rounded-md border border-[var(--brand-border)]">
-              {summary?.health.purchaseSuggestions.length ? summary.health.purchaseSuggestions.map((item) => <div className="flex items-center justify-between gap-3 p-3 text-sm" key={item.name}><span className="truncate font-medium">{item.name}</span><span className="shrink-0 text-slate-500">Sugerir {Number(item.suggestedQuantity).toLocaleString("pt-BR")}</span></div>) : <p className="p-3 text-sm text-slate-500">Nenhum produto em ponto de reposição.</p>}
+              {summary?.health.purchaseSuggestions.length ? (
+                summary.health.purchaseSuggestions.map((item) => (
+                  <div
+                    className="flex items-center justify-between gap-3 p-3 text-sm"
+                    key={item.name}
+                  >
+                    <span className="truncate font-medium">{item.name}</span>
+                    <span className="shrink-0 text-slate-500">
+                      Sugerir {Number(item.suggestedQuantity).toLocaleString("pt-BR")}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <p className="p-3 text-sm text-slate-500">Nenhum produto em ponto de reposição.</p>
+              )}
             </div>
           </CardContent>
         </Card>
       </section>
-      <section data-dashboard-widget="performance" className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-        <Card><CardContent><div><p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Histórico do período</p><h2 className="mt-2 text-lg font-semibold text-[var(--brand-primary)]">Vendas dia a dia</h2></div><div className="mt-5 flex h-40 items-end gap-1.5">{(summary?.salesHistory ?? []).map((point) => { const max=Math.max(1,...(summary?.salesHistory ?? []).map((item)=>Number(item.total))); const height=Math.max(4,(Number(point.total)/max)*100); return <div key={point.date} title={`${new Date(`${point.date}T00:00:00`).toLocaleDateString("pt-BR")}: ${Number(point.total).toLocaleString("pt-BR",{style:"currency",currency:"BRL"})}`} className="group flex min-w-0 flex-1 flex-col justify-end"><div className="rounded-t bg-[var(--brand-highlight)] transition group-hover:bg-[var(--brand-accent)]" style={{height:`${height}%`}}/><span className="mt-2 truncate text-center text-[10px] text-slate-500">{point.date.slice(8)}</span></div>})}</div></CardContent></Card>
-        <Card><CardContent><p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Metas por loja</p><h2 className="mt-2 text-lg font-semibold text-[var(--brand-primary)]">Acompanhamento das filiais</h2><div className="mt-4 grid gap-3">{(summary?.branchGoals ?? []).map((goal)=>{const percent=Number(goal.target)>0?Math.min(100,(Number(goal.sales)/Number(goal.target))*100):0;return <div key={goal.branchId}><div className="flex justify-between gap-2 text-sm"><span className="truncate">{goal.name}</span><span>{Number(goal.sales).toLocaleString("pt-BR",{style:"currency",currency:"BRL"})}</span></div><div className="mt-1 h-2 overflow-hidden rounded-full bg-[var(--brand-surface)]"><div className="h-full rounded-full bg-[var(--brand-highlight)]" style={{width:`${percent}%`}}/></div><p className="mt-1 text-xs text-slate-500">Meta {Number(goal.target).toLocaleString("pt-BR",{style:"currency",currency:"BRL"})}</p></div>})}</div></CardContent></Card>
+      <section
+        data-dashboard-widget="performance"
+        className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]"
+      >
+        <Card>
+          <CardContent>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">
+                Histórico do período
+              </p>
+              <h2 className="mt-2 text-lg font-semibold text-[var(--brand-primary)]">
+                Vendas dia a dia
+              </h2>
+            </div>
+            <div className="mt-5 flex h-40 items-end gap-1.5">
+              {(summary?.salesHistory ?? []).map((point) => {
+                const max = Math.max(
+                  1,
+                  ...(summary?.salesHistory ?? []).map((item) => Number(item.total)),
+                );
+                const height = Math.max(4, (Number(point.total) / max) * 100);
+                return (
+                  <div
+                    key={point.date}
+                    title={`${new Date(`${point.date}T00:00:00`).toLocaleDateString("pt-BR")}: ${Number(point.total).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`}
+                    className="group flex min-w-0 flex-1 flex-col justify-end"
+                  >
+                    <div
+                      className="rounded-t bg-[var(--brand-highlight)] transition group-hover:bg-[var(--brand-accent)]"
+                      style={{ height: `${height}%` }}
+                    />
+                    <span className="mt-2 truncate text-center text-[10px] text-slate-500">
+                      {point.date.slice(8)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent>
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">
+              Metas por loja
+            </p>
+            <h2 className="mt-2 text-lg font-semibold text-[var(--brand-primary)]">
+              Acompanhamento das filiais
+            </h2>
+            <div className="mt-4 grid gap-3">
+              {(summary?.branchGoals ?? []).map((goal) => {
+                const percent =
+                  Number(goal.target) > 0
+                    ? Math.min(100, (Number(goal.sales) / Number(goal.target)) * 100)
+                    : 0;
+                return (
+                  <div key={goal.branchId}>
+                    <div className="flex justify-between gap-2 text-sm">
+                      <span className="truncate">{goal.name}</span>
+                      <span>
+                        {Number(goal.sales).toLocaleString("pt-BR", {
+                          style: "currency",
+                          currency: "BRL",
+                        })}
+                      </span>
+                    </div>
+                    <div className="mt-1 h-2 overflow-hidden rounded-full bg-[var(--brand-surface)]">
+                      <div
+                        className="h-full rounded-full bg-[var(--brand-highlight)]"
+                        style={{ width: `${percent}%` }}
+                      />
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Meta{" "}
+                      {Number(goal.target).toLocaleString("pt-BR", {
+                        style: "currency",
+                        currency: "BRL",
+                      })}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
       </section>
       <section data-dashboard-widget="period" className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card>
@@ -709,7 +909,9 @@ function roleFocus(role?: string) {
 }
 
 function roleDescription(role?: string) {
-  if (role === "seller" || role === "sales") return "Acompanhe seu ritmo de vendas, ticket e comissão do período.";
-  if (role === "manager") return "Priorize divergências de caixa, reposição e operação da filial autorizada.";
+  if (role === "seller" || role === "sales")
+    return "Acompanhe seu ritmo de vendas, ticket e comissão do período.";
+  if (role === "manager")
+    return "Priorize divergências de caixa, reposição e operação da filial autorizada.";
   return "Leia margem, inadimplência, giro e reposição para orientar decisões de gestão.";
 }

@@ -1,4 +1,10 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import {
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Inject,
+  Injectable,
+} from "@nestjs/common";
 import { DatabaseService } from "../modules/database/database.service";
 import type { AuthenticatedRequest, TenantContext } from "./request-context";
 
@@ -38,7 +44,7 @@ export class TenantContextGuard implements CanActivate {
       GROUP BY m.id, r.slug
       LIMIT 1
       `,
-      [user.userId, tenantId]
+      [user.userId, tenantId],
     );
 
     const membership = result.rows[0];
@@ -46,9 +52,25 @@ export class TenantContextGuard implements CanActivate {
       throw new ForbiddenException("Usuario nao pertence ao tenant informado.");
     }
 
+    const requestedBranchId = readBranchId(request);
+    if (requestedBranchId && membership.branchId && requestedBranchId !== membership.branchId) {
+      throw new ForbiddenException("Usuario nao possui acesso a filial informada.");
+    }
+
+    if (requestedBranchId && !membership.branchId) {
+      const branch = await this.database.pool.query<{ id: string }>(
+        "SELECT id FROM branches WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
+        [requestedBranchId, tenantId],
+      );
+      if (!branch.rows[0]) {
+        throw new ForbiddenException("Filial informada nao pertence ao tenant ativo.");
+      }
+    }
+
     request.tenant = {
       ...membership,
-      userId: user.userId
+      branchId: membership.branchId ?? requestedBranchId ?? null,
+      userId: user.userId,
     };
     return true;
   }
@@ -56,5 +78,10 @@ export class TenantContextGuard implements CanActivate {
 
 function readTenantId(request: AuthenticatedRequest): string | undefined {
   const header = request.headers["x-tenant-id"];
+  return Array.isArray(header) ? header[0] : header;
+}
+
+function readBranchId(request: AuthenticatedRequest): string | undefined {
+  const header = request.headers["x-branch-id"];
   return Array.isArray(header) ? header[0] : header;
 }

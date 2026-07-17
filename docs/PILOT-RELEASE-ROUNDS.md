@@ -38,3 +38,11 @@ Cada rodada deve ser concluída localmente, validada por lint, testes, build, mi
 
 - Indicadores fiscais, margem líquida, rejeições, ruptura e comparação entre lojas.
 - Relatórios agendados e alertas acionáveis.
+
+## Rodada F: visão multi-loja e rotina operacional
+
+- Comparativo por filial com vendas do dia, caixa, estoque crítico, recebíveis, operadores e margem mensal.
+- Seleção global de filial preservada no painel para proprietários e gestores com escopo global.
+- PDV com leitura do turno, movimentações, sincronização pendente e comprovantes no mesmo fluxo.
+- Sugestões de reposição com quantidade, investimento estimado e margem para apoiar decisões de compra.
+- Atualizações do produto com expiração automática, prioridade e leitura sincronizada no cabeçalho.

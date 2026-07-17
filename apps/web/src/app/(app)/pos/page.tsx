@@ -27,6 +27,7 @@ import {
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { apiFetch, openApiDocument } from "../../../lib/api";
+import { OperationalFigure } from "./operational-figure";
 
 interface ListResponse<T> {
   data: T[];
@@ -77,7 +78,13 @@ interface CashHistory {
 }
 interface CashSummary {
   payments: Array<{ method: string; amount: string }>;
-  movements: Array<{ id: string; type: "supply" | "withdrawal"; amount: string; reason: string; createdAt: string }>;
+  movements: Array<{
+    id: string;
+    type: "supply" | "withdrawal";
+    amount: string;
+    reason: string;
+    createdAt: string;
+  }>;
 }
 interface CashCloseResult {
   id: string;
@@ -269,6 +276,19 @@ export default function PosPage() {
   const typedPayment = Number(paymentAmount || 0);
   const estimatedChange =
     paymentMethod === "cash" ? Math.max(0, typedPayment - remainingPayment) : 0;
+  const cashPaymentsTotal = useMemo(
+    () => (cashSummary?.payments ?? []).reduce((sum, item) => sum + Number(item.amount || 0), 0),
+    [cashSummary],
+  );
+  const cashMovementsTotal = useMemo(
+    () =>
+      (cashSummary?.movements ?? []).reduce(
+        (sum, item) =>
+          sum + (item.type === "supply" ? Number(item.amount || 0) : -Number(item.amount || 0)),
+        0,
+      ),
+    [cashSummary],
+  );
   const branchOptions = branches.map((branch) => ({ label: branch.name, value: branch.id }));
   const customerOptions = [
     { label: "Consumidor final", value: "" },
@@ -386,7 +406,10 @@ export default function PosPage() {
     try {
       const result = await apiFetch<CashCloseResult>(`/cash-registers/${cash.id}/close`, {
         method: "POST",
-        body: JSON.stringify({ closingAmount: Number(closingAmount), notes: closingNotes || undefined }),
+        body: JSON.stringify({
+          closingAmount: Number(closingAmount),
+          notes: closingNotes || undefined,
+        }),
       });
       const history = await apiFetch<{ data: CashHistory[] }>(
         `/cash-registers?branchId=${branchId}`,
@@ -421,7 +444,11 @@ export default function PosPage() {
     try {
       await apiFetch(`/cash-registers/${cash.id}/movements`, {
         method: "POST",
-        body: JSON.stringify({ type, amount: Number(movementAmount), reason: movementReason.trim() }),
+        body: JSON.stringify({
+          type,
+          amount: Number(movementAmount),
+          reason: movementReason.trim(),
+        }),
       });
       setCashSummary(await apiFetch<CashSummary>(`/cash-registers/${cash.id}/summary`));
       setMovementAmount("");
@@ -461,7 +488,9 @@ export default function PosPage() {
   function changeItemQuantity(productId: string, quantity: number) {
     setCart((current) =>
       current.map((item) =>
-        item.productId === productId ? { ...item, quantity: Math.max(1, Number(quantity) || 1) } : item,
+        item.productId === productId
+          ? { ...item, quantity: Math.max(1, Number(quantity) || 1) }
+          : item,
       ),
     );
   }
@@ -573,7 +602,8 @@ export default function PosPage() {
           setNotice(`Crédito de fidelidade lançado para ${result.loyalty.rewardName}.`);
         else if (result.loyalty?.type === "bonus_product")
           setNotice(`Brinde ${result.loyalty.rewardName} incluído na venda.`);
-        else if (saleId) setNotice("Venda concluída com sucesso. O operador já pode iniciar a próxima.");
+        else if (saleId)
+          setNotice("Venda concluída com sucesso. O operador já pode iniciar a próxima.");
         if (saleId && printAfterSale && printing?.receiptMode !== "none") {
           const shouldOpenPrint = printing?.receiptMode === "thermal" || printing?.silentPrint;
           const receiptPath =
@@ -601,7 +631,9 @@ export default function PosPage() {
   }
 
   return (
-    <div className={`grid gap-4 ${productionMode ? "min-h-screen bg-[var(--brand-bg)] p-3 md:p-5" : ""}`}>
+    <div
+      className={`grid gap-4 ${productionMode ? "min-h-screen bg-[var(--brand-bg)] p-3 md:p-5" : ""}`}
+    >
       <PageHeader
         title="PDV rápido"
         description="Scanner sempre disponível, atalhos de pagamento e controle de abertura e fechamento do caixa."
@@ -675,6 +707,42 @@ export default function PosPage() {
           </Badge>
         </div>
       </section>
+      {cash ? (
+        <section className="grid gap-3 rounded-md border border-[var(--brand-border)] bg-[var(--brand-surface)] p-3 sm:grid-cols-2 xl:grid-cols-4">
+          <OperationalFigure
+            label="Turno aberto"
+            value={new Date(cash.opened_at).toLocaleTimeString("pt-BR", {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+            detail="Caixa em operação"
+          />
+          <OperationalFigure
+            label="Recebido no turno"
+            value={cashPaymentsTotal.toLocaleString("pt-BR", {
+              style: "currency",
+              currency: "BRL",
+            })}
+            detail="Formas já registradas"
+          />
+          <OperationalFigure
+            label="Movimentações"
+            value={cashMovementsTotal.toLocaleString("pt-BR", {
+              style: "currency",
+              currency: "BRL",
+            })}
+            detail="Suprimentos menos sangrias"
+          />
+          <OperationalFigure
+            label="Sincronização"
+            value={isOnline ? "Online" : "Em fila"}
+            detail={
+              pendingSync ? `${pendingSync} venda(s) aguardando envio` : "Sem pendências de envio"
+            }
+            accent={!isOnline || pendingSync > 0}
+          />
+        </section>
+      ) : null}
       {error ? (
         <p className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
           {error}
@@ -689,13 +757,21 @@ export default function PosPage() {
         <section className="grid gap-3 rounded-md border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
           <div>
             <strong>Última venda finalizada</strong>
-            <p className="mt-1 text-emerald-800">Comprovante e reimpressão ficam disponíveis sem tirar o operador do fluxo.</p>
+            <p className="mt-1 text-emerald-800">
+              Comprovante e reimpressão ficam disponíveis sem tirar o operador do fluxo.
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" onClick={() => void openApiDocument(`/sales/${lastSaleId}/receipt`, true)}>
+            <Button
+              variant="secondary"
+              onClick={() => void openApiDocument(`/sales/${lastSaleId}/receipt`, true)}
+            >
               Térmico
             </Button>
-            <Button variant="secondary" onClick={() => void openApiDocument(`/sales/${lastSaleId}/document`, false)}>
+            <Button
+              variant="secondary"
+              onClick={() => void openApiDocument(`/sales/${lastSaleId}/document`, false)}
+            >
               Conferência
             </Button>
             <Button variant="ghost" onClick={() => setLastSaleId("")}>
@@ -709,10 +785,27 @@ export default function PosPage() {
           <div>
             <strong>Conferência do caixa concluída</strong>
             <p className="mt-1 text-emerald-800">
-              Contado {Number(lastCashClose.closingAmount).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} · esperado {Number(lastCashClose.expectedAmount).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} · diferença {Number(lastCashClose.differenceAmount).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}.
+              Contado{" "}
+              {Number(lastCashClose.closingAmount).toLocaleString("pt-BR", {
+                style: "currency",
+                currency: "BRL",
+              })}{" "}
+              · esperado{" "}
+              {Number(lastCashClose.expectedAmount).toLocaleString("pt-BR", {
+                style: "currency",
+                currency: "BRL",
+              })}{" "}
+              · diferença{" "}
+              {Number(lastCashClose.differenceAmount).toLocaleString("pt-BR", {
+                style: "currency",
+                currency: "BRL",
+              })}
+              .
             </p>
           </div>
-          <Button variant="ghost" onClick={() => setLastCashClose(null)}>Ocultar resumo</Button>
+          <Button variant="ghost" onClick={() => setLastCashClose(null)}>
+            Ocultar resumo
+          </Button>
         </section>
       ) : null}
       <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
@@ -846,13 +939,21 @@ export default function PosPage() {
                       </p>
                       <div className="mt-2 flex flex-wrap gap-1">
                         {[1, 2, 3, 5, 10].map((quantity) => (
-                          <button key={quantity} type="button" className="rounded border border-[var(--brand-border)] px-2 py-1 text-xs text-slate-600 transition hover:bg-[var(--brand-surface)]" onClick={() => changeItemQuantity(item.productId, quantity)}>
+                          <button
+                            key={quantity}
+                            type="button"
+                            className="rounded border border-[var(--brand-border)] px-2 py-1 text-xs text-slate-600 transition hover:bg-[var(--brand-surface)]"
+                            onClick={() => changeItemQuantity(item.productId, quantity)}
+                          >
                             {quantity} un.
                           </button>
                         ))}
                       </div>
                     </div>
-                    <div className="flex items-center gap-1" aria-label={`Quantidade de ${item.name}`}>
+                    <div
+                      className="flex items-center gap-1"
+                      aria-label={`Quantidade de ${item.name}`}
+                    >
                       <button
                         type="button"
                         className="grid h-12 w-12 place-items-center rounded-md border border-[var(--brand-border)] bg-white text-[var(--brand-primary)] transition hover:bg-[var(--brand-surface)]"
@@ -1135,18 +1236,29 @@ export default function PosPage() {
       </div>
       {cash ? (
         <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-          <Card id="cash-closing-panel" className={showClosingPanel ? "ring-2 ring-[var(--brand-accent)]" : ""}>
+          <Card
+            id="cash-closing-panel"
+            className={showClosingPanel ? "ring-2 ring-[var(--brand-accent)]" : ""}
+          >
             <CardContent className="grid gap-4">
               <div>
-                <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Operação de caixa</p>
-                <h2 className="mt-1 text-lg font-semibold text-[var(--brand-primary)]">Sangria, suprimento e conferência cega</h2>
-                <p className="mt-1 text-sm text-slate-500">Toda movimentação fica registrada com valor, motivo, operador e horário.</p>
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">
+                  Operação de caixa
+                </p>
+                <h2 className="mt-1 text-lg font-semibold text-[var(--brand-primary)]">
+                  Sangria, suprimento e conferência cega
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Toda movimentação fica registrada com valor, motivo, operador e horário.
+                </p>
               </div>
               <div className="grid gap-3 md:grid-cols-[180px_160px_minmax(0,1fr)_auto] md:items-end">
                 <Select
                   label="Tipo"
                   value={movementType}
-                  onChange={(event) => setMovementType(event.target.value as "supply" | "withdrawal")}
+                  onChange={(event) =>
+                    setMovementType(event.target.value as "supply" | "withdrawal")
+                  }
                   options={[
                     { label: "Suprimento", value: "supply" },
                     { label: "Sangria", value: "withdrawal" },
@@ -1166,34 +1278,66 @@ export default function PosPage() {
                   placeholder="Ex.: retirada para depósito"
                   onChange={(event) => setMovementReason(event.target.value)}
                 />
-                <Button onClick={() => void cashMovement()}>
-                  Registrar
-                </Button>
+                <Button onClick={() => void cashMovement()}>Registrar</Button>
               </div>
               <div className="grid gap-2">
                 {(cashSummary?.movements ?? []).slice(0, 4).map((movement) => (
-                  <div key={movement.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--brand-border)] px-3 py-2 text-sm">
-                    <span><Badge>{movement.type === "supply" ? "Suprimento" : "Sangria"}</Badge> {movement.reason}</span>
-                    <strong>{Number(movement.amount).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong>
+                  <div
+                    key={movement.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--brand-border)] px-3 py-2 text-sm"
+                  >
+                    <span>
+                      <Badge>{movement.type === "supply" ? "Suprimento" : "Sangria"}</Badge>{" "}
+                      {movement.reason}
+                    </span>
+                    <strong>
+                      {Number(movement.amount).toLocaleString("pt-BR", {
+                        style: "currency",
+                        currency: "BRL",
+                      })}
+                    </strong>
                   </div>
                 ))}
-                {!cashSummary?.movements?.length ? <p className="text-sm text-slate-500">Nenhuma movimentação manual neste caixa.</p> : null}
+                {!cashSummary?.movements?.length ? (
+                  <p className="text-sm text-slate-500">Nenhuma movimentação manual neste caixa.</p>
+                ) : null}
               </div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="grid gap-4">
               <div>
-                <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Fechamento do turno</p>
-                <h2 className="mt-1 text-lg font-semibold text-[var(--brand-primary)]">Conferência cega do caixa</h2>
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">
+                  Fechamento do turno
+                </p>
+                <h2 className="mt-1 text-lg font-semibold text-[var(--brand-primary)]">
+                  Conferência cega do caixa
+                </h2>
               </div>
               <div className="rounded-md border border-dashed border-[var(--brand-border)] bg-[var(--brand-surface)] p-3 text-sm text-slate-600">
-                Faça a contagem sem consultar os valores esperados. O sistema compara e revela a diferença somente depois de confirmar o fechamento.
+                Faça a contagem sem consultar os valores esperados. O sistema compara e revela a
+                diferença somente depois de confirmar o fechamento.
               </div>
               <div className="grid gap-3 md:grid-cols-[180px_minmax(0,1fr)_auto] md:items-end">
-                <Input id="cash-closing-amount" label="Valor contado" type="number" step="0.01" value={closingAmount} onChange={(event) => setClosingAmount(event.target.value)} />
-                <Input label="Observação" value={closingNotes} placeholder="Opcional, mas recomendado se houver diferença" onChange={(event) => setClosingNotes(event.target.value)} />
-                <Button variant="secondary" onClick={() => void closeCash()} disabled={!showClosingPanel}>
+                <Input
+                  id="cash-closing-amount"
+                  label="Valor contado"
+                  type="number"
+                  step="0.01"
+                  value={closingAmount}
+                  onChange={(event) => setClosingAmount(event.target.value)}
+                />
+                <Input
+                  label="Observação"
+                  value={closingNotes}
+                  placeholder="Opcional, mas recomendado se houver diferença"
+                  onChange={(event) => setClosingNotes(event.target.value)}
+                />
+                <Button
+                  variant="secondary"
+                  onClick={() => void closeCash()}
+                  disabled={!showClosingPanel}
+                >
                   Fechar caixa
                 </Button>
               </div>
@@ -1201,91 +1345,93 @@ export default function PosPage() {
           </Card>
         </section>
       ) : null}
-      {!productionMode ? <Card>
-        <CardContent className="grid gap-3">
-          <h2 className="font-semibold">Histórico de caixas</h2>
-          <DataTable
-            rows={cashHistory}
-            empty="Nenhum caixa registrado nesta loja."
-            columns={[
-              {
-                key: "opened",
-                header: "Abertura",
-                render: (row) => new Date(row.openedAt).toLocaleString("pt-BR"),
-              },
-              {
-                key: "status",
-                header: "Status",
-                render: (row) => <Badge>{row.status === "open" ? "Aberto" : "Fechado"}</Badge>,
-              },
-              {
-                key: "expected",
-                header: "Esperado",
-                render: (row) =>
-                  Number(row.expectedAmount).toLocaleString("pt-BR", {
-                    style: "currency",
-                    currency: "BRL",
-                  }),
-              },
-              {
-                key: "closing",
-                header: "Contado",
-                render: (row) =>
-                  row.closingAmount
-                    ? Number(row.closingAmount).toLocaleString("pt-BR", {
-                        style: "currency",
-                        currency: "BRL",
-                      })
-                    : "-",
-              },
-              {
-                key: "approval",
-                header: "Aprovacao",
-                render: (row) =>
-                  row.approvalStatus === "pending" ? (
-                    <Button
-                      variant="secondary"
-                      onClick={() =>
-                        void apiFetch(`/cash-registers/${row.id}/approve`, {
-                          method: "POST",
-                          body: "{}",
-                        }).then(() =>
-                          setCashHistory((current) =>
-                            current.map((item) =>
-                              item.id === row.id ? { ...item, approvalStatus: "approved" } : item,
-                            ),
-                          ),
-                        )
-                      }
-                    >
-                      Aprovar divergencia
-                    </Button>
-                  ) : (
-                    <Badge>{row.approvalStatus === "approved" ? "Aprovada" : "Regular"}</Badge>
-                  ),
-              },
-              {
-                key: "difference",
-                header: "Diferença",
-                render: (row) => (
-                  <span
-                    className={
-                      Number(row.differenceAmount ?? 0) !== 0
-                        ? "font-medium text-rose-600"
-                        : "text-slate-600"
-                    }
-                  >
-                    {Number(row.differenceAmount ?? 0).toLocaleString("pt-BR", {
+      {!productionMode ? (
+        <Card>
+          <CardContent className="grid gap-3">
+            <h2 className="font-semibold">Histórico de caixas</h2>
+            <DataTable
+              rows={cashHistory}
+              empty="Nenhum caixa registrado nesta loja."
+              columns={[
+                {
+                  key: "opened",
+                  header: "Abertura",
+                  render: (row) => new Date(row.openedAt).toLocaleString("pt-BR"),
+                },
+                {
+                  key: "status",
+                  header: "Status",
+                  render: (row) => <Badge>{row.status === "open" ? "Aberto" : "Fechado"}</Badge>,
+                },
+                {
+                  key: "expected",
+                  header: "Esperado",
+                  render: (row) =>
+                    Number(row.expectedAmount).toLocaleString("pt-BR", {
                       style: "currency",
                       currency: "BRL",
-                    })}
-                  </span>
-                ),
-              },
-            ]}
-          />
-        </CardContent>
-      </Card> : null}
+                    }),
+                },
+                {
+                  key: "closing",
+                  header: "Contado",
+                  render: (row) =>
+                    row.closingAmount
+                      ? Number(row.closingAmount).toLocaleString("pt-BR", {
+                          style: "currency",
+                          currency: "BRL",
+                        })
+                      : "-",
+                },
+                {
+                  key: "approval",
+                  header: "Aprovacao",
+                  render: (row) =>
+                    row.approvalStatus === "pending" ? (
+                      <Button
+                        variant="secondary"
+                        onClick={() =>
+                          void apiFetch(`/cash-registers/${row.id}/approve`, {
+                            method: "POST",
+                            body: "{}",
+                          }).then(() =>
+                            setCashHistory((current) =>
+                              current.map((item) =>
+                                item.id === row.id ? { ...item, approvalStatus: "approved" } : item,
+                              ),
+                            ),
+                          )
+                        }
+                      >
+                        Aprovar divergencia
+                      </Button>
+                    ) : (
+                      <Badge>{row.approvalStatus === "approved" ? "Aprovada" : "Regular"}</Badge>
+                    ),
+                },
+                {
+                  key: "difference",
+                  header: "Diferença",
+                  render: (row) => (
+                    <span
+                      className={
+                        Number(row.differenceAmount ?? 0) !== 0
+                          ? "font-medium text-rose-600"
+                          : "text-slate-600"
+                      }
+                    >
+                      {Number(row.differenceAmount ?? 0).toLocaleString("pt-BR", {
+                        style: "currency",
+                        currency: "BRL",
+                      })}
+                    </span>
+                  ),
+                },
+              ]}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }

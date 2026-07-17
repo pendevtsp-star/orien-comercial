@@ -42,8 +42,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-import { apiFetch, getTenantId, setTenantId } from "../lib/api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { apiFetch, getBranchScopeId, getTenantId, setBranchScopeId, setTenantId } from "../lib/api";
 import { applyPreferences, defaultPreferences, type UserPreferences } from "../lib/preferences";
 
 type NavigationItem = {
@@ -201,6 +201,16 @@ interface MeResponse {
   }>;
 }
 
+type BranchOption = { id: string; name: string };
+type UpdatePreview = {
+  id: string;
+  version: string;
+  title: string;
+  summary: string;
+  publishedAt: string;
+  readAt: string | null;
+};
+
 function roleLabel(slug?: string | null) {
   return (
     (
@@ -258,9 +268,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [me, setMe] = useState<MeResponse | null>(null);
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [preferences, setPreferences] = useState<UserPreferences>(defaultPreferences);
   const [notificationCount, setNotificationCount] = useState(0);
   const [updateCount, setUpdateCount] = useState(0);
+  const [updatePreview, setUpdatePreview] = useState<UpdatePreview[]>([]);
+  const [branches, setBranches] = useState<BranchOption[]>([]);
+  const [selectedBranchId, setSelectedBranchId] = useState<string | undefined>(undefined);
   const [commandOpen, setCommandOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [editingFavorites, setEditingFavorites] = useState(false);
@@ -278,6 +292,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     management: false,
     administration: false,
   });
+  const accountMenuRef = useRef<HTMLDivElement>(null);
+  const notificationsRef = useRef<HTMLDivElement>(null);
+  const helpRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     apiFetch<MeResponse>("/me")
@@ -295,20 +312,67 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    setSelectedBranchId(getBranchScopeId());
+    const syncBranchScope = (event: Event) => {
+      setSelectedBranchId((event as CustomEvent<{ branchId?: string }>).detail?.branchId);
+    };
+    window.addEventListener("sgc:branch-scope-changed", syncBranchScope);
+    return () => window.removeEventListener("sgc:branch-scope-changed", syncBranchScope);
+  }, []);
+
+  useEffect(() => {
     void apiFetch<UserPreferences>("/preferences").then((value) => {
       setPreferences(value);
       applyPreferences(value);
     });
   }, []);
 
+  async function refreshHeaderSignals() {
+    if (!me || !getTenantId()) return;
+    const [overview, updates] = await Promise.all([
+      apiFetch<{ notifications: number }>("/operations/overview").catch(() => ({
+        notifications: 0,
+      })),
+      apiFetch<{ data: UpdatePreview[]; unread: number }>("/updates").catch(() => ({
+        data: [],
+        unread: 0,
+      })),
+    ]);
+    setNotificationCount(Number(overview.notifications ?? 0));
+    setUpdateCount(Number(updates.unread ?? 0));
+    setUpdatePreview(updates.data.slice(0, 4));
+  }
+
   useEffect(() => {
     if (!me || !getTenantId()) return;
-    void apiFetch<{ notifications: number }>("/operations/overview")
-      .then((value) => setNotificationCount(Number(value.notifications ?? 0)))
-      .catch(() => undefined);
-    void apiFetch<{ unread: number }>("/updates")
-      .then((value) => setUpdateCount(Number(value.unread ?? 0)))
-      .catch(() => undefined);
+    void refreshHeaderSignals();
+  }, [me]);
+
+  useEffect(() => {
+    const syncUpdates = (event: Event) => {
+      const unread = (event as CustomEvent<{ unread?: number }>).detail?.unread;
+      if (typeof unread === "number") setUpdateCount(unread);
+      void refreshHeaderSignals();
+    };
+    window.addEventListener("sgc:updates-changed", syncUpdates);
+    return () => window.removeEventListener("sgc:updates-changed", syncUpdates);
+  }, [me]);
+
+  useEffect(() => {
+    const activeMembership =
+      me?.memberships.find((membership) => membership.tenantId === getTenantId()) ??
+      me?.memberships[0];
+    if (!activeMembership) return;
+    if (activeMembership.branchId) {
+      setBranches([]);
+      setBranchScopeId(undefined);
+      return;
+    }
+    void apiFetch<{ data: BranchOption[] }>("/branches?pageSize=100&isActive=true", {
+      headers: { "x-orien-branch-scope": "all" },
+    })
+      .then((result) => setBranches(result.data))
+      .catch(() => setBranches([]));
   }, [me]);
 
   useEffect(() => {
@@ -326,10 +390,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         event.preventDefault();
         setCommandOpen(true);
       }
-      if (event.key === "Escape") setCommandOpen(false);
+      if (event.key === "Escape") {
+        setCommandOpen(false);
+        setAccountOpen(false);
+        setNotificationsOpen(false);
+        setHelpOpen(false);
+      }
     };
     window.addEventListener("keydown", shortcut);
     return () => window.removeEventListener("keydown", shortcut);
+  }, []);
+
+  useEffect(() => {
+    const dismissPopovers = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (accountMenuRef.current && !accountMenuRef.current.contains(target)) setAccountOpen(false);
+      if (notificationsRef.current && !notificationsRef.current.contains(target))
+        setNotificationsOpen(false);
+      if (helpRef.current && !helpRef.current.contains(target)) setHelpOpen(false);
+    };
+    document.addEventListener("pointerdown", dismissPopovers);
+    return () => document.removeEventListener("pointerdown", dismissPopovers);
   }, []);
 
   useEffect(() => {
@@ -427,6 +508,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const compact = preferences.sidebarMode === "compact";
   const collapsed = preferences.sidebarMode === "collapsed";
   const roleName = roleLabel(currentMembership?.roleSlug);
+  const currentBranch = branches.find((branch) => branch.id === selectedBranchId);
+  const branchScopeLabel = currentMembership?.branchId
+    ? "Filial autorizada"
+    : (currentBranch?.name ?? "Todas as lojas");
   const routeItem = navigation.find((item) => pathname === item.href);
   const grantedPermissions = currentMembership?.permissions ?? [];
   const routeAllowed =
@@ -458,6 +543,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   async function logout() {
     await apiFetch("/auth/logout", { method: "POST", body: "{}" }).catch(() => undefined);
     router.push("/login");
+  }
+
+  function changeBranchScope(branchId: string) {
+    setBranchScopeId(branchId || undefined);
+    setSelectedBranchId(branchId || undefined);
+    setAccountOpen(false);
+    setNotificationsOpen(false);
+    router.refresh();
   }
 
   async function toggleFavorite(href: string) {
@@ -641,8 +734,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </aside>
       ) : null}
       <div className={collapsed ? "" : compact ? "lg:pl-20" : "lg:pl-72"}>
-        <header className="sticky top-0 z-20 flex min-h-16 items-center justify-between gap-3 border-b border-[var(--brand-border)] bg-white/95 px-4 py-3 backdrop-blur lg:h-16 lg:px-8 lg:py-0">
-          <div className="flex min-w-0 items-center gap-3">
+        <header className="sticky top-0 z-20 flex min-h-16 items-center justify-between gap-2 border-b border-[var(--brand-border)] bg-white/95 px-3 py-3 backdrop-blur sm:gap-3 sm:px-4 lg:h-16 lg:px-8 lg:py-0">
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
             <button
               type="button"
               className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-[var(--brand-border)] bg-white text-[var(--brand-primary)] transition hover:bg-[var(--brand-surface)] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-blue-500/25 ${collapsed ? "" : "lg:hidden"}`}
@@ -655,13 +748,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">
                 Tenant ativo
               </p>
-              <div className="flex flex-wrap items-center gap-3">
-                <p className="max-w-[13rem] truncate text-sm font-semibold text-[var(--brand-primary)] sm:max-w-none">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+                <p className="max-w-[10rem] truncate text-sm font-semibold text-[var(--brand-primary)] sm:max-w-[18rem] lg:max-w-none">
                   {currentMembership?.tenantName ?? "Carregando..."}
                 </p>
-                <p className="max-w-[13rem] truncate text-xs text-slate-500 sm:max-w-none">
+                <p className="hidden max-w-[13rem] truncate text-xs text-slate-500 sm:block sm:max-w-none">
                   Perfil {currentMembership?.roleSlug ?? "-"}
-                  {currentMembership?.branchId ? " · Filial autorizada" : " · Todas as lojas"}
+                  {` · ${branchScopeLabel}`}
                 </p>
               </div>
               {me?.memberships && me.memberships.length > 1 ? (
@@ -680,9 +773,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   ))}
                 </select>
               ) : null}
+              {!currentMembership?.branchId && branches.length ? (
+                <select
+                  aria-label="Visão da loja"
+                  className="hidden h-8 max-w-48 rounded-md border border-[var(--brand-border)] bg-white px-2 text-xs text-[var(--brand-primary)] lg:block"
+                  value={selectedBranchId ?? ""}
+                  onChange={(event) => changeBranchScope(event.target.value)}
+                >
+                  <option value="">Todas as lojas</option>
+                  {branches.map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
             </div>
           </div>
-          <div className="relative flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             <button
               type="button"
               className="hidden h-10 items-center gap-2 rounded-md border border-[var(--brand-border)] bg-white px-3 text-sm text-slate-500 lg:flex"
@@ -694,88 +802,181 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </button>
             <button
               type="button"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-[var(--brand-border)] bg-white text-[var(--brand-primary)]"
+              className="hidden h-10 w-10 items-center justify-center rounded-md border border-[var(--brand-border)] bg-white text-[var(--brand-primary)] md:inline-flex"
               aria-label="Ajuda desta tela"
               onClick={() => setHelpOpen((value) => !value)}
             >
               <CircleHelp size={17} />
             </button>
-            <Link
-              href="/updates"
-              className="relative inline-flex h-10 w-10 items-center justify-center rounded-md border border-[var(--brand-border)] bg-white text-[var(--brand-primary)]"
-              aria-label="Novidades e notificações"
-            >
-              <BellRing size={17} />
-              {notificationCount + updateCount ? (
-                <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-rose-600 px-1 text-center text-[10px] font-semibold text-white">
-                  {Math.min(notificationCount + updateCount, 99)}
-                </span>
-              ) : null}
-            </Link>
-            <button
-              type="button"
-              className="flex min-w-0 items-center gap-2 rounded-md border border-[var(--brand-border)] bg-white p-1.5 pr-2 text-left"
-              onClick={() => setAccountOpen((value) => !value)}
-            >
-              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--brand-primary)] text-xs font-semibold text-white">
-                {initials}
-              </span>
-              <span className="hidden min-w-0 sm:grid">
-                <strong className="max-w-32 truncate text-xs text-[var(--brand-primary)]">
-                  {me?.user.name ?? "Carregando"}
-                </strong>
-                <span className="text-[11px] text-slate-500">{roleName}</span>
-              </span>
-              <ChevronDown size={14} />
-            </button>
-            {accountOpen ? (
-              <div className="absolute right-0 top-12 z-50 grid w-72 gap-1 rounded-md border border-[var(--brand-border)] bg-white p-2 shadow-2xl">
-                <div className="border-b border-[var(--brand-border)] p-3">
-                  <p className="font-semibold text-[var(--brand-primary)]">{me?.user.name}</p>
-                  <p className="truncate text-xs text-slate-500">{me?.user.email}</p>
-                  <p className="mt-2 text-xs text-[var(--brand-secondary)]">
-                    {roleName} ·{" "}
-                    {currentMembership?.branchId ? "Filial autorizada" : "Todas as lojas"}
-                  </p>
+            <div ref={notificationsRef} className="relative">
+              <button
+                type="button"
+                className="relative inline-flex h-10 w-10 items-center justify-center rounded-md border border-[var(--brand-border)] bg-white text-[var(--brand-primary)]"
+                aria-label="Novidades e notificações"
+                aria-expanded={notificationsOpen}
+                onClick={() => {
+                  setNotificationsOpen((value) => !value);
+                  setAccountOpen(false);
+                  setHelpOpen(false);
+                  void refreshHeaderSignals();
+                }}
+              >
+                <BellRing size={17} />
+                {notificationCount + updateCount ? (
+                  <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-rose-600 px-1 text-center text-[10px] font-semibold text-white">
+                    {Math.min(notificationCount + updateCount, 99)}
+                  </span>
+                ) : null}
+              </button>
+              {notificationsOpen ? (
+                <div className="absolute right-0 top-12 z-50 w-[min(92vw,380px)] rounded-xl border border-[var(--brand-border)] bg-white p-3 shadow-2xl">
+                  <div className="flex items-center justify-between gap-3 px-1 pb-2">
+                    <div>
+                      <p className="text-sm font-semibold text-[var(--brand-primary)]">
+                        Notificações
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        Novidades e alertas que pedem atenção.
+                      </p>
+                    </div>
+                    <Link
+                      href="/updates"
+                      onClick={() => setNotificationsOpen(false)}
+                      className="text-xs font-semibold text-[var(--brand-secondary)]"
+                    >
+                      Ver mais
+                    </Link>
+                  </div>
+                  {notificationCount ? (
+                    <Link
+                      href="/alerts"
+                      onClick={() => setNotificationsOpen(false)}
+                      className="mb-2 flex rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 hover:bg-amber-100"
+                    >
+                      {notificationCount} alerta(s) operacional(is) aguardando atenção
+                    </Link>
+                  ) : null}
+                  <div className="grid gap-1">
+                    {updatePreview.length ? (
+                      updatePreview.map((note) => (
+                        <Link
+                          key={note.id}
+                          href="/updates"
+                          onClick={() => setNotificationsOpen(false)}
+                          className="rounded-lg p-3 hover:bg-[var(--brand-surface)]"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <strong className="truncate text-sm text-[var(--brand-primary)]">
+                              {note.title}
+                            </strong>
+                            {!note.readAt ? (
+                              <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--brand-accent)]" />
+                            ) : null}
+                          </div>
+                          <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">
+                            {note.summary}
+                          </p>
+                        </Link>
+                      ))
+                    ) : (
+                      <p className="rounded-lg bg-[var(--brand-surface)] p-3 text-sm text-slate-500">
+                        Nenhuma novidade pendente.
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <button
-                  className="flex items-center gap-2 rounded-md p-3 text-sm hover:bg-[var(--brand-surface)]"
-                  onClick={() => void quickMode()}
-                >
-                  {preferences.colorMode === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-                  Alternar claro/escuro
-                </button>
-                <Link
-                  className="rounded-md p-3 text-sm hover:bg-[var(--brand-surface)]"
-                  href="/preferences"
-                >
-                  Aparência e preferências
-                </Link>
-                <Link
-                  className="rounded-md p-3 text-sm hover:bg-[var(--brand-surface)]"
-                  href="/sessions"
-                >
-                  Dispositivos conectados
-                </Link>
-                <Link
-                  className="rounded-md p-3 text-sm hover:bg-[var(--brand-surface)]"
-                  href="/change-password"
-                >
-                  Trocar senha
-                </Link>
-                <button
-                  className="flex items-center gap-2 rounded-md p-3 text-left text-sm text-rose-600 hover:bg-rose-50"
-                  onClick={() => void logout()}
-                >
-                  <LogOut size={16} />
-                  Sair
-                </button>
-              </div>
-            ) : null}
+              ) : null}
+            </div>
+            <div ref={accountMenuRef} className="relative">
+              <button
+                type="button"
+                className="flex min-w-0 items-center gap-2 rounded-md border border-[var(--brand-border)] bg-white p-1.5 pr-2 text-left"
+                aria-expanded={accountOpen}
+                onClick={() => {
+                  setAccountOpen((value) => !value);
+                  setNotificationsOpen(false);
+                  setHelpOpen(false);
+                }}
+              >
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--brand-primary)] text-xs font-semibold text-white">
+                  {initials}
+                </span>
+                <span className="hidden min-w-0 sm:grid">
+                  <strong className="max-w-32 truncate text-xs text-[var(--brand-primary)]">
+                    {me?.user.name ?? "Carregando"}
+                  </strong>
+                  <span className="text-[11px] text-slate-500">{roleName}</span>
+                </span>
+                <ChevronDown size={14} />
+              </button>
+              {accountOpen ? (
+                <div className="absolute right-0 top-12 z-50 grid w-[min(92vw,288px)] gap-1 rounded-md border border-[var(--brand-border)] bg-white p-2 shadow-2xl">
+                  <div className="border-b border-[var(--brand-border)] p-3">
+                    <p className="font-semibold text-[var(--brand-primary)]">{me?.user.name}</p>
+                    <p className="truncate text-xs text-slate-500">{me?.user.email}</p>
+                    <p className="mt-2 text-xs text-[var(--brand-secondary)]">
+                      {roleName} · {branchScopeLabel}
+                    </p>
+                  </div>
+                  {!currentMembership?.branchId && branches.length ? (
+                    <label className="grid gap-1 px-3 py-2 text-xs font-medium text-slate-600">
+                      Visualizar operação de
+                      <select
+                        className="h-9 rounded-md border border-[var(--brand-border)] bg-white px-2 text-sm text-[var(--brand-primary)]"
+                        value={selectedBranchId ?? ""}
+                        onChange={(event) => changeBranchScope(event.target.value)}
+                      >
+                        <option value="">Todas as lojas</option>
+                        {branches.map((branch) => (
+                          <option key={branch.id} value={branch.id}>
+                            {branch.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+                  <button
+                    className="flex items-center gap-2 rounded-md p-3 text-sm hover:bg-[var(--brand-surface)]"
+                    onClick={() => void quickMode()}
+                  >
+                    {preferences.colorMode === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+                    Alternar claro/escuro
+                  </button>
+                  <Link
+                    className="rounded-md p-3 text-sm hover:bg-[var(--brand-surface)]"
+                    href="/preferences"
+                  >
+                    Aparência e preferências
+                  </Link>
+                  <Link
+                    className="rounded-md p-3 text-sm hover:bg-[var(--brand-surface)]"
+                    href="/sessions"
+                  >
+                    Dispositivos conectados
+                  </Link>
+                  <Link
+                    className="rounded-md p-3 text-sm hover:bg-[var(--brand-surface)]"
+                    href="/change-password"
+                  >
+                    Trocar senha
+                  </Link>
+                  <button
+                    className="flex items-center gap-2 rounded-md p-3 text-left text-sm text-rose-600 hover:bg-rose-50"
+                    onClick={() => void logout()}
+                  >
+                    <LogOut size={16} />
+                    Sair
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
         </header>
         {helpOpen ? (
-          <aside className="fixed bottom-5 right-5 z-40 w-[min(92vw,360px)] rounded-xl border border-[var(--brand-border)] bg-white p-5 shadow-2xl">
+          <aside
+            ref={helpRef}
+            className="fixed bottom-5 right-5 z-40 w-[min(92vw,360px)] rounded-xl border border-[var(--brand-border)] bg-white p-5 shadow-2xl"
+          >
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-xs font-bold tracking-[.14em] text-[var(--brand-secondary)]">

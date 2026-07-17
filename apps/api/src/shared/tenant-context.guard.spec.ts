@@ -9,8 +9,8 @@ describe("TenantContextGuard", () => {
 
     await expect(
       guard.canActivate({
-        switchToHttp: () => ({ getRequest: () => request })
-      } as never)
+        switchToHttp: () => ({ getRequest: () => request }),
+      } as never),
     ).rejects.toThrow(/x-tenant-id/);
   });
 
@@ -23,19 +23,19 @@ describe("TenantContextGuard", () => {
             membershipId: "membership-1",
             roleSlug: "owner",
             branchId: null,
-            permissions: ["products.read"]
-          }
-        ]
-      })
+            permissions: ["products.read"],
+          },
+        ],
+      }),
     };
     const guard = new TenantContextGuard({ pool } as never);
     const request = {
       user: { userId: "user-1" },
-      headers: { "x-tenant-id": "tenant-1" }
+      headers: { "x-tenant-id": "tenant-1" },
     } as unknown as AuthenticatedRequest;
 
     const allowed = await guard.canActivate({
-      switchToHttp: () => ({ getRequest: () => request })
+      switchToHttp: () => ({ getRequest: () => request }),
     } as never);
 
     expect(allowed).toBe(true);
@@ -45,7 +45,36 @@ describe("TenantContextGuard", () => {
       roleSlug: "owner",
       branchId: null,
       permissions: ["products.read"],
-      userId: "user-1"
+      userId: "user-1",
     });
+  });
+
+  it("accepts a selected tenant branch only for a global membership", async () => {
+    const pool = {
+      query: vi
+        .fn()
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              tenantId: "tenant-1",
+              membershipId: "membership-1",
+              roleSlug: "owner",
+              branchId: null,
+              permissions: ["products.read"],
+            },
+          ],
+        })
+        .mockResolvedValueOnce({ rows: [{ id: "branch-1" }] }),
+    };
+    const guard = new TenantContextGuard({ pool } as never);
+    const request = {
+      user: { userId: "user-1" },
+      headers: { "x-tenant-id": "tenant-1", "x-branch-id": "branch-1" },
+    } as unknown as AuthenticatedRequest;
+
+    await expect(
+      guard.canActivate({ switchToHttp: () => ({ getRequest: () => request }) } as never),
+    ).resolves.toBe(true);
+    expect(request.tenant?.branchId).toBe("branch-1");
   });
 });

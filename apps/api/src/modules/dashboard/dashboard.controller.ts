@@ -19,7 +19,10 @@ export class DashboardController {
 
   @RequirePermissions(permissions.dashboard.read)
   @Get("summary")
-  summary(@CurrentTenant() tenant: TenantContext, @Query(new ZodValidationPipe(dashboardQuerySchema)) query: never) {
+  summary(
+    @CurrentTenant() tenant: TenantContext,
+    @Query(new ZodValidationPipe(dashboardQuerySchema)) query: never,
+  ) {
     return this.dashboardService.summary(tenant, query);
   }
 
@@ -30,14 +33,26 @@ export class DashboardController {
   }
 
   @RequirePermissions(permissions.dashboard.read)
+  @Get("branch-overview")
+  branchOverview(@CurrentTenant() tenant: TenantContext) {
+    return this.dashboardService.branchOverview(tenant);
+  }
+
+  @RequirePermissions(permissions.dashboard.read)
   @Patch("onboarding")
-  onboarding(@CurrentTenant() tenant: TenantContext, @Body(new ZodValidationPipe(onboardingStateSchema)) body: never) {
+  onboarding(
+    @CurrentTenant() tenant: TenantContext,
+    @Body(new ZodValidationPipe(onboardingStateSchema)) body: never,
+  ) {
     return this.dashboardService.updateOnboarding(tenant, body);
   }
 
   @RequirePermissions(permissions.branches.update)
   @Post("goals")
-  goal(@CurrentTenant() tenant: TenantContext, @Body(new ZodValidationPipe(branchGoalSchema)) body: never) {
+  goal(
+    @CurrentTenant() tenant: TenantContext,
+    @Body(new ZodValidationPipe(branchGoalSchema)) body: never,
+  ) {
     return this.dashboardService.setGoal(tenant, body);
   }
 }

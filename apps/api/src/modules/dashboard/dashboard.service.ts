@@ -9,7 +9,9 @@ export class DashboardService {
 
   async operationalStatus(context: TenantContext) {
     const branchFilter = context.branchId ? "AND branch_id = $2" : "";
-    const branchOrGlobalFilter = context.branchId ? "AND (branch_id = $2 OR branch_id IS NULL)" : "";
+    const branchOrGlobalFilter = context.branchId
+      ? "AND (branch_id = $2 OR branch_id IS NULL)"
+      : "";
     const params = context.branchId ? [context.tenantId, context.branchId] : [context.tenantId];
 
     const [
@@ -121,7 +123,9 @@ export class DashboardService {
         "SELECT count(*)::text total FROM payment_provider_accounts WHERE tenant_id=$1 AND status='active'",
         [context.tenantId],
       ),
-      this.database.tenantQuery<{ value: { dismissed?: boolean; completedKeys?: string[] } | null }>(
+      this.database.tenantQuery<{
+        value: { dismissed?: boolean; completedKeys?: string[] } | null;
+      }>(
         context.tenantId,
         "SELECT value FROM tenant_settings WHERE tenant_id=$1 AND key='onboarding' AND deleted_at IS NULL LIMIT 1",
         [context.tenantId],
@@ -151,13 +155,48 @@ export class DashboardService {
     const completedKeys = new Set(persisted.completedKeys ?? []);
     const checklist = [
       { key: "branch", label: "Cadastrar loja", autoDone: counts.branches > 0, href: "/branches" },
-      { key: "products", label: "Cadastrar produtos", autoDone: counts.products > 0, href: "/products" },
-      { key: "customers", label: "Cadastrar clientes", autoDone: counts.customers > 0, href: "/customers" },
-      { key: "operator", label: "Convidar operador", autoDone: counts.operators > 1, href: "/team" },
-      { key: "stock", label: "Informar estoque inicial", autoDone: counts.stockBalances > 0, href: "/stock" },
-      { key: "printer", label: "Configurar comprovante e impressora", autoDone: counts.printingSettings > 0, href: "/printers" },
-      { key: "payment", label: "Validar formas de pagamento", autoDone: counts.paymentAccounts > 0 || counts.testSales > 0, href: "/integrations" },
-      { key: "fiscal", label: "Preparar emissão fiscal", autoDone: counts.fiscalSettings > 0, href: "/fiscal" },
+      {
+        key: "products",
+        label: "Cadastrar produtos",
+        autoDone: counts.products > 0,
+        href: "/products",
+      },
+      {
+        key: "customers",
+        label: "Cadastrar clientes",
+        autoDone: counts.customers > 0,
+        href: "/customers",
+      },
+      {
+        key: "operator",
+        label: "Convidar operador",
+        autoDone: counts.operators > 1,
+        href: "/team",
+      },
+      {
+        key: "stock",
+        label: "Informar estoque inicial",
+        autoDone: counts.stockBalances > 0,
+        href: "/stock",
+      },
+      {
+        key: "printer",
+        label: "Configurar comprovante e impressora",
+        autoDone: counts.printingSettings > 0,
+        href: "/printers",
+      },
+      {
+        key: "payment",
+        label: "Validar formas de pagamento",
+        autoDone: counts.paymentAccounts > 0 || counts.testSales > 0,
+        href: "/integrations",
+      },
+      {
+        key: "fiscal",
+        label: "Preparar emissão fiscal",
+        autoDone: counts.fiscalSettings > 0,
+        href: "/fiscal",
+      },
       { key: "sale", label: "Realizar venda teste", autoDone: counts.testSales > 0, href: "/pos" },
     ].map((item) => ({ ...item, done: item.autoDone || completedKeys.has(item.key) }));
 
@@ -179,15 +218,73 @@ export class DashboardService {
         params,
       ),
     ]);
-    const cashOpenedAt = oldestCash.rows[0]?.openedAt ? new Date(oldestCash.rows[0].openedAt) : null;
-    const openHours = cashOpenedAt ? Math.max(0, Math.floor((Date.now() - cashOpenedAt.getTime()) / 3_600_000)) : 0;
+    const cashOpenedAt = oldestCash.rows[0]?.openedAt
+      ? new Date(oldestCash.rows[0].openedAt)
+      : null;
+    const openHours = cashOpenedAt
+      ? Math.max(0, Math.floor((Date.now() - cashOpenedAt.getTime()) / 3_600_000))
+      : 0;
     const actionItems = [
-      ...(counts.criticalStock ? [{ severity: "warning", title: `${counts.criticalStock} item(ns) abaixo do mínimo`, detail: "Revise a sugestão de compra antes de perder vendas.", href: "/stock" }] : []),
-      ...(counts.openCash ? [{ severity: openHours >= 9 ? "warning" : "info", title: `Caixa aberto há ${openHours} hora(s)`, detail: "Confira suprimentos, sangrias e o turno do operador.", href: "/pos" }] : []),
-      ...(Number(dueToday.rows[0]?.total ?? 0) ? [{ severity: "warning", title: `${dueToday.rows[0]?.total} conta(s) vencendo hoje`, detail: `${Number(dueToday.rows[0]?.amount ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} para acompanhar no financeiro.`, href: "/financial" }] : []),
-      ...(Number(pendingPurchases.rows[0]?.total ?? 0) ? [{ severity: "info", title: `${pendingPurchases.rows[0]?.total} compra(s) aguardando recebimento`, detail: "Confirme a entrada para atualizar custo e saldo.", href: "/purchases" }] : []),
-      ...(counts.lowMarginProducts ? [{ severity: "warning", title: `${counts.lowMarginProducts} produto(s) sem margem`, detail: "Custo igual ou maior que o preço de venda. Revise a precificação.", href: "/products" }] : []),
-      ...(counts.integrationErrors ? [{ severity: "warning", title: `${counts.integrationErrors} integração(ões) com erro`, detail: "Verifique o último erro e teste a conexão antes de operar.", href: "/integrations" }] : []),
+      ...(counts.criticalStock
+        ? [
+            {
+              severity: "warning",
+              title: `${counts.criticalStock} item(ns) abaixo do mínimo`,
+              detail: "Revise a sugestão de compra antes de perder vendas.",
+              href: "/stock",
+            },
+          ]
+        : []),
+      ...(counts.openCash
+        ? [
+            {
+              severity: openHours >= 9 ? "warning" : "info",
+              title: `Caixa aberto há ${openHours} hora(s)`,
+              detail: "Confira suprimentos, sangrias e o turno do operador.",
+              href: "/pos",
+            },
+          ]
+        : []),
+      ...(Number(dueToday.rows[0]?.total ?? 0)
+        ? [
+            {
+              severity: "warning",
+              title: `${dueToday.rows[0]?.total} conta(s) vencendo hoje`,
+              detail: `${Number(dueToday.rows[0]?.amount ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} para acompanhar no financeiro.`,
+              href: "/financial",
+            },
+          ]
+        : []),
+      ...(Number(pendingPurchases.rows[0]?.total ?? 0)
+        ? [
+            {
+              severity: "info",
+              title: `${pendingPurchases.rows[0]?.total} compra(s) aguardando recebimento`,
+              detail: "Confirme a entrada para atualizar custo e saldo.",
+              href: "/purchases",
+            },
+          ]
+        : []),
+      ...(counts.lowMarginProducts
+        ? [
+            {
+              severity: "warning",
+              title: `${counts.lowMarginProducts} produto(s) sem margem`,
+              detail: "Custo igual ou maior que o preço de venda. Revise a precificação.",
+              href: "/products",
+            },
+          ]
+        : []),
+      ...(counts.integrationErrors
+        ? [
+            {
+              severity: "warning",
+              title: `${counts.integrationErrors} integração(ões) com erro`,
+              detail: "Verifique o último erro e teste a conexão antes de operar.",
+              href: "/integrations",
+            },
+          ]
+        : []),
     ];
     return {
       counts,
@@ -196,21 +293,30 @@ export class DashboardService {
       nextAction: checklist.find((item) => !item.done) ?? null,
       onboarding: {
         dismissed: Boolean(persisted.dismissed),
-        completedKeys: Array.from(new Set([...completedKeys, ...checklist.filter((item) => item.autoDone).map((item) => item.key)])),
+        completedKeys: Array.from(
+          new Set([
+            ...completedKeys,
+            ...checklist.filter((item) => item.autoDone).map((item) => item.key),
+          ]),
+        ),
       },
       actionItems,
     };
   }
 
   async updateOnboarding(context: TenantContext, input: OnboardingStateInput) {
-    const current = await this.database.tenantQuery<{ value: { dismissed?: boolean; completedKeys?: string[] } | null }>(
+    const current = await this.database.tenantQuery<{
+      value: { dismissed?: boolean; completedKeys?: string[] } | null;
+    }>(
       context.tenantId,
       "SELECT value FROM tenant_settings WHERE tenant_id=$1 AND key='onboarding' AND deleted_at IS NULL LIMIT 1",
       [context.tenantId],
     );
     const value = {
       dismissed: input.dismissed ?? Boolean(current.rows[0]?.value?.dismissed),
-      completedKeys: Array.from(new Set([...(current.rows[0]?.value?.completedKeys ?? []), ...(input.completedKeys ?? [])])),
+      completedKeys: Array.from(
+        new Set([...(current.rows[0]?.value?.completedKeys ?? []), ...(input.completedKeys ?? [])]),
+      ),
       updatedAt: new Date().toISOString(),
     };
     await this.database.tenantQuery(
@@ -226,42 +332,134 @@ export class DashboardService {
     return this.operationalStatus(context);
   }
 
-  async setGoal(context: TenantContext, input: { branchId:string;periodStart:string;periodEnd:string;salesTarget:number }) {
-    if (context.branchId && context.branchId !== input.branchId) throw new Error("Filial fora do escopo do usuario.");
-    const result = await this.database.tenantQuery(context.tenantId, `INSERT INTO branch_goals (tenant_id,branch_id,period_start,period_end,sales_target) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (tenant_id,branch_id,period_start,period_end) DO UPDATE SET sales_target=EXCLUDED.sales_target,updated_at=now() RETURNING *`, [context.tenantId,input.branchId,input.periodStart,input.periodEnd,input.salesTarget]);
+  async setGoal(
+    context: TenantContext,
+    input: { branchId: string; periodStart: string; periodEnd: string; salesTarget: number },
+  ) {
+    if (context.branchId && context.branchId !== input.branchId)
+      throw new Error("Filial fora do escopo do usuario.");
+    const result = await this.database.tenantQuery(
+      context.tenantId,
+      `INSERT INTO branch_goals (tenant_id,branch_id,period_start,period_end,sales_target) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (tenant_id,branch_id,period_start,period_end) DO UPDATE SET sales_target=EXCLUDED.sales_target,updated_at=now() RETURNING *`,
+      [context.tenantId, input.branchId, input.periodStart, input.periodEnd, input.salesTarget],
+    );
     return result.rows[0];
+  }
+
+  async branchOverview(context: TenantContext) {
+    const params = context.branchId ? [context.tenantId, context.branchId] : [context.tenantId];
+    const branchScope = context.branchId ? "AND b.id = $2" : "";
+    const result = await this.database.tenantQuery<{
+      branchId: string;
+      name: string;
+      salesToday: string;
+      openCash: string;
+      criticalStock: string;
+      overdueReceivables: string;
+      pendingTasks: string;
+      activeOperators: string;
+      monthlyMargin: string;
+    }>(
+      context.tenantId,
+      `
+      SELECT
+        b.id AS "branchId",
+        b.name,
+        COALESCE((
+          SELECT sum(s.total_amount) FROM sales s
+          WHERE s.tenant_id=$1 AND s.branch_id=b.id AND s.status='sold' AND s.created_at::date=CURRENT_DATE
+        ),0)::text AS "salesToday",
+        (SELECT count(*) FROM cash_register_sessions cs
+          WHERE cs.tenant_id=$1 AND cs.branch_id=b.id AND cs.status='open')::text AS "openCash",
+        (SELECT count(*) FROM products p
+          LEFT JOIN stock_balances sb ON sb.tenant_id=p.tenant_id AND sb.product_id=p.id AND sb.branch_id=b.id
+          WHERE p.tenant_id=$1 AND p.deleted_at IS NULL
+            AND (p.branch_id=b.id OR p.branch_id IS NULL)
+            AND COALESCE(sb.quantity,0)<=p.min_stock)::text AS "criticalStock",
+        (SELECT count(*) FROM accounts_receivable ar
+          WHERE ar.tenant_id=$1 AND ar.branch_id=b.id
+            AND ar.status IN ('open','overdue') AND ar.due_date<=CURRENT_DATE)::text AS "overdueReceivables",
+        (SELECT count(*) FROM operational_tasks ot
+          WHERE ot.tenant_id=$1 AND ot.branch_id=b.id AND ot.status IN ('open','in_progress'))::text AS "pendingTasks",
+        (SELECT count(DISTINCT m.user_id) FROM memberships m
+          JOIN sessions ses ON ses.user_id=m.user_id AND ses.revoked_at IS NULL AND ses.expires_at>now()
+          WHERE m.tenant_id=$1 AND m.status='active' AND m.deleted_at IS NULL
+            AND (m.branch_id=b.id OR m.branch_id IS NULL))::text AS "activeOperators",
+        COALESCE((
+          SELECT sum((si.unit_price * si.quantity) - si.discount_amount - (p.cost_price * si.quantity))
+          FROM sale_items si
+          JOIN sales s ON s.id=si.sale_id
+          JOIN products p ON p.id=si.product_id
+          WHERE si.tenant_id=$1 AND s.tenant_id=$1 AND s.branch_id=b.id AND s.status='sold'
+            AND date_trunc('month',s.created_at)=date_trunc('month',now())
+        ),0)::text AS "monthlyMargin"
+      FROM branches b
+      WHERE b.tenant_id=$1 AND b.deleted_at IS NULL ${branchScope}
+      ORDER BY b.name
+      `,
+      params,
+    );
+    return { data: result.rows };
   }
 
   async summary(context: TenantContext, query: { startDate?: string; endDate?: string }) {
     const now = new Date();
-    const startDate = query.startDate ?? new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+    const startDate =
+      query.startDate ?? new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
     const endDate = query.endDate ?? now.toISOString().slice(0, 10);
-    const days = Math.max(1, Math.round((new Date(`${endDate}T00:00:00Z`).getTime() - new Date(`${startDate}T00:00:00Z`).getTime()) / 86400000) + 1);
+    const days = Math.max(
+      1,
+      Math.round(
+        (new Date(`${endDate}T00:00:00Z`).getTime() -
+          new Date(`${startDate}T00:00:00Z`).getTime()) /
+          86400000,
+      ) + 1,
+    );
     const previousEnd = new Date(new Date(`${startDate}T00:00:00Z`).getTime() - 86400000);
     const previousStart = new Date(previousEnd.getTime() - (days - 1) * 86400000);
     const branchFilter = context.branchId ? "AND (branch_id = $2 OR branch_id IS NULL)" : "";
-    const branchParams = context.branchId ? [context.tenantId, context.branchId] : [context.tenantId];
+    const branchParams = context.branchId
+      ? [context.tenantId, context.branchId]
+      : [context.tenantId];
 
-    const [branches, products, customers, lowStock, receivable, payable, salesToday, salesMonth, averageTicket, periodSales, previousSales, forecast, goal, health, suggestions, commissions, salesHistory, branchGoals] =
-      await Promise.all([
-        this.database.tenantQuery<{ total: string }>(
+    const [
+      branches,
+      products,
+      customers,
+      lowStock,
+      receivable,
+      payable,
+      salesToday,
+      salesMonth,
+      averageTicket,
+      periodSales,
+      previousSales,
+      forecast,
+      goal,
+      health,
+      suggestions,
+      commissions,
+      salesHistory,
+      branchGoals,
+    ] = await Promise.all([
+      this.database.tenantQuery<{ total: string }>(
         context.tenantId,
         `SELECT count(*)::text AS total FROM branches WHERE tenant_id = $1 AND deleted_at IS NULL ${
           context.branchId ? "AND id = $2" : ""
         }`,
-        context.branchId ? [context.tenantId, context.branchId] : [context.tenantId]
+        context.branchId ? [context.tenantId, context.branchId] : [context.tenantId],
       ),
-        this.database.tenantQuery<{ total: string }>(
+      this.database.tenantQuery<{ total: string }>(
         context.tenantId,
         `SELECT count(*)::text AS total FROM products WHERE tenant_id = $1 AND deleted_at IS NULL ${branchFilter}`,
-        branchParams
+        branchParams,
       ),
-        this.database.tenantQuery<{ total: string }>(
+      this.database.tenantQuery<{ total: string }>(
         context.tenantId,
         `SELECT count(*)::text AS total FROM customers WHERE tenant_id = $1 AND deleted_at IS NULL ${branchFilter}`,
-        branchParams
+        branchParams,
       ),
-        this.database.tenantQuery<{ total: string }>(
+      this.database.tenantQuery<{ total: string }>(
         context.tenantId,
         `
         SELECT count(*)::text AS total
@@ -273,67 +471,142 @@ export class DashboardService {
           ${context.branchId ? "AND (p.branch_id = $2 OR p.branch_id IS NULL)" : ""}
           AND COALESCE(sb.quantity, 0) <= p.min_stock
         `,
-        branchParams
+        branchParams,
       ),
-        this.database.tenantQuery<{ total: string }>(
+      this.database.tenantQuery<{ total: string }>(
         context.tenantId,
         `SELECT COALESCE(sum(amount), 0)::text AS total FROM accounts_receivable WHERE tenant_id = $1 AND status = 'open' ${
           context.branchId ? "AND branch_id = $2" : ""
         }`,
-        context.branchId ? [context.tenantId, context.branchId] : [context.tenantId]
+        context.branchId ? [context.tenantId, context.branchId] : [context.tenantId],
       ),
-        this.database.tenantQuery<{ total: string }>(
+      this.database.tenantQuery<{ total: string }>(
         context.tenantId,
         `SELECT COALESCE(sum(amount), 0)::text AS total FROM accounts_payable WHERE tenant_id = $1 AND status = 'open' ${
           context.branchId ? "AND branch_id = $2" : ""
         }`,
-        context.branchId ? [context.tenantId, context.branchId] : [context.tenantId]
+        context.branchId ? [context.tenantId, context.branchId] : [context.tenantId],
       ),
-        this.database.tenantQuery<{ total: string }>(
-          context.tenantId,
-          `SELECT COALESCE(sum(total_amount), 0)::text AS total FROM sales WHERE tenant_id = $1 AND status = 'sold' AND created_at::date = CURRENT_DATE ${
-            context.branchId ? "AND branch_id = $2" : ""
-          }`,
-          context.branchId ? [context.tenantId, context.branchId] : [context.tenantId]
-        ),
-        this.database.tenantQuery<{ total: string }>(
-          context.tenantId,
-          `SELECT COALESCE(sum(total_amount), 0)::text AS total FROM sales WHERE tenant_id = $1 AND status = 'sold' AND date_trunc('month', created_at) = date_trunc('month', now()) ${
-            context.branchId ? "AND branch_id = $2" : ""
-          }`,
-          context.branchId ? [context.tenantId, context.branchId] : [context.tenantId]
-        ),
-        this.database.tenantQuery<{ total: string }>(
-          context.tenantId,
-          `SELECT COALESCE(avg(total_amount), 0)::text AS total FROM sales WHERE tenant_id = $1 AND status = 'sold' ${
-            context.branchId ? "AND branch_id = $2" : ""
-          }`,
-          context.branchId ? [context.tenantId, context.branchId] : [context.tenantId]
-        ),
-        this.database.tenantQuery<{ total:string; count:string; average:string }>(context.tenantId,`SELECT COALESCE(sum(total_amount),0)::text total,count(*)::text count,COALESCE(avg(total_amount),0)::text average FROM sales WHERE tenant_id=$1 AND status='sold' AND created_at::date BETWEEN $2 AND $3 ${context.branchId?"AND branch_id=$4":""}`,context.branchId?[context.tenantId,startDate,endDate,context.branchId]:[context.tenantId,startDate,endDate]),
-        this.database.tenantQuery<{ total:string }>(context.tenantId,`SELECT COALESCE(sum(total_amount),0)::text total FROM sales WHERE tenant_id=$1 AND status='sold' AND created_at::date BETWEEN $2 AND $3 ${context.branchId?"AND branch_id=$4":""}`,context.branchId?[context.tenantId,previousStart.toISOString().slice(0,10),previousEnd.toISOString().slice(0,10),context.branchId]:[context.tenantId,previousStart.toISOString().slice(0,10),previousEnd.toISOString().slice(0,10)]),
-        this.database.tenantQuery<{ receivable:string; payable:string }>(context.tenantId,`SELECT (SELECT COALESCE(sum(amount),0) FROM accounts_receivable WHERE tenant_id=$1 AND status='open' AND due_date<=$2 ${context.branchId?"AND branch_id=$3":""})::text receivable,(SELECT COALESCE(sum(amount),0) FROM accounts_payable WHERE tenant_id=$1 AND status='open' AND due_date<=$2 ${context.branchId?"AND branch_id=$3":""})::text payable`,context.branchId?[context.tenantId,endDate,context.branchId]:[context.tenantId,endDate]),
-        this.database.tenantQuery<{ total:string }>(context.tenantId,`SELECT COALESCE(sum(sales_target),0)::text total FROM branch_goals WHERE tenant_id=$1 AND period_start<=$3 AND period_end>=$2 ${context.branchId?"AND branch_id=$4":""}`,context.branchId?[context.tenantId,startDate,endDate,context.branchId]:[context.tenantId,startDate,endDate])
-        ,this.database.tenantQuery<{ margin:string; turnover:string; overdue:string }>(context.tenantId,`
+      this.database.tenantQuery<{ total: string }>(
+        context.tenantId,
+        `SELECT COALESCE(sum(total_amount), 0)::text AS total FROM sales WHERE tenant_id = $1 AND status = 'sold' AND created_at::date = CURRENT_DATE ${
+          context.branchId ? "AND branch_id = $2" : ""
+        }`,
+        context.branchId ? [context.tenantId, context.branchId] : [context.tenantId],
+      ),
+      this.database.tenantQuery<{ total: string }>(
+        context.tenantId,
+        `SELECT COALESCE(sum(total_amount), 0)::text AS total FROM sales WHERE tenant_id = $1 AND status = 'sold' AND date_trunc('month', created_at) = date_trunc('month', now()) ${
+          context.branchId ? "AND branch_id = $2" : ""
+        }`,
+        context.branchId ? [context.tenantId, context.branchId] : [context.tenantId],
+      ),
+      this.database.tenantQuery<{ total: string }>(
+        context.tenantId,
+        `SELECT COALESCE(avg(total_amount), 0)::text AS total FROM sales WHERE tenant_id = $1 AND status = 'sold' ${
+          context.branchId ? "AND branch_id = $2" : ""
+        }`,
+        context.branchId ? [context.tenantId, context.branchId] : [context.tenantId],
+      ),
+      this.database.tenantQuery<{ total: string; count: string; average: string }>(
+        context.tenantId,
+        `SELECT COALESCE(sum(total_amount),0)::text total,count(*)::text count,COALESCE(avg(total_amount),0)::text average FROM sales WHERE tenant_id=$1 AND status='sold' AND created_at::date BETWEEN $2 AND $3 ${context.branchId ? "AND branch_id=$4" : ""}`,
+        context.branchId
+          ? [context.tenantId, startDate, endDate, context.branchId]
+          : [context.tenantId, startDate, endDate],
+      ),
+      this.database.tenantQuery<{ total: string }>(
+        context.tenantId,
+        `SELECT COALESCE(sum(total_amount),0)::text total FROM sales WHERE tenant_id=$1 AND status='sold' AND created_at::date BETWEEN $2 AND $3 ${context.branchId ? "AND branch_id=$4" : ""}`,
+        context.branchId
+          ? [
+              context.tenantId,
+              previousStart.toISOString().slice(0, 10),
+              previousEnd.toISOString().slice(0, 10),
+              context.branchId,
+            ]
+          : [
+              context.tenantId,
+              previousStart.toISOString().slice(0, 10),
+              previousEnd.toISOString().slice(0, 10),
+            ],
+      ),
+      this.database.tenantQuery<{ receivable: string; payable: string }>(
+        context.tenantId,
+        `SELECT (SELECT COALESCE(sum(amount),0) FROM accounts_receivable WHERE tenant_id=$1 AND status='open' AND due_date<=$2 ${context.branchId ? "AND branch_id=$3" : ""})::text receivable,(SELECT COALESCE(sum(amount),0) FROM accounts_payable WHERE tenant_id=$1 AND status='open' AND due_date<=$2 ${context.branchId ? "AND branch_id=$3" : ""})::text payable`,
+        context.branchId
+          ? [context.tenantId, endDate, context.branchId]
+          : [context.tenantId, endDate],
+      ),
+      this.database.tenantQuery<{ total: string }>(
+        context.tenantId,
+        `SELECT COALESCE(sum(sales_target),0)::text total FROM branch_goals WHERE tenant_id=$1 AND period_start<=$3 AND period_end>=$2 ${context.branchId ? "AND branch_id=$4" : ""}`,
+        context.branchId
+          ? [context.tenantId, startDate, endDate, context.branchId]
+          : [context.tenantId, startDate, endDate],
+      ),
+      this.database.tenantQuery<{ margin: string; turnover: string; overdue: string }>(
+        context.tenantId,
+        `
           SELECT
             COALESCE((SELECT SUM((si.unit_price * si.quantity) - si.discount_amount - (p.cost_price * si.quantity))
               FROM sale_items si JOIN sales s ON s.id=si.sale_id JOIN products p ON p.id=si.product_id
-              WHERE si.tenant_id=$1 AND s.status='sold' AND s.created_at::date BETWEEN $2 AND $3 ${context.branchId?"AND s.branch_id=$4":""}),0)::text AS margin,
-            COALESCE((SELECT SUM(ABS(sm.quantity)) / NULLIF((SELECT SUM(quantity) FROM stock_balances WHERE tenant_id=$1 ${context.branchId?"AND branch_id=$4":""}),0)
-              FROM stock_movements sm WHERE sm.tenant_id=$1 AND sm.movement_type='sale_out' AND sm.created_at::date BETWEEN $2 AND $3 ${context.branchId?"AND sm.branch_id=$4":""}),0)::text AS turnover,
-            COALESCE((SELECT SUM(amount) FROM accounts_receivable WHERE tenant_id=$1 AND status IN('open','overdue') AND due_date<CURRENT_DATE ${context.branchId?"AND branch_id=$4":""}),0)::text AS overdue
-        `, context.branchId?[context.tenantId,startDate,endDate,context.branchId]:[context.tenantId,startDate,endDate])
-        ,this.database.tenantQuery<{ name:string; quantity:string; minStock:string; suggestedQuantity:string }>(context.tenantId,`
+              WHERE si.tenant_id=$1 AND s.status='sold' AND s.created_at::date BETWEEN $2 AND $3 ${context.branchId ? "AND s.branch_id=$4" : ""}),0)::text AS margin,
+            COALESCE((SELECT SUM(ABS(sm.quantity)) / NULLIF((SELECT SUM(quantity) FROM stock_balances WHERE tenant_id=$1 ${context.branchId ? "AND branch_id=$4" : ""}),0)
+              FROM stock_movements sm WHERE sm.tenant_id=$1 AND sm.movement_type='sale_out' AND sm.created_at::date BETWEEN $2 AND $3 ${context.branchId ? "AND sm.branch_id=$4" : ""}),0)::text AS turnover,
+            COALESCE((SELECT SUM(amount) FROM accounts_receivable WHERE tenant_id=$1 AND status IN('open','overdue') AND due_date<CURRENT_DATE ${context.branchId ? "AND branch_id=$4" : ""}),0)::text AS overdue
+        `,
+        context.branchId
+          ? [context.tenantId, startDate, endDate, context.branchId]
+          : [context.tenantId, startDate, endDate],
+      ),
+      this.database.tenantQuery<{
+        name: string;
+        quantity: string;
+        minStock: string;
+        suggestedQuantity: string;
+        unitCost: string;
+        estimatedInvestment: string;
+        marginPercent: string;
+      }>(
+        context.tenantId,
+        `
           SELECT p.name, COALESCE(sb.quantity,0)::text quantity, p.min_stock::text AS "minStock",
-                 GREATEST((p.min_stock * 2)-COALESCE(sb.quantity,0), p.min_stock)::text AS "suggestedQuantity"
-          FROM products p LEFT JOIN stock_balances sb ON sb.tenant_id=p.tenant_id AND sb.product_id=p.id ${context.branchId?"AND sb.branch_id=$2":""}
-          WHERE p.tenant_id=$1 AND p.deleted_at IS NULL AND COALESCE(sb.quantity,0)<=p.min_stock ${context.branchId?"AND (p.branch_id=$2 OR p.branch_id IS NULL)":""}
+                 GREATEST((p.min_stock * 2)-COALESCE(sb.quantity,0), p.min_stock)::text AS "suggestedQuantity",
+                 COALESCE(p.cost_price,0)::text AS "unitCost",
+                 (GREATEST((p.min_stock * 2)-COALESCE(sb.quantity,0), p.min_stock) * COALESCE(p.cost_price,0))::text AS "estimatedInvestment",
+                 CASE WHEN p.sale_price>0 THEN (((p.sale_price-p.cost_price)/p.sale_price)*100)::text ELSE '0' END AS "marginPercent"
+          FROM products p LEFT JOIN stock_balances sb ON sb.tenant_id=p.tenant_id AND sb.product_id=p.id ${context.branchId ? "AND sb.branch_id=$2" : ""}
+          WHERE p.tenant_id=$1 AND p.deleted_at IS NULL AND COALESCE(sb.quantity,0)<=p.min_stock ${context.branchId ? "AND (p.branch_id=$2 OR p.branch_id IS NULL)" : ""}
           ORDER BY (p.min_stock-COALESCE(sb.quantity,0)) DESC LIMIT 5
-        `, branchParams)
-        ,this.database.tenantQuery<{ total:string }>(context.tenantId,`SELECT COALESCE(sum(amount),0)::text total FROM seller_commissions WHERE tenant_id=$1 AND user_id=$2 AND created_at::date BETWEEN $3 AND $4`,[context.tenantId,context.userId ?? "00000000-0000-0000-0000-000000000000",startDate,endDate])
-        ,this.database.tenantQuery<{ date:string; total:string }>(context.tenantId,`SELECT d::date::text date,COALESCE(sum(s.total_amount),0)::text total FROM generate_series($2::date,$3::date,interval '1 day') d LEFT JOIN sales s ON s.tenant_id=$1 AND s.status='sold' AND s.created_at::date=d::date ${context.branchId?"AND s.branch_id=$4":""} GROUP BY d ORDER BY d`,context.branchId?[context.tenantId,startDate,endDate,context.branchId]:[context.tenantId,startDate,endDate])
-        ,this.database.tenantQuery<{ branchId:string; name:string; target:string; sales:string }>(context.tenantId,`SELECT b.id AS "branchId",b.name,COALESCE((SELECT sum(g.sales_target) FROM branch_goals g WHERE g.tenant_id=$1 AND g.branch_id=b.id AND g.period_start<=$3 AND g.period_end>=$2),0)::text target,COALESCE((SELECT sum(s.total_amount) FROM sales s WHERE s.tenant_id=$1 AND s.branch_id=b.id AND s.status='sold' AND s.created_at::date BETWEEN $2 AND $3),0)::text sales FROM branches b WHERE b.tenant_id=$1 AND b.deleted_at IS NULL ${context.branchId?"AND b.id=$4":""} ORDER BY b.name`,context.branchId?[context.tenantId,startDate,endDate,context.branchId]:[context.tenantId,startDate,endDate])
-      ]);
+        `,
+        branchParams,
+      ),
+      this.database.tenantQuery<{ total: string }>(
+        context.tenantId,
+        `SELECT COALESCE(sum(amount),0)::text total FROM seller_commissions WHERE tenant_id=$1 AND user_id=$2 AND created_at::date BETWEEN $3 AND $4`,
+        [
+          context.tenantId,
+          context.userId ?? "00000000-0000-0000-0000-000000000000",
+          startDate,
+          endDate,
+        ],
+      ),
+      this.database.tenantQuery<{ date: string; total: string }>(
+        context.tenantId,
+        `SELECT d::date::text date,COALESCE(sum(s.total_amount),0)::text total FROM generate_series($2::date,$3::date,interval '1 day') d LEFT JOIN sales s ON s.tenant_id=$1 AND s.status='sold' AND s.created_at::date=d::date ${context.branchId ? "AND s.branch_id=$4" : ""} GROUP BY d ORDER BY d`,
+        context.branchId
+          ? [context.tenantId, startDate, endDate, context.branchId]
+          : [context.tenantId, startDate, endDate],
+      ),
+      this.database.tenantQuery<{ branchId: string; name: string; target: string; sales: string }>(
+        context.tenantId,
+        `SELECT b.id AS "branchId",b.name,COALESCE((SELECT sum(g.sales_target) FROM branch_goals g WHERE g.tenant_id=$1 AND g.branch_id=b.id AND g.period_start<=$3 AND g.period_end>=$2),0)::text target,COALESCE((SELECT sum(s.total_amount) FROM sales s WHERE s.tenant_id=$1 AND s.branch_id=b.id AND s.status='sold' AND s.created_at::date BETWEEN $2 AND $3),0)::text sales FROM branches b WHERE b.tenant_id=$1 AND b.deleted_at IS NULL ${context.branchId ? "AND b.id=$4" : ""} ORDER BY b.name`,
+        context.branchId
+          ? [context.tenantId, startDate, endDate, context.branchId]
+          : [context.tenantId, startDate, endDate],
+      ),
+    ]);
 
     return {
       branches: Number(branches.rows[0]?.total ?? 0),
@@ -345,16 +618,30 @@ export class DashboardService {
       salesToday: Number(salesToday.rows[0]?.total ?? 0),
       salesMonth: Number(salesMonth.rows[0]?.total ?? 0),
       averageTicket: Number(averageTicket.rows[0]?.total ?? 0),
-      period: { startDate, endDate, previousStartDate: previousStart.toISOString().slice(0,10), previousEndDate: previousEnd.toISOString().slice(0,10) },
+      period: {
+        startDate,
+        endDate,
+        previousStartDate: previousStart.toISOString().slice(0, 10),
+        previousEndDate: previousEnd.toISOString().slice(0, 10),
+      },
       periodSales: Number(periodSales.rows[0]?.total ?? 0),
       periodSalesCount: Number(periodSales.rows[0]?.count ?? 0),
       periodAverageTicket: Number(periodSales.rows[0]?.average ?? 0),
       previousPeriodSales: Number(previousSales.rows[0]?.total ?? 0),
-      salesVariationPercent: Number(previousSales.rows[0]?.total ?? 0) > 0 ? ((Number(periodSales.rows[0]?.total ?? 0) / Number(previousSales.rows[0]?.total ?? 1)) - 1) * 100 : null,
-      cashForecast: Number(forecast.rows[0]?.receivable ?? 0) - Number(forecast.rows[0]?.payable ?? 0),
+      salesVariationPercent:
+        Number(previousSales.rows[0]?.total ?? 0) > 0
+          ? (Number(periodSales.rows[0]?.total ?? 0) / Number(previousSales.rows[0]?.total ?? 1) -
+              1) *
+            100
+          : null,
+      cashForecast:
+        Number(forecast.rows[0]?.receivable ?? 0) - Number(forecast.rows[0]?.payable ?? 0),
       salesGoal: Number(goal.rows[0]?.total ?? 0),
-      goalProgressPercent: Number(goal.rows[0]?.total ?? 0) > 0 ? Number(periodSales.rows[0]?.total ?? 0) / Number(goal.rows[0]?.total ?? 1) * 100 : null
-      ,roleFocus: context.roleSlug,
+      goalProgressPercent:
+        Number(goal.rows[0]?.total ?? 0) > 0
+          ? (Number(periodSales.rows[0]?.total ?? 0) / Number(goal.rows[0]?.total ?? 1)) * 100
+          : null,
+      roleFocus: context.roleSlug,
       sellerCommission: Number(commissions.rows[0]?.total ?? 0),
       health: {
         grossMargin: Number(health.rows[0]?.margin ?? 0),
