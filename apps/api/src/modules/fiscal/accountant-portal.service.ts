@@ -191,7 +191,7 @@ export class AccountantPortalService {
   }
 
   async verifyCode(input: AccountantPortalLoginVerifyInput, meta: PortalEventMeta) {
-    const access = await this.verifyLinkToken(input.token, { includeLoginCode: true });
+    const access = await this.verifyLinkToken(input.token);
     if (access.email.toLowerCase() !== input.email.toLowerCase()) {
       await this.logEvent(access.tenant_id, access.id, "login_failed", { ...meta, metadata: { reason: "email_mismatch" } });
       throw new UnauthorizedException("E-mail não autorizado para este acesso.");
@@ -275,8 +275,9 @@ export class AccountantPortalService {
   async portalPdf(auth: { token?: string; sessionToken?: string }, period?: string, meta: PortalEventMeta = {}) {
     const overview = await this.portalOverview(auth, period, meta);
     await this.logEvent(overview.access.tenantId, overview.access.id, "export_downloaded", { ...meta, period: overview.period, exportFormat: "pdf" });
-    const totalDocuments = overview.documents.reduce((sum: number, row: { total: number }) => sum + Number(row.total), 0);
-    const attention = overview.documents
+    const documents = overview.documents as Array<{ total: number; status: string }>;
+    const totalDocuments = documents.reduce((sum, row) => sum + Number(row.total), 0);
+    const attention = documents
       .filter((row: { status: string }) => ["rejected", "error", "retry_pending"].includes(row.status))
       .reduce((sum: number, row: { total: number }) => sum + Number(row.total), 0);
     return Buffer.from(renderDocumentPdf({
@@ -468,7 +469,7 @@ export class AccountantPortalService {
     return current;
   }
 
-  private async verifyLinkToken(token: string, _options?: { includeLoginCode?: boolean }) {
+  private async verifyLinkToken(token: string) {
     const access = await this.database.pool.query<VerifiedAccess>(
       `SELECT a.*,t.name AS tenant_name,b.name AS branch_name
        FROM accountant_portal_accesses a
@@ -546,7 +547,8 @@ function monthValue(value: Date | null | undefined) {
 }
 
 function csvCell(value: unknown) {
-  return `"${String(value ?? "").replace(/"/g, '""')}"`;
+  const text = typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? String(value) : "";
+  return `"${text.replace(/"/g, '""')}"`;
 }
 
 function statusLabel(status: string) {

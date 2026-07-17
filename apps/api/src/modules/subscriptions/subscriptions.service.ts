@@ -20,7 +20,7 @@ export class SubscriptionsService {
   async publicCheckout(input: PublicSubscriptionCheckoutInput) {
     const document = input.document.replace(/\D/g, "");
     if (![11, 14].includes(document.length)) throw new BadRequestException("Informe um CPF ou CNPJ válido.");
-    const existingEmail = await this.database.pool.query("SELECT id FROM users WHERE lower(email)=lower($1) AND deleted_at IS NULL", [input.email]);
+    const existingEmail = await this.database.pool.query<{ id: string }>("SELECT id FROM users WHERE lower(email)=lower($1) AND deleted_at IS NULL", [input.email]);
     if (existingEmail.rowCount) throw new BadRequestException("Este e-mail já possui uma conta. Entre no painel para contratar outro plano.");
     const plan = await this.database.pool.query<{ id: string; name: string; price_cents: number }>("SELECT id,name,price_cents FROM plans WHERE slug=$1 AND is_active=true", [input.planSlug]);
     if (!plan.rows[0]) throw new BadRequestException("Plano indisponível.");
@@ -226,7 +226,7 @@ export class SubscriptionsService {
   }
 
   async cancel(context: TenantContext) {
-    const subscription = await this.database.tenantQuery(
+    const subscription = await this.database.tenantQuery<{ id: string; provider: string; providerSubscriptionId: string | null; status: string; currentPeriodEndsAt: Date | null; isLifetime: boolean }>(
       context.tenantId,
       `SELECT id,provider,provider_subscription_id AS "providerSubscriptionId",status,current_period_ends_at AS "currentPeriodEndsAt",COALESCE(is_lifetime,false) AS "isLifetime" FROM subscriptions WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 1`,
       [context.tenantId],

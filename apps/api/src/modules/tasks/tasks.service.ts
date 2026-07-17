@@ -19,7 +19,7 @@ export class TasksService {
       const assignee = await this.database.tenantQuery<{ user_id: string }>(context.tenantId, "SELECT user_id FROM memberships WHERE tenant_id=$1 AND user_id=$2 AND status='active' AND deleted_at IS NULL LIMIT 1", [context.tenantId, input.assigneeUserId]);
       ensureFound(assignee.rows[0], "Responsável");
     }
-    const result = await this.database.tenantQuery(context.tenantId, `INSERT INTO operational_tasks(tenant_id,branch_id,title,description,type,priority,assignee_user_id,created_by_user_id,due_at,recurrence) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`, [context.tenantId, context.branchId ?? branchId ?? null, input.title, input.description ?? null, input.type ?? "general", input.priority ?? "normal", input.assigneeUserId ?? null, context.userId ?? null, input.dueAt ?? null, input.recurrence ?? null]);
+    const result = await this.database.tenantQuery<{ id: string }>(context.tenantId, `INSERT INTO operational_tasks(tenant_id,branch_id,title,description,type,priority,assignee_user_id,created_by_user_id,due_at,recurrence) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`, [context.tenantId, context.branchId ?? branchId ?? null, input.title, input.description ?? null, input.type ?? "general", input.priority ?? "normal", input.assigneeUserId ?? null, context.userId ?? null, input.dueAt ?? null, input.recurrence ?? null]);
     return { id: result.rows[0]?.id };
   }
   async update(context: TenantContext, id: string, input: Record<string, unknown>) {

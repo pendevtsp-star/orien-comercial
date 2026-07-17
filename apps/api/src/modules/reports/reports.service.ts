@@ -4,6 +4,10 @@ import { DatabaseService } from "../database/database.service";
 import { renderDocumentHtml, renderDocumentPdf, type DocumentRenderInput } from "@sgc/documents";
 import { loadTenantBranding } from "../../shared/tenant-branding";
 
+type OverviewRow = { salesCount: number; grossRevenue: string; averageTicket: string; discounts: string };
+type OverviewHealthRow = { grossMargin: string; overdueReceivables: string; lowStockProducts: string };
+type ReportOverview = OverviewRow & Omit<OverviewHealthRow, "lowStockProducts"> & { customers: number; lowStockProducts: number; period: { startDate: string; endDate: string } };
+
 @Injectable()
 export class ReportsService {
   constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
@@ -22,7 +26,7 @@ export class ReportsService {
     const params = context.branchId
       ? [context.tenantId, start, end, context.branchId]
       : [context.tenantId, start, end];
-    const result = await this.database.tenantQuery(
+    const result = await this.database.tenantQuery<OverviewRow>(
       context.tenantId,
       `
       SELECT count(*)::int AS "salesCount", COALESCE(sum(s.total_amount),0)::text AS "grossRevenue", COALESCE(avg(s.total_amount),0)::text AS "averageTicket",
@@ -30,12 +34,12 @@ export class ReportsService {
       FROM sales s WHERE s.tenant_id=$1 AND s.status='sold' AND s.created_at BETWEEN $2 AND $3${branch}`,
       params,
     );
-    const customers = await this.database.tenantQuery(
+    const customers = await this.database.tenantQuery<{ total: number }>(
       context.tenantId,
       "SELECT count(*)::int AS total FROM customers WHERE tenant_id=$1 AND deleted_at IS NULL",
       [context.tenantId],
     );
-    const health = await this.database.tenantQuery(
+    const health = await this.database.tenantQuery<OverviewHealthRow>(
       context.tenantId,
       `
       SELECT
@@ -80,7 +84,6 @@ export class ReportsService {
 
   async financial(context: TenantContext, startDate?: string, endDate?: string) {
     const { start, end } = this.period(startDate, endDate);
-    const branch = context.branchId ? " AND f.branch_id=$4" : "";
     const params = context.branchId
       ? [context.tenantId, start, end, context.branchId]
       : [context.tenantId, start, end];
@@ -128,9 +131,7 @@ export class ReportsService {
       loadTenantBranding(this.database, context.tenantId),
       this.overview(context, startDate, endDate),
     ]);
-    const data = rawData as Record<string, any> & {
-      period: { startDate: string; endDate: string };
-    };
+    const data = rawData as ReportOverview;
     return {
       title: "Relatório gerencial",
       subtitle: "Leitura executiva de vendas e relacionamento no período selecionado.",
@@ -294,7 +295,10 @@ function formatDocumentRow(row: Record<string, unknown>) {
           key,
           Number(value ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
         ];
-      if (key === "status") return [key, statuses[String(value)] ?? String(value ?? "-")];
+      if (key === "status") {
+        const status = typeof value === "string" ? value : "-";
+        return [key, statuses[status] ?? status];
+      }
       return [key, value as string | number | null | undefined];
     }),
   );

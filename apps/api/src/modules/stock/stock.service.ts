@@ -648,7 +648,8 @@ function stringValue(value: unknown) {
 }
 
 function numericValue(value: unknown) {
-  const number = Number(String(value ?? "0").replace(",", "."));
+  const text = typeof value === "string" || typeof value === "number" ? String(value) : "0";
+  const number = Number(text.replace(",", "."));
   return Number.isFinite(number) ? number : 0;
 }
 

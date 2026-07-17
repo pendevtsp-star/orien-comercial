@@ -16,7 +16,7 @@ export class PurchasesService {
     const sort = resolveSort(query, { createdAt: "po.created_at", name: "s.name" }, "createdAt");
     const count = await this.database.tenantQuery<{ total: string }>(context.tenantId, `SELECT count(*)::text total FROM purchase_orders po JOIN suppliers s ON s.id = po.supplier_id WHERE ${filters.join(" AND ")}`, params);
     params.push(page.pageSize, page.offset);
-    const rows = await this.database.tenantQuery(context.tenantId, `SELECT po.id, po.branch_id AS "branchId", b.name AS "branchName", po.supplier_id AS "supplierId", s.name AS "supplierName", po.status, po.expected_at AS "expectedAt", po.total_amount::text AS "totalAmount", po.notes, po.created_at AS "createdAt", COALESCE(sum(poi.quantity),0)::text AS "orderedQuantity", COALESCE(sum(poi.received_quantity),0)::text AS "receivedQuantity" FROM purchase_orders po JOIN suppliers s ON s.id = po.supplier_id JOIN branches b ON b.id = po.branch_id LEFT JOIN purchase_order_items poi ON poi.purchase_order_id = po.id WHERE ${filters.join(" AND ")} GROUP BY po.id,b.name,s.name ORDER BY ${sort.field} ${sort.direction} LIMIT $${params.length - 1} OFFSET $${params.length}`, params);
+    const rows = await this.database.tenantQuery<{ id: string; branchId: string; branchName: string; supplierId: string; supplierName: string; status: string; expectedAt: Date | null; totalAmount: string; notes: string | null; createdAt: Date; orderedQuantity: string; receivedQuantity: string }>(context.tenantId, `SELECT po.id, po.branch_id AS "branchId", b.name AS "branchName", po.supplier_id AS "supplierId", s.name AS "supplierName", po.status, po.expected_at AS "expectedAt", po.total_amount::text AS "totalAmount", po.notes, po.created_at AS "createdAt", COALESCE(sum(poi.quantity),0)::text AS "orderedQuantity", COALESCE(sum(poi.received_quantity),0)::text AS "receivedQuantity" FROM purchase_orders po JOIN suppliers s ON s.id = po.supplier_id JOIN branches b ON b.id = po.branch_id LEFT JOIN purchase_order_items poi ON poi.purchase_order_id = po.id WHERE ${filters.join(" AND ")} GROUP BY po.id,b.name,s.name ORDER BY ${sort.field} ${sort.direction} LIMIT $${params.length - 1} OFFSET $${params.length}`, params);
     return { data: rows.rows, pagination: { ...page, total: Number(count.rows[0]?.total ?? 0) } };
   }
 
@@ -45,8 +45,8 @@ export class PurchasesService {
       const order = await client.query<{ branch_id: string; status: string }>("SELECT branch_id,status FROM purchase_orders WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL FOR UPDATE", [context.tenantId, id]);
       const current = ensureFound(order.rows[0], "Pedido"); ensureBranchAccess(context, current.branch_id);
       if (current.status !== "draft") throw new BadRequestException("Apenas pedidos em rascunho podem ser aprovados.");
-      const updated = await client.query("UPDATE purchase_orders SET status = 'approved', updated_at = now() WHERE tenant_id = $1 AND id = $2 RETURNING *", [context.tenantId, id]);
-      await audit(client, context, "purchase_order.approved", id, {}); return updated.rows[0];
+      const updated = await client.query<{ id: string; branch_id: string; status: string }>("UPDATE purchase_orders SET status = 'approved', updated_at = now() WHERE tenant_id = $1 AND id = $2 RETURNING id,branch_id,status", [context.tenantId, id]);
+      await audit(client, context, "purchase_order.approved", id, {}); return ensureFound(updated.rows[0], "Pedido");
     }); return result;
   }
 
@@ -65,5 +65,13 @@ export class PurchasesService {
   }
 }
 
-async function assertReferences(client: PoolClient, tenantId: string, branchId: string, supplierId: string, productIds: string[]) { const [branch,supplier,products]=await Promise.all([client.query("SELECT id FROM branches WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL",[tenantId,branchId]),client.query("SELECT id FROM suppliers WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL AND is_active=true",[tenantId,supplierId]),client.query("SELECT id FROM products WHERE tenant_id=$1 AND id=ANY($2::uuid[]) AND deleted_at IS NULL",[tenantId,productIds])]); ensureFound(branch.rows[0],"Loja"); ensureFound(supplier.rows[0],"Fornecedor"); if(products.rowCount!==new Set(productIds).size) throw new BadRequestException("Produto invalido no pedido."); }
+async function assertReferences(client: PoolClient, tenantId: string, branchId: string, supplierId: string, productIds: string[]) {
+  // A single transaction client must be queried in order; parallel calls trigger pg queue warnings.
+  const branch = await client.query<{ id: string }>("SELECT id FROM branches WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL", [tenantId, branchId]);
+  const supplier = await client.query<{ id: string }>("SELECT id FROM suppliers WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL AND is_active=true", [tenantId, supplierId]);
+  const products = await client.query<{ id: string }>("SELECT id FROM products WHERE tenant_id=$1 AND id=ANY($2::uuid[]) AND deleted_at IS NULL", [tenantId, productIds]);
+  ensureFound(branch.rows[0], "Loja");
+  ensureFound(supplier.rows[0], "Fornecedor");
+  if (products.rowCount !== new Set(productIds).size) throw new BadRequestException("Produto invalido no pedido.");
+}
 async function audit(client: PoolClient,context:TenantContext,action:string,entityId:string,metadata:Record<string,unknown>){await client.query("INSERT INTO audit_logs (tenant_id,actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,$2,$3,'purchase_order',$4,$5)",[context.tenantId,context.userId??null,action,entityId,JSON.stringify(metadata)]);}

@@ -45,6 +45,36 @@ type RenegotiateInput = {
   firstDueDate: string;
 };
 
+interface QuoteDocumentRow {
+  id: string;
+  branch_id: string;
+  notes: string | null;
+  status: string;
+  branch_name: string;
+  customer_name: string | null;
+  valid_until: Date | string;
+  total_amount: string | number;
+}
+
+interface QuoteDocumentItem {
+  description: string;
+  quantity: string | number;
+  unit_price: string | number;
+  discount_amount: string | number;
+}
+
+interface AbcRow {
+  id: string;
+  name: string;
+  sku: string | null;
+  quantity: string;
+  revenue: string;
+  margin: string;
+  stock: string;
+  class: "A" | "B" | "C";
+  suggestion: "Ruptura" | "Parado" | "Comprar" | "Saudavel";
+}
+
 @Injectable()
 export class OperationsService {
   constructor(@Inject(DatabaseService) private readonly db: DatabaseService) {}
@@ -404,14 +434,14 @@ export class OperationsService {
   }
   async quoteDocument(c: TenantContext, id: string) {
     const branding = await loadTenantBranding(this.db, c.tenantId);
-    const q = await this.db.tenantQuery<any>(
+    const q = await this.db.tenantQuery<QuoteDocumentRow>(
       c.tenantId,
       `SELECT q.*,b.name branch_name,cu.name customer_name FROM quotes q JOIN branches b ON b.id=q.branch_id LEFT JOIN customers cu ON cu.id=q.customer_id WHERE q.tenant_id=$1 AND q.id=$2`,
       [c.tenantId, id],
     );
     const quote = ensureFound(q.rows[0], "Orcamento");
     ensureBranchAccess(c, quote.branch_id);
-    const items = await this.db.tenantQuery<any>(
+    const items = await this.db.tenantQuery<QuoteDocumentItem>(
       c.tenantId,
       `SELECT description,quantity,unit_price,discount_amount FROM quote_items WHERE tenant_id=$1 AND quote_id=$2`,
       [c.tenantId, id],
@@ -436,10 +466,12 @@ export class OperationsService {
               { key: "quantity", label: "Qtd" },
               { key: "price", label: "Preco" },
             ],
-            rows: items.rows.map((x: any) => ({
-              description: x.description,
-              quantity: x.quantity,
-              price: money(Number(x.unit_price) * Number(x.quantity) - Number(x.discount_amount)),
+            rows: items.rows.map((item) => ({
+              description: item.description,
+              quantity: item.quantity,
+              price: money(
+                Number(item.unit_price) * Number(item.quantity) - Number(item.discount_amount),
+              ),
             })),
           },
         },
@@ -448,7 +480,7 @@ export class OperationsService {
     });
   }
   async credit(c: TenantContext, id?: string) {
-    const params: any[] = [c.tenantId];
+    const params: unknown[] = [c.tenantId];
     const filter = id ? (params.push(id), "AND cu.id=$2") : "";
     const r = await this.db.tenantQuery(
       c.tenantId,
@@ -503,7 +535,7 @@ export class OperationsService {
     });
   }
   async abc(c: TenantContext, start?: string, end?: string) {
-    const r = await this.db.tenantQuery<any>(
+    const r = await this.db.tenantQuery<AbcRow>(
       c.tenantId,
       `WITH data AS(SELECT p.id,p.name,p.sku,p.cost_price,p.sale_price,COALESCE(sum(si.quantity) FILTER(WHERE s.id IS NOT NULL),0) qty,COALESCE(sum(si.quantity*si.unit_price-si.discount_amount) FILTER(WHERE s.id IS NOT NULL),0) revenue,COALESCE(sum(si.quantity*(si.unit_price-p.cost_price)-si.discount_amount) FILTER(WHERE s.id IS NOT NULL),0) margin,COALESCE(sb.quantity,0) stock FROM products p LEFT JOIN sale_items si ON si.product_id=p.id LEFT JOIN sales s ON s.id=si.sale_id AND s.status='sold' AND s.created_at::date BETWEEN COALESCE($2::date,CURRENT_DATE-INTERVAL '90 days') AND COALESCE($3::date,CURRENT_DATE) LEFT JOIN stock_balances sb ON sb.product_id=p.id AND ($4::uuid IS NULL OR sb.branch_id=$4) WHERE p.tenant_id=$1 AND p.deleted_at IS NULL GROUP BY p.id,sb.quantity),ranked AS(SELECT *,sum(revenue)OVER(ORDER BY revenue DESC)/NULLIF(sum(revenue)OVER(),0) cumulative FROM data)SELECT id,name,sku,qty::text quantity,revenue::text,margin::text,stock::text,CASE WHEN cumulative<=.8 THEN 'A' WHEN cumulative<=.95 THEN 'B' ELSE 'C' END class,CASE WHEN stock<=0 THEN 'Ruptura' WHEN qty=0 THEN 'Parado' WHEN stock<qty/3 THEN 'Comprar' ELSE 'Saudavel' END suggestion FROM ranked ORDER BY revenue DESC`,
       [c.tenantId, start ?? null, end ?? null, c.branchId ?? null],

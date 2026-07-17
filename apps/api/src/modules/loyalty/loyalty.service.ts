@@ -200,7 +200,7 @@ export class LoyaltyService implements OnModuleInit, OnModuleDestroy {
 
   async createTier(tenant: TenantContext, actor: string, input: TierInput) {
     if (!input.name?.trim()) throw new BadRequestException("Informe o nome do nível.");
-    const row = await this.database.tenantQuery(
+    const row = await this.database.tenantQuery<{ id: string }>(
       tenant.tenantId,
       `INSERT INTO loyalty_tiers (tenant_id,name,minimum_points,multiplier,benefits) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
       [
@@ -224,7 +224,7 @@ export class LoyaltyService implements OnModuleInit, OnModuleDestroy {
 
   async createReward(tenant: TenantContext, actor: string, input: RewardInput) {
     if (!input.name?.trim()) throw new BadRequestException("Informe o nome da recompensa.");
-    const row = await this.database.tenantQuery(
+    const row = await this.database.tenantQuery<{ id: string }>(
       tenant.tenantId,
       `INSERT INTO loyalty_rewards (tenant_id,name,reward_type,points_required,value_amount,product_id,coupon_code,ends_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::timestamptz) RETURNING id`,
       [

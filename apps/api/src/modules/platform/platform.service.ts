@@ -5,6 +5,31 @@ import type { AppConfig } from "@sgc/config";
 import { APP_CONFIG } from "../config/config.module";
 import { DatabaseService } from "../database/database.service";
 
+type PlatformIdRow = { id: string };
+type PlatformSupportSessionRow = { id: string; expiresAt: Date };
+type PlatformSupportSessionEndRow = { tenant_id: string };
+type PlatformCouponRow = { id: string; code: string; isActive?: boolean };
+type PlatformSupportTicketRow = { id: string; tenantId: string; tenantName: string; subject: string; description: string; category: string; priority: string; status: string; requestId: string | null; pageUrl: string | null; createdAt: Date; updatedAt: Date; slaDueAt: Date | null; slaState: string; metadata: Record<string, unknown>; openedByName: string | null };
+type PlatformSupportTicketMessageRow = { id: string; authorKind: string; body: string; internalNote: boolean; createdAt: Date; authorName: string };
+type PlatformTestimonialRow = {
+  id: string;
+  token: string;
+  tenantId: string | null;
+  tenantName: string | null;
+  recipientEmail: string | null;
+  status: string;
+  name: string | null;
+  company: string | null;
+  role: string | null;
+  quote: string | null;
+  imageUrl: string | null;
+  consentPublication: boolean;
+  submittedAt: Date | null;
+  approvedAt: Date | null;
+  expiresAt: Date;
+  createdAt: Date;
+};
+
 @Injectable()
 export class PlatformService {
   constructor(
@@ -27,7 +52,7 @@ export class PlatformService {
     )
       throw new ForbiddenException("Acesso restrito ao backoffice Orien.");
     if (requireMfa && row.rows[0].mfa_enabled && sessionId) {
-      const session = await this.database.pool.query(
+      const session = await this.database.pool.query<{ mfa_verified_at: Date | null }>(
         "SELECT mfa_verified_at FROM sessions WHERE id=$1",
         [sessionId],
       );
@@ -198,14 +223,21 @@ export class PlatformService {
     };
   }
   async tenants() {
-    const result = await this.database.pool.query(
+    const result = await this.database.pool.query<PlatformIdRow>(
       `SELECT t.id,t.name,t.slug,t.status,t.plan_slug AS "planSlug",t.created_at AS "createdAt",count(DISTINCT m.id)::int AS "membersCount",count(DISTINCT s.id)::int AS "subscriptionsCount" FROM tenants t LEFT JOIN memberships m ON m.tenant_id=t.id AND m.status='active' AND m.deleted_at IS NULL LEFT JOIN subscriptions s ON s.tenant_id=t.id WHERE t.deleted_at IS NULL GROUP BY t.id ORDER BY t.created_at DESC`,
     );
     return { data: result.rows };
   }
   async tenantDetail(id: string) {
     const [tenant, members, branches, integrations, recentSales] = await Promise.all([
-      this.database.pool.query(
+      this.database.pool.query<{
+        id: string;
+        name: string;
+        slug: string;
+        status: string;
+        planSlug: string;
+        createdAt: Date;
+      }>(
         `SELECT id,name,slug,status,plan_slug AS "planSlug",created_at AS "createdAt" FROM tenants WHERE id=$1 AND deleted_at IS NULL`,
         [id],
       ),
@@ -219,7 +251,7 @@ export class PlatformService {
         "SELECT count(*)::int total FROM branches WHERE tenant_id=$1 AND deleted_at IS NULL",
         [id],
       ),
-      this.database.pool.query(
+      this.database.pool.query<{ provider: string; status: string; updatedAt: Date }>(
         `SELECT provider,status,updated_at AS "updatedAt" FROM tenant_integrations WHERE tenant_id=$1`,
         [id],
       ),
@@ -241,7 +273,7 @@ export class PlatformService {
   async updateTenant(actor: string, id: string, status: string) {
     if (!["trial", "active", "past_due", "suspended", "cancelled"].includes(status))
       throw new BadRequestException("Status inválido.");
-    const updated = await this.database.pool.query(
+    const updated = await this.database.pool.query<{ id: string; name: string; status: string }>(
       "UPDATE tenants SET status=$2,updated_at=now() WHERE id=$1 AND deleted_at IS NULL RETURNING id,name,status",
       [id, status],
     );
@@ -250,7 +282,19 @@ export class PlatformService {
     return updated.rows[0];
   }
   async billing() {
-    const result = await this.database.pool.query(
+    const result = await this.database.pool.query<{
+      tenantName: string;
+      status: string;
+      planName: string | null;
+      priceCents: number | null;
+      periodEndsAt: Date | null;
+      isLifetime: boolean;
+      isComplimentary: boolean;
+      provider: string | null;
+      externalCustomerId: string | null;
+      lifetimeGrantedAt: Date | null;
+      lifetimeNote: string | null;
+    }>(
       `SELECT t.name AS "tenantName",s.status,p.name AS "planName",p.price_cents AS "priceCents",s.current_period_ends_at AS "periodEndsAt",COALESCE(s.is_lifetime,false) AS "isLifetime",COALESCE(s.is_complimentary,false) AS "isComplimentary",s.provider,s.external_customer_id AS "externalCustomerId",s.lifetime_granted_at AS "lifetimeGrantedAt",s.lifetime_note AS "lifetimeNote" FROM subscriptions s JOIN tenants t ON t.id=s.tenant_id LEFT JOIN plans p ON p.id=s.plan_id ORDER BY s.updated_at DESC LIMIT 100`,
     );
     return { data: result.rows };
@@ -261,7 +305,7 @@ export class PlatformService {
       [planSlug],
     );
     if (!plan.rows[0]) throw new BadRequestException("Plano inválido.");
-    const result = await this.database.pool.query(
+    const result = await this.database.pool.query<{ id: string; body: string; createdAt: Date; authorName: string | null }>(
       "UPDATE subscriptions SET plan_id=$2,updated_at=now() WHERE tenant_id=$1 RETURNING id",
       [tenantId, plan.rows[0].id],
     );
@@ -275,7 +319,7 @@ export class PlatformService {
   }
   async extendTrial(actor: string, tenantId: string, days: number) {
     const safeDays = Math.max(1, Math.min(90, Math.floor(days || 7)));
-    const result = await this.database.pool.query(
+    const result = await this.database.pool.query<{ id: string; body: string; createdAt: Date }>(
       "UPDATE subscriptions SET status='trial',current_period_ends_at=GREATEST(COALESCE(current_period_ends_at,now()),now()) + ($2::int * interval '1 day'),updated_at=now() WHERE tenant_id=$1 RETURNING id",
       [tenantId, safeDays],
     );
@@ -314,7 +358,7 @@ export class PlatformService {
       });
       return { ok: true, isLifetime: true, provider: "manual" };
     }
-    const result = await this.database.pool.query(
+    const result = await this.database.pool.query<PlatformIdRow>(
       "UPDATE subscriptions SET is_lifetime=false,is_complimentary=false,lifetime_granted_at=NULL,lifetime_note=NULL,updated_at=now() WHERE tenant_id=$1 RETURNING id",
       [tenantId],
     );
@@ -323,7 +367,7 @@ export class PlatformService {
     return { ok: true, isLifetime: false };
   }
   async supportNotes(tenantId: string) {
-    const result = await this.database.pool.query(
+    const result = await this.database.pool.query<PlatformSupportSessionRow>(
       `SELECT n.id,n.body,n.created_at AS "createdAt",u.name AS "authorName" FROM platform_support_notes n LEFT JOIN users u ON u.id=n.author_user_id WHERE n.tenant_id=$1 ORDER BY n.created_at DESC`,
       [tenantId],
     );
@@ -331,7 +375,7 @@ export class PlatformService {
   }
   async addSupportNote(actor: string, tenantId: string, body: string) {
     if (body.trim().length < 3) throw new BadRequestException("Nota muito curta.");
-    const result = await this.database.pool.query(
+    const result = await this.database.pool.query<{ tenant_id: string }>(
       'INSERT INTO platform_support_notes (tenant_id,author_user_id,body) VALUES ($1,$2,$3) RETURNING id,body,created_at AS "createdAt"',
       [tenantId, actor, body.trim()],
     );
@@ -365,7 +409,7 @@ export class PlatformService {
     };
   }
   async errors() {
-    const result = await this.database.pool.query(
+    const result = await this.database.pool.query<PlatformIdRow & { code: string }>(
       `SELECT id,request_id AS "requestId",method,path,status_code AS "statusCode",error_code AS "errorCode",message,user_agent AS "userAgent",created_at AS "createdAt"
        FROM platform_error_events
        ORDER BY created_at DESC
@@ -374,7 +418,7 @@ export class PlatformService {
     return { data: result.rows };
   }
   async retryWebhook(actor: string, id: string) {
-    const result = await this.database.pool.query(
+    const result = await this.database.pool.query<PlatformIdRow & { code: string; isActive: boolean }>(
       "UPDATE webhook_events SET status='pending',attempts=attempts+1 WHERE id=$1 RETURNING id",
       [id],
     );
@@ -383,14 +427,14 @@ export class PlatformService {
     return { ok: true, message: "Webhook colocado na fila para reprocessamento." };
   }
   async webhooks(status?: string) {
-    const result = await this.database.pool.query(
+    const result = await this.database.pool.query<PlatformIdRow & { code: string }>(
       `SELECT id,provider,event_type AS "eventType",status,attempts,created_at AS "createdAt" FROM webhook_events ${status ? "WHERE status=$1" : ""} ORDER BY created_at DESC LIMIT 100`,
       status ? [status] : [],
     );
     return { data: result.rows };
   }
   async staff() {
-    const result = await this.database.pool.query(
+    const result = await this.database.pool.query<PlatformTestimonialRow>(
       `SELECT pa.id,u.email,u.name,pa.role,pa.is_active AS "isActive",pa.mfa_required AS "mfaRequired",pa.created_at AS "createdAt" FROM platform_admins pa JOIN users u ON u.id=pa.user_id ORDER BY pa.created_at DESC`,
     );
     return { data: result.rows };
@@ -406,18 +450,18 @@ export class PlatformService {
       throw new BadRequestException(
         "Crie ou convide o usuário antes de torná-lo operador interno.",
       );
-    const result = await this.database.pool.query(
+    const result = await this.database.pool.query<PlatformSupportSessionRow>(
       `INSERT INTO platform_admins (user_id,role,is_active,mfa_required) VALUES ($1,$2,true,true) ON CONFLICT (user_id) DO UPDATE SET role=EXCLUDED.role,is_active=true,mfa_required=true,updated_at=now() RETURNING id`,
       [user.rows[0].id, role],
     );
-    await this.audit(actor, "platform.staff.granted", "platform_admin", result.rows[0].id, {
+    await this.audit(actor, "platform.staff.granted", "platform_admin", result.rows[0]!.id, {
       email,
       role,
     });
     return { ok: true };
   }
   async updateStaff(actor: string, id: string, isActive: boolean) {
-    const result = await this.database.pool.query(
+    const result = await this.database.pool.query<PlatformSupportSessionEndRow>(
       "UPDATE platform_admins SET is_active=$2,updated_at=now() WHERE id=$1 RETURNING id,user_id",
       [id, isActive],
     );
@@ -428,22 +472,22 @@ export class PlatformService {
   async startSupportSession(actor: string, tenantId: string, reason: string) {
     if (reason.trim().length < 8)
       throw new BadRequestException("Informe um motivo com ao menos oito caracteres.");
-    const result = await this.database.pool.query(
+    const result = await this.database.pool.query<PlatformSupportSessionRow>(
       'INSERT INTO platform_support_sessions (tenant_id,operator_user_id,reason) VALUES ($1,$2,$3) RETURNING id,expires_at AS "expiresAt"',
       [tenantId, actor, reason.trim()],
     );
     await this.audit(actor, "support.session.started", "tenant", tenantId, {
-      supportSessionId: result.rows[0].id,
+      supportSessionId: result.rows[0]!.id,
       reason: reason.trim(),
     });
     return {
-      ...result.rows[0],
+      ...result.rows[0]!,
       message:
         "Sessão assistida registrada. O acesso em nome do cliente continua bloqueado até a aprovação explícita do fluxo de suporte.",
     };
   }
   async endSupportSession(actor: string, id: string) {
-    const result = await this.database.pool.query(
+    const result = await this.database.pool.query<PlatformSupportSessionEndRow>(
       "UPDATE platform_support_sessions SET status='ended',ended_at=now() WHERE id=$1 AND status='active' RETURNING tenant_id",
       [id],
     );
@@ -483,7 +527,7 @@ export class PlatformService {
     return { data: result.rows };
   }
   async supportTicketDetail(id: string) {
-    const ticket = await this.database.pool.query(
+    const ticket = await this.database.pool.query<PlatformSupportTicketRow>(
       `SELECT st.id,st.tenant_id AS "tenantId",t.name AS "tenantName",st.subject,st.description,st.category,st.priority,st.status,
         st.request_id AS "requestId",st.page_url AS "pageUrl",st.created_at AS "createdAt",st.updated_at AS "updatedAt",
         ${platformSlaDueSql("st")} AS "slaDueAt",${platformSlaStateSql("st")} AS "slaState",st.metadata,
@@ -495,7 +539,7 @@ export class PlatformService {
       [id],
     );
     if (!ticket.rows[0]) throw new BadRequestException("Chamado não encontrado.");
-    const messages = await this.database.pool.query(
+    const messages = await this.database.pool.query<PlatformSupportTicketMessageRow>(
       `SELECT m.id,m.author_kind AS "authorKind",m.body,m.internal_note AS "internalNote",m.created_at AS "createdAt",
         COALESCE(u.name,u.email,'Orien') AS "authorName"
        FROM support_ticket_messages m
@@ -540,7 +584,7 @@ export class PlatformService {
   async updateSupportTicketStatus(actor: string, ticketId: string, status: string) {
     if (!["open", "waiting_support", "waiting_customer", "resolved", "closed"].includes(status))
       throw new BadRequestException("Status inválido.");
-    const result = await this.database.pool.query(
+    const result = await this.database.pool.query<PlatformIdRow>(
       `UPDATE support_tickets
        SET status=$2,resolved_at=CASE WHEN $2='resolved' THEN now() ELSE resolved_at END,
          closed_at=CASE WHEN $2='closed' THEN now() ELSE closed_at END,updated_at=now()
@@ -553,13 +597,13 @@ export class PlatformService {
     return { ok: true };
   }
   async audits() {
-    const result = await this.database.pool.query(
+    const result = await this.database.pool.query<PlatformCouponRow>(
       `SELECT a.id,a.action,a.entity_type AS "entityType",a.entity_id AS "entityId",a.metadata,a.created_at AS "createdAt",COALESCE(u.name,u.email,'Sistema') AS "actorName" FROM platform_audit_logs a LEFT JOIN users u ON u.id=a.actor_user_id ORDER BY a.created_at DESC LIMIT 100`,
     );
     return { data: result.rows };
   }
   async coupons() {
-    const result = await this.database.pool.query(
+    const result = await this.database.pool.query<PlatformCouponRow>(
       `SELECT id,code,discount_type AS "discountType",discount_value_cents AS "discountValueCents",max_redemptions AS "maxRedemptions",redemption_count AS "redemptionCount",allowed_plan_slugs AS "allowedPlans",expires_at AS "expiresAt",is_active AS "isActive" FROM saas_coupons ORDER BY created_at DESC`,
     );
     return { data: result.rows };
@@ -585,7 +629,7 @@ export class PlatformService {
       (input.discountValueCents < 1 || input.discountValueCents > 100)
     )
       throw new BadRequestException("Desconto percentual deve ser entre 1 e 100.");
-    const result = await this.database.pool.query(
+    const result = await this.database.pool.query<PlatformCouponRow>(
       `INSERT INTO saas_coupons (code,discount_type,discount_value_cents,max_redemptions,allowed_plan_slugs,expires_at) VALUES ($1,$2,$3,$4,$5::jsonb,$6) RETURNING id,code`,
       [
         code,
@@ -596,11 +640,11 @@ export class PlatformService {
         input.expiresAt ?? null,
       ],
     );
-    await this.audit(actor, "saas.coupon.created", "saas_coupon", result.rows[0].id, { code });
+    await this.audit(actor, "saas.coupon.created", "saas_coupon", result.rows[0]!.id, { code });
     return result.rows[0];
   }
   async updateCoupon(actor: string, id: string, isActive: boolean) {
-    const result = await this.database.pool.query(
+    const result = await this.database.pool.query<PlatformTestimonialRow>(
       'UPDATE saas_coupons SET is_active=$2,updated_at=now() WHERE id=$1 RETURNING id,code,is_active AS "isActive"',
       [id, isActive],
     );
@@ -617,7 +661,7 @@ export class PlatformService {
       throw new BadRequestException(
         "Este cupom já foi usado e não pode ser excluído. Inative-o para preservar o histórico.",
       );
-    const result = await this.database.pool.query(
+    const result = await this.database.pool.query<PlatformCouponRow>(
       "DELETE FROM saas_coupons WHERE id=$1 RETURNING id,code",
       [id],
     );
@@ -628,7 +672,7 @@ export class PlatformService {
     return { ok: true };
   }
   async testimonialRequests() {
-    const result = await this.database.pool.query(
+    const result = await this.database.pool.query<PlatformTestimonialRow>(
       `SELECT r.id,r.token,r.tenant_id AS "tenantId",t.name AS "tenantName",r.recipient_email AS "recipientEmail",r.status,
         r.name,r.company,r.role,r.quote,r.image_url AS "imageUrl",r.consent_publication AS "consentPublication",
         r.submitted_at AS "submittedAt",r.approved_at AS "approvedAt",r.expires_at AS "expiresAt",r.created_at AS "createdAt"
@@ -893,8 +937,8 @@ function base32(input: Buffer) {
 function fromBase32(value: string) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
   let bits = 0,
-    current = 0,
-    out: number[] = [];
+    current = 0;
+  const out: number[] = [];
   for (const char of value.toUpperCase()) {
     const index = chars.indexOf(char);
     if (index < 0) continue;
