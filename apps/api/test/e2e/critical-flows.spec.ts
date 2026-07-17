@@ -606,7 +606,7 @@ describe.sequential("critical api flows", { timeout: 60_000 }, () => {
       .set(tenantHeader)
       .send({ closingAmount: 120 });
     expect(closed.status).toBe(201);
-    expect(Number(closed.body.difference_amount)).toBe(0);
+    expect(Number(closed.body.differenceAmount)).toBe(0);
 
     const cancellable = await agent.post("/api/v1/sales").set(tenantHeader).send({
       branchId: tenantA.branchId,

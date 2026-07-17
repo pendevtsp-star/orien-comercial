@@ -9,13 +9,45 @@ import { ensureBranchAccess, ensureFound } from "../../shared/resource-access";
 import type { TenantContext } from "../../shared/request-context";
 import { DatabaseService } from "../database/database.service";
 
+interface CashRegisterSessionRow {
+  id: string;
+  branch_id: string;
+  opening_amount: string;
+  expected_amount?: string;
+  closing_amount?: string | null;
+  difference_amount?: string | null;
+  status: string;
+  notes?: string | null;
+  opened_at: Date;
+  closed_at?: Date | null;
+}
+
+interface CashRegisterResult {
+  id: string;
+  expectedAmount: string;
+  closingAmount: string;
+  differenceAmount: string;
+  approvalStatus: string;
+  closedAt: Date;
+}
+
 @Injectable()
 export class CashRegistersService {
   constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
 
   async history(context: TenantContext, query: { branchId: string }) {
     ensureBranchAccess(context, query.branchId);
-    const result = await this.database.tenantQuery(
+    const result = await this.database.tenantQuery<{
+      id: string;
+      status: string;
+      openingAmount: string;
+      expectedAmount: string;
+      closingAmount: string | null;
+      differenceAmount: string | null;
+      approvalStatus: string | null;
+      openedAt: Date;
+      closedAt: Date | null;
+    }>(
       context.tenantId,
       `SELECT id,status,opening_amount::text AS "openingAmount",expected_amount::text AS "expectedAmount",closing_amount::text AS "closingAmount",difference_amount::text AS "differenceAmount",approval_status AS "approvalStatus",opened_at AS "openedAt",closed_at AS "closedAt" FROM cash_register_sessions WHERE tenant_id=$1 AND branch_id=$2 ORDER BY opened_at DESC LIMIT 50`,
       [context.tenantId, query.branchId],
@@ -25,7 +57,7 @@ export class CashRegistersService {
 
   async current(context: TenantContext, query: { branchId: string }) {
     ensureBranchAccess(context, query.branchId);
-    const result = await this.database.tenantQuery(
+    const result = await this.database.tenantQuery<CashRegisterSessionRow & { branchName: string }>(
       context.tenantId,
       `SELECT crs.*, b.name AS "branchName" FROM cash_register_sessions crs JOIN branches b ON b.id = crs.branch_id WHERE crs.tenant_id = $1 AND crs.branch_id = $2 AND crs.status = 'open' ORDER BY crs.opened_at DESC LIMIT 1`,
       [context.tenantId, query.branchId],
@@ -36,17 +68,17 @@ export class CashRegistersService {
   async open(context: TenantContext, input: CashRegisterOpenInput) {
     ensureBranchAccess(context, input.branchId);
     return this.database.tenantTransaction(context.tenantId, async (client) => {
-      const branch = await client.query(
+      const branch = await client.query<{ id: string }>(
         "SELECT id FROM branches WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL AND is_active = true",
         [context.tenantId, input.branchId],
       );
       ensureFound(branch.rows[0], "Loja");
-      const existing = await client.query(
+      const existing = await client.query<{ id: string }>(
         "SELECT id FROM cash_register_sessions WHERE tenant_id = $1 AND branch_id = $2 AND status = 'open' FOR UPDATE",
         [context.tenantId, input.branchId],
       );
       if (existing.rowCount) throw new BadRequestException("Ja existe um caixa aberto nesta loja.");
-      const result = await client.query(
+      const result = await client.query<CashRegisterSessionRow>(
         `INSERT INTO cash_register_sessions (tenant_id, branch_id, opened_by_user_id, opening_amount, expected_amount, notes) VALUES ($1,$2,$3,$4,$4,$5) RETURNING *`,
         [
           context.tenantId,
@@ -91,7 +123,7 @@ export class CashRegistersService {
         Number(movements.rows[0]?.withdrawal ?? 0);
       const differenceAmount = input.closingAmount - expectedAmount;
       const approvalStatus = Math.abs(differenceAmount) > 0.01 ? "pending" : "not_required";
-      const result = await client.query(
+      const result = await client.query<CashRegisterResult>(
         `UPDATE cash_register_sessions SET status = 'closed', closed_by_user_id = $3, expected_amount = $4, closing_amount = $5, blind_closing_amount=$5, difference_amount = $6, approval_status=$8, notes = COALESCE($7, notes), closed_at = now() WHERE tenant_id = $1 AND id = $2
          RETURNING id, expected_amount::text AS "expectedAmount", closing_amount::text AS "closingAmount", difference_amount::text AS "differenceAmount", approval_status AS "approvalStatus", closed_at AS "closedAt"`,
         [
@@ -133,7 +165,7 @@ export class CashRegistersService {
       );
       const session = ensureFound(found.rows[0], "Caixa aberto");
       ensureBranchAccess(context, session.branch_id);
-      const result = await client.query(
+      const result = await client.query<{ id: string; branch_id: string; type: string; amount: string; reason: string }>(
         `INSERT INTO cash_register_movements (tenant_id, cash_register_session_id, branch_id, type, amount, reason, actor_user_id) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
         [
           context.tenantId,
