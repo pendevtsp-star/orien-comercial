@@ -20,18 +20,18 @@ async function bootstrap() {
   app.setGlobalPrefix("api/v1");
   const uploadDir = resolve(config.UPLOAD_DIR);
   mkdirSync(uploadDir, { recursive: true });
-  app
-    .getHttpAdapter()
-    .getInstance()
-    .use(
-      "/uploads",
-      (
+  const httpServer = app.getHttpAdapter().getInstance() as unknown as {
+    use: (
+      path: string,
+      handler: (
         request: { path: string },
         response: { sendFile: (path: string, options: { root: string }) => void },
-      ) => {
-        response.sendFile(request.path, { root: uploadDir });
-      },
-    );
+      ) => void,
+    ) => void;
+  };
+  httpServer.use("/uploads", (request, response) => {
+    response.sendFile(request.path, { root: uploadDir });
+  });
   app.use(helmet());
   app.use(cookieParser(process.env.COOKIE_SECRET));
   app.use((request: Request & { requestId?: string }, response: Response, next: NextFunction) => {

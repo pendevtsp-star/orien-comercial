@@ -6,11 +6,11 @@ import { useParams } from "next/navigation";
 import { BrandLogo } from "@sgc/ui";
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? "https://api.useorien.com.br/api/v1";
+type TestimonialDetails = { company?: string; submitted?: boolean; message?: string };
 
 export default function TestimonialPage() {
-  const params = useParams<{ token: string }>();
+  const params = useParams() as unknown as { token?: string | string[] };
   const token = Array.isArray(params.token) ? params.token[0] : params.token;
-  const [details, setDetails] = useState<{ company?: string; submitted?: boolean } | null>(null);
   const [name, setName] = useState("");
   const [company, setCompany] = useState("");
   const [role, setRole] = useState("");
@@ -23,9 +23,8 @@ export default function TestimonialPage() {
     if (!token) return;
     void fetch(`${api}/public/testimonials/${encodeURIComponent(token)}`)
       .then(async (response) => {
-        const body = await response.json().catch(() => ({}));
+        const body = asTestimonialDetails(await response.json().catch(() => null));
         if (!response.ok) throw new Error(body.message ?? "Convite indisponível.");
-        setDetails(body);
         setCompany(body.company ?? "");
         setState(body.submitted ? "sent" : "ready");
       })
@@ -37,13 +36,17 @@ export default function TestimonialPage() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (!token) {
+      setMessage("Convite indisponível.");
+      return;
+    }
     try {
       const response = await fetch(`${api}/public/testimonials/${encodeURIComponent(token)}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ name, company, role, quote, consentPublication: consent }),
       });
-      const body = await response.json().catch(() => ({}));
+      const body = asTestimonialDetails(await response.json().catch(() => null));
       if (!response.ok) throw new Error(body.message ?? "Não foi possível enviar sua avaliação.");
       setState("sent");
     } catch (cause) {
@@ -101,7 +104,7 @@ export default function TestimonialPage() {
               Seu relato ajuda outros negócios a entenderem a rotina com a Orien. A publicação
               depende de aprovação.
             </p>
-            <form onSubmit={submit} className="mt-8 grid gap-4">
+            <form onSubmit={(event) => void submit(event)} className="mt-8 grid gap-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Seu nome" value={name} setValue={setName} required />
                 <Field label="Empresa" value={company} setValue={setCompany} />
@@ -145,6 +148,16 @@ export default function TestimonialPage() {
       </section>
     </main>
   );
+}
+
+function asTestimonialDetails(value: unknown): TestimonialDetails {
+  if (!value || typeof value !== "object") return {};
+  const body = value as Record<string, unknown>;
+  return {
+    company: typeof body.company === "string" ? body.company : undefined,
+    submitted: typeof body.submitted === "boolean" ? body.submitted : undefined,
+    message: typeof body.message === "string" ? body.message : undefined,
+  };
 }
 
 function Field({

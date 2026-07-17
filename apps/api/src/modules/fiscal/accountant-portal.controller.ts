@@ -62,7 +62,7 @@ export class AccountantPortalController {
     @Body(new ZodValidationPipe(accountantPortalLoginRequestSchema)) body: never,
     @Req() request: Request,
   ) {
-    return this.portal.requestCode(body as { token: string; email: string }, requestMeta(request));
+    return this.portal.requestCode(body, requestMeta(request));
   }
 
   @Post("accountant-portal/login/verify")
@@ -70,7 +70,7 @@ export class AccountantPortalController {
     @Body(new ZodValidationPipe(accountantPortalLoginVerifySchema)) body: never,
     @Req() request: Request,
   ) {
-    return this.portal.verifyCode(body as { token: string; email: string; code: string }, requestMeta(request));
+    return this.portal.verifyCode(body, requestMeta(request));
   }
 
   @Get("accountant-portal/export")

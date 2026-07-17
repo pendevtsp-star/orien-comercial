@@ -11,7 +11,6 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleDollarSign,
-  Headphones,
   LockKeyhole,
   MonitorSmartphone,
   PackageCheck,

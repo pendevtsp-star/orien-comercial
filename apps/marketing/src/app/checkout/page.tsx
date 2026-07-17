@@ -25,6 +25,7 @@ const defaultPlan = {
   price: "R$ 199/mês",
   description: "Operação completa para empresas em expansão.",
 };
+type CheckoutResponse = { trialStarted?: boolean; loginUrl?: string; message?: string };
 export default function CheckoutPage() {
   const [planSlug, setPlanSlug] = useState("pro"),
     [companyName, setCompanyName] = useState(""),
@@ -60,7 +61,7 @@ export default function CheckoutPage() {
           billingType: "PIX",
         }),
       });
-      const result = await response.json().catch(() => ({}));
+      const result = asCheckoutResponse(await response.json().catch(() => null));
       if (!response.ok) throw new Error(result.message ?? "Não foi possível iniciar seu teste.");
       if (result.trialStarted && result.loginUrl) {
         window.location.assign(result.loginUrl);
@@ -112,7 +113,7 @@ export default function CheckoutPage() {
               Voltar
             </Link>
           </div>
-          <form className="mt-8 grid gap-4" onSubmit={submit}>
+          <form className="mt-8 grid gap-4" onSubmit={(event) => void submit(event)}>
             <label className="grid gap-1 text-sm font-semibold">
               Plano
               <select
@@ -181,6 +182,17 @@ export default function CheckoutPage() {
     </main>
   );
 }
+
+function asCheckoutResponse(value: unknown): CheckoutResponse {
+  if (!value || typeof value !== "object") return {};
+  const body = value as Record<string, unknown>;
+  return {
+    trialStarted: typeof body.trialStarted === "boolean" ? body.trialStarted : undefined,
+    loginUrl: typeof body.loginUrl === "string" ? body.loginUrl : undefined,
+    message: typeof body.message === "string" ? body.message : undefined,
+  };
+}
+
 function Field({
   label,
   value,

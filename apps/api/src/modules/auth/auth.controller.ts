@@ -98,7 +98,7 @@ export class AuthController {
   @Post("refresh")
   async refresh(@Req() request: Request, @Res({ passthrough: true }) response: Response) {
     const tokens = await this.authService.refresh(
-      request.cookies?.refresh_token as string | undefined,
+      request.cookies?.refresh_token,
       {
         userAgent: request.headers["user-agent"],
         ipAddress: request.ip,

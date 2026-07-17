@@ -16,6 +16,10 @@ type LandingSettings = {
   whatsappNumber: string;
   whatsappMessage: string;
   testimonials: Testimonial[];
+  showCalculator?: boolean;
+  showPlans?: boolean;
+  showSegments?: boolean;
+  showFaq?: boolean;
 };
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? "https://api.useorien.com.br/api/v1";
@@ -26,12 +30,13 @@ export function LandingSocialProof() {
   useEffect(() => {
     void fetch(`${api}/public/landing`)
       .then((response) => (response.ok ? response.json() : null))
-      .then((data) => {
-        setSettings(data);
-        document.documentElement.dataset.orienShowCalculator = String(data?.showCalculator !== false);
-        document.documentElement.dataset.orienShowPlans = String(data?.showPlans !== false);
-        document.documentElement.dataset.orienShowSegments = String(data?.showSegments !== false);
-        document.documentElement.dataset.orienShowFaq = String(data?.showFaq !== false);
+      .then((data: unknown) => {
+        const settings = asLandingSettings(data);
+        setSettings(settings);
+        document.documentElement.dataset.orienShowCalculator = String(settings?.showCalculator !== false);
+        document.documentElement.dataset.orienShowPlans = String(settings?.showPlans !== false);
+        document.documentElement.dataset.orienShowSegments = String(settings?.showSegments !== false);
+        document.documentElement.dataset.orienShowFaq = String(settings?.showFaq !== false);
       })
       .catch(() => setSettings(null));
     return () => {
@@ -72,6 +77,35 @@ export function LandingSocialProof() {
     </section>}
     {whatsappHref && <a href={whatsappHref} target="_blank" rel="noreferrer" aria-label="Falar com a Orien pelo WhatsApp" className="fixed bottom-5 right-5 z-40 inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#0b1d3d] text-white shadow-[0_12px_30px_rgba(11,29,61,.3)] transition hover:bg-[#133a7c]"><MessageCircle size={22} /></a>}
   </>;
+}
+
+function asLandingSettings(value: unknown): LandingSettings | null {
+  if (!value || typeof value !== "object") return null;
+  const body = value as Record<string, unknown>;
+  const testimonials = Array.isArray(body.testimonials)
+    ? body.testimonials.flatMap((item) => {
+        if (!item || typeof item !== "object") return [];
+        const testimonial = item as Record<string, unknown>;
+        if (typeof testimonial.quote !== "string" || typeof testimonial.name !== "string") return [];
+        return [{
+          quote: testimonial.quote,
+          name: testimonial.name,
+          company: typeof testimonial.company === "string" ? testimonial.company : "",
+          role: typeof testimonial.role === "string" ? testimonial.role : "",
+          imageUrl: typeof testimonial.imageUrl === "string" ? testimonial.imageUrl : "",
+        }];
+      })
+    : [];
+  return {
+    showTestimonials: body.showTestimonials !== false,
+    whatsappNumber: typeof body.whatsappNumber === "string" ? body.whatsappNumber : "",
+    whatsappMessage: typeof body.whatsappMessage === "string" ? body.whatsappMessage : "",
+    testimonials,
+    showCalculator: typeof body.showCalculator === "boolean" ? body.showCalculator : undefined,
+    showPlans: typeof body.showPlans === "boolean" ? body.showPlans : undefined,
+    showSegments: typeof body.showSegments === "boolean" ? body.showSegments : undefined,
+    showFaq: typeof body.showFaq === "boolean" ? body.showFaq : undefined,
+  };
 }
 
 function initials(value: string) {

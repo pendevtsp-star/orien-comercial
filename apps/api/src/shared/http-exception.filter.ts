@@ -36,13 +36,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
       void this.recordError?.({
         requestId,
         method: request.method,
-        path: String(request.originalUrl || request.url),
+        path: requestPath(request),
         statusCode: status,
         errorCode,
         message: Array.isArray(message) ? message.map(String).join("; ") : message,
-        userAgent: Array.isArray(request.headers["user-agent"])
-          ? request.headers["user-agent"][0]
-          : request.headers["user-agent"],
+        userAgent: readHeader(request.headers["user-agent"]),
       }).catch(() => undefined);
     }
 
@@ -69,4 +67,18 @@ function normalizeMessage(payload: string | object): string | string[] {
 function readRequestId(request: Request): string {
   const header = request.headers["x-request-id"];
   return Array.isArray(header) ? header[0] ?? "unknown-request" : header ?? "unknown-request";
+}
+
+function requestPath(request: Request): string {
+  return typeof request.originalUrl === "string"
+    ? request.originalUrl
+    : typeof request.url === "string"
+      ? request.url
+      : "/";
+}
+
+function readHeader(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value) && typeof value[0] === "string") return value[0];
+  return undefined;
 }
