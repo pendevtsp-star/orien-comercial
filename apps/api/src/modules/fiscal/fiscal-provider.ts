@@ -52,6 +52,16 @@ export interface FiscalProvider {
   downloadArtifact(url: string): Promise<{ content: Buffer; contentType: string }>;
 }
 
+export type FiscalProviderKey = "focus_nfe" | "spedy";
+
+export const fiscalProviderCatalog: Record<
+  FiscalProviderKey,
+  { label: string; supportsInboundNfe: boolean; status: "available" | "planned" }
+> = {
+  focus_nfe: { label: "Focus NFe", supportsInboundNfe: true, status: "available" },
+  spedy: { label: "Spedy", supportsInboundNfe: false, status: "planned" },
+};
+
 export class FiscalProviderError extends Error {
   constructor(
     message: string,

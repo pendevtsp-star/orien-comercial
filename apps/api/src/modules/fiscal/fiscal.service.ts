@@ -25,7 +25,8 @@ import type { TenantContext } from "../../shared/request-context";
 import { DatabaseService } from "../database/database.service";
 import { APP_CONFIG } from "../config/config.module";
 import { IntegrationsService } from "../integrations/integrations.service";
-import { FocusNfeProvider, normalizeFocusResponse } from "./focus-nfe.provider";
+import { normalizeFocusResponse } from "./focus-nfe.provider";
+import { createFiscalProvider } from "./fiscal-provider-registry";
 import {
   FiscalProviderError,
   type FiscalDocumentType,
@@ -1250,11 +1251,8 @@ export class FiscalService {
   ): Promise<FiscalProvider> {
     const integration = await this.integrations.getFiscalConnection(context);
     if (!integration)
-      throw new BadRequestException("Configure e teste o token da Focus NFe em Integrações.");
-    if ((integration.settings.provider || "focus_nfe") !== "focus_nfe") {
-      throw new BadRequestException("O adaptador Spedy ainda não foi homologado.");
-    }
-    return new FocusNfeProvider(integration.secret, settings.environment);
+      throw new BadRequestException("Configure e teste o provedor fiscal em Integrações.");
+    return createFiscalProvider(integration.settings.provider, integration.secret, settings.environment);
   }
 
   private async applyProviderResult(

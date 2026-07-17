@@ -20,6 +20,15 @@ type Integration = {
   hasCredential: boolean;
   updatedAt?: string;
 };
+type Branch = { id: string; name: string };
+type BranchOverride = {
+  branchId: string;
+  branchName: string;
+  provider: Provider;
+  enabled: boolean;
+  settings: Record<string, string>;
+  updatedAt: string;
+};
 const otherCards: Array<{
   provider: Exclude<Provider, "smtp">;
   title: string;
@@ -75,13 +84,44 @@ function Status({ item }: { item?: Integration }) {
 
 export default function IntegrationsPage() {
   const [items, setItems] = useState<Integration[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [overrides, setOverrides] = useState<BranchOverride[]>([]);
+  const [overrideBranchId, setOverrideBranchId] = useState("");
+  const [overrideProvider, setOverrideProvider] = useState<Provider>("smtp");
+  const [overrideEnabled, setOverrideEnabled] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
   const [secret, setSecret] = useState<Record<string, string>>({});
   async function load() {
     try {
-      setItems((await apiFetch<{ data: Integration[] }>("/integrations")).data);
+      const [integrations, branchResult, overridesResult] = await Promise.all([
+        apiFetch<{ data: Integration[] }>("/integrations"),
+        apiFetch<{ data: Branch[] }>("/branches?limit=100"),
+        apiFetch<{ data: BranchOverride[] }>("/integrations/branches"),
+      ]);
+      setItems(integrations.data);
+      setBranches(branchResult.data);
+      setOverrides(overridesResult.data);
+      setOverrideBranchId((current) => current || branchResult.data[0]?.id || "");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Falha ao carregar integrações.");
+    }
+  }
+  async function saveBranchOverride() {
+    if (!overrideBranchId) return;
+    try {
+      await apiFetch("/integrations/branches/override", {
+        method: "PUT",
+        body: JSON.stringify({
+          branchId: overrideBranchId,
+          provider: overrideProvider,
+          enabled: overrideEnabled,
+          settings: {},
+        }),
+      });
+      setNotice("Preferência por loja salva. A filial agora herda ou desativa este conector de forma explícita.");
+      await load();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Não foi possível salvar a preferência da loja.");
     }
   }
   useEffect(() => {
@@ -371,6 +411,54 @@ export default function IntegrationsPage() {
           );
         })}
       </div>
+      <Card>
+        <CardContent className="grid gap-4">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-[0.16em] text-[var(--brand-secondary)]">
+              Escopo por loja
+            </p>
+            <h2 className="mt-1 font-semibold text-[var(--brand-primary)]">
+              Controle em quais filiais cada integração pode operar
+            </h2>
+            <p className="mt-1 max-w-3xl text-sm text-slate-500">
+              A configuração principal continua protegida no nível da empresa. Aqui você apenas permite ou bloqueia o uso por loja, evitando que uma filial use uma integração fora do processo definido.
+            </p>
+          </div>
+          <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto_auto] md:items-end">
+            <label className="grid gap-1 text-sm font-medium">
+              Loja
+              <select value={overrideBranchId} onChange={(event) => setOverrideBranchId(event.target.value)} className="h-10 rounded-md border border-[var(--brand-border)] px-3">
+                {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+              </select>
+            </label>
+            <label className="grid gap-1 text-sm font-medium">
+              Serviço
+              <select value={overrideProvider} onChange={(event) => setOverrideProvider(event.target.value as Provider)} className="h-10 rounded-md border border-[var(--brand-border)] px-3">
+                <option value="smtp">E-mail da empresa</option>
+                <option value="asaas_business">Recebimentos Asaas</option>
+                <option value="whatsapp_meta">WhatsApp oficial</option>
+                <option value="fiscal">Fiscal</option>
+              </select>
+            </label>
+            <label className="flex h-10 items-center gap-2 text-sm font-medium">
+              <input type="checkbox" checked={overrideEnabled} onChange={(event) => setOverrideEnabled(event.target.checked)} />
+              Permitida
+            </label>
+            <Button type="button" onClick={() => void saveBranchOverride()}>Salvar para a loja</Button>
+          </div>
+          {overrides.length ? (
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {overrides.map((item) => (
+                <div key={`${item.branchId}-${item.provider}`} className="rounded-md border border-[var(--brand-border)] bg-[var(--brand-surface)] p-3 text-sm">
+                  <strong className="block text-[var(--brand-primary)]">{item.branchName}</strong>
+                  <span className="text-slate-500">{item.provider.replace("_", " ")}</span>
+                  <span className={`mt-2 block text-xs font-medium ${item.enabled ? "text-emerald-700" : "text-rose-700"}`}>{item.enabled ? "Uso permitido" : "Uso bloqueado"}</span>
+                </div>
+              ))}
+            </div>
+          ) : <p className="text-sm text-slate-500">Todas as filiais seguem a configuração padrão da empresa.</p>}
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -63,29 +63,42 @@ interface BranchOverview {
   activeOperators: string;
   monthlyMargin: string;
 }
+interface OperationalTask {
+  id: string;
+  title: string;
+  description: string | null;
+  priority: "low" | "normal" | "high" | "critical";
+  status: string;
+  branchName: string | null;
+  assigneeName: string | null;
+  dueAt: string | null;
+}
 
 export default function StoreCentralPage() {
   const [status, setStatus] = useState<OperationalStatus | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [branchesOverview, setBranchesOverview] = useState<BranchOverview[]>([]);
+  const [tasks, setTasks] = useState<OperationalTask[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
   async function load() {
     setLoading(true);
     try {
-      const [statusResult, summaryResult, branchesResult] = await Promise.all([
+      const [statusResult, summaryResult, branchesResult, tasksResult] = await Promise.all([
         apiFetch<OperationalStatus>("/dashboard/operational-status"),
         apiFetch<Summary>("/dashboard/summary"),
         apiFetch<{ data: BranchOverview[] }>("/dashboard/branch-overview", {
           headers: { "x-orien-branch-scope": "all" },
         }),
+        apiFetch<{ data: OperationalTask[] }>("/tasks?status=open"),
       ]);
       setStatus(statusResult);
       setSummary(summaryResult);
       setBranchesOverview(
         branchesResult.data.map((branch) => ({ ...branch, id: branch.branchId })),
       );
+      setTasks(tasksResult.data.slice(0, 6));
       setError("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível carregar a central.");
@@ -301,6 +314,33 @@ export default function StoreCentralPage() {
               },
             ]}
           />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="grid gap-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.16em] text-[var(--brand-secondary)]">Execução</p>
+              <h2 className="mt-1 font-semibold text-[var(--brand-primary)]">Pendências com responsável e prazo</h2>
+              <p className="mt-1 text-sm text-slate-500">Alertas críticos viram tarefas rastreáveis para que o gerente não dependa de memória ou mensagens dispersas.</p>
+            </div>
+            <Link href="/tasks"><Button variant="secondary">Abrir centro de tarefas</Button></Link>
+          </div>
+          {tasks.length ? (
+            <div className="grid gap-2 lg:grid-cols-2 xl:grid-cols-3">
+              {tasks.map((task) => (
+                <div key={task.id} className="rounded-md border border-[var(--brand-border)] bg-[var(--brand-surface)] p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <strong className="text-sm text-[var(--brand-primary)]">{task.title}</strong>
+                    <Badge>{task.priority === "critical" ? "Crítica" : task.priority === "high" ? "Alta" : "Normal"}</Badge>
+                  </div>
+                  {task.description ? <p className="mt-2 text-xs leading-5 text-slate-500">{task.description}</p> : null}
+                  <p className="mt-3 text-xs text-slate-500">{task.branchName ?? "Empresa toda"} · {task.assigneeName ?? "Sem responsável"}{task.dueAt ? ` · vence ${new Date(task.dueAt).toLocaleDateString("pt-BR")}` : ""}</p>
+                </div>
+              ))}
+            </div>
+          ) : <p className="rounded-md border border-dashed border-[var(--brand-border)] p-4 text-sm text-slate-500">Nenhuma pendência aberta. As ações geradas por alertas aparecerão aqui com prioridade, loja e responsável.</p>}
         </CardContent>
       </Card>
 

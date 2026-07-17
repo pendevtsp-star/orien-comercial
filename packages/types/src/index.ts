@@ -337,10 +337,12 @@ export const importCommitSchema = z.object({
 });
 
 export const alertRuleSchema = z.object({
-  type: z.enum(["low_stock", "overdue_receivables", "cancelled_sales"]),
-  channel: z.literal("email").default("email"),
+  type: z.enum(["low_stock", "overdue_receivables", "cancelled_sales", "open_cash", "pending_purchase", "integration_error"]),
+  channel: z.enum(["email", "in_app"]).default("email"),
   recipient: z.string().email(),
   isActive: z.boolean().default(true),
+  branchId: uuidSchema.nullable().optional(),
+  escalationHours: z.coerce.number().int().min(1).max(720).default(24),
 });
 
 export const rolePermissionsUpdateSchema = z.object({
@@ -697,6 +699,12 @@ export const integrationSettingsSchema = z.object({
   settings: z.record(z.string(), z.string().max(500)).default({}),
 });
 export const integrationCredentialSchema = z.object({ secret: z.string().min(8).max(4000) });
+export const branchIntegrationOverrideSchema = z.object({
+  branchId: uuidSchema,
+  provider: z.enum(["asaas_business", "smtp", "whatsapp_meta", "fiscal"]),
+  enabled: z.boolean().default(true),
+  settings: z.record(z.string(), z.string().max(500)).default({}),
+});
 
 export const branchFiscalSettingsSchema = z.object({
   provider: z.enum(["focus_nfe", "spedy"]).default("focus_nfe"),

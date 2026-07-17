@@ -5,6 +5,7 @@ import type { AppConfig } from "@sgc/config";
 import { APP_CONFIG } from "../config/config.module";
 import { DatabaseService } from "../database/database.service";
 import type { TenantContext } from "../../shared/request-context";
+import { fiscalProviderCatalog } from "../fiscal/fiscal-provider";
 
 const providers = ["asaas_business", "smtp", "whatsapp_meta", "fiscal"] as const;
 type Provider = (typeof providers)[number];
@@ -63,6 +64,58 @@ export class IntegrationsService {
     return row.rows[0];
   }
 
+  async branchOverrides(context: TenantContext) {
+    const result = await this.db.tenantQuery<{
+      branchId: string;
+      branchName: string;
+      provider: Provider;
+      enabled: boolean;
+      settings: Settings;
+      updatedAt: Date;
+    }>(
+      context.tenantId,
+      `SELECT o.branch_id AS "branchId",b.name AS "branchName",o.provider,o.enabled,o.settings,
+              o.updated_at AS "updatedAt"
+       FROM branch_integration_overrides o
+       JOIN branches b ON b.id=o.branch_id AND b.tenant_id=o.tenant_id
+       WHERE o.tenant_id=$1 ${context.branchId ? "AND o.branch_id=$2" : ""}
+       ORDER BY b.name,o.provider`,
+      context.branchId ? [context.tenantId, context.branchId] : [context.tenantId],
+    );
+    return { data: result.rows };
+  }
+
+  async saveBranchOverride(
+    context: TenantContext,
+    input: { branchId: string; provider: Provider; enabled: boolean; settings: Settings },
+  ) {
+    this.assert(input.provider);
+    if (context.branchId && context.branchId !== input.branchId) {
+      throw new BadRequestException("Esta filial não pertence ao seu escopo atual.");
+    }
+    const branch = await this.db.tenantQuery<{ id: string }>(
+      context.tenantId,
+      "SELECT id FROM branches WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL",
+      [context.tenantId, input.branchId],
+    );
+    if (!branch.rows[0]) throw new BadRequestException("Loja não encontrada.");
+    const result = await this.db.tenantQuery<{
+      branchId: string;
+      provider: Provider;
+      enabled: boolean;
+      settings: Settings;
+    }>(
+      context.tenantId,
+      `INSERT INTO branch_integration_overrides(tenant_id,branch_id,provider,enabled,settings)
+       VALUES($1,$2,$3,$4,$5::jsonb)
+       ON CONFLICT(tenant_id,branch_id,provider) DO UPDATE
+       SET enabled=EXCLUDED.enabled,settings=EXCLUDED.settings,updated_at=now()
+       RETURNING branch_id AS "branchId",provider,enabled,settings`,
+      [context.tenantId, input.branchId, input.provider, input.enabled, JSON.stringify(input.settings)],
+    );
+    return result.rows[0];
+  }
+
   async credential(context: TenantContext, provider: string, secret: string) {
     this.assert(provider);
     if (provider === "smtp") this.parseSmtpCredentials(secret);
@@ -113,8 +166,9 @@ export class IntegrationsService {
       if (provider === "fiscal") {
         const fiscalProvider = integration.settings.provider || "focus_nfe";
         if (fiscalProvider !== "focus_nfe") {
+          const label = fiscalProviderCatalog[fiscalProvider as keyof typeof fiscalProviderCatalog]?.label ?? "Este provedor";
           throw new BadRequestException(
-            "O adaptador Spedy permanece em avaliação. Selecione Focus NFe para a homologação atual.",
+            `${label} está reservado na arquitetura, mas aguarda homologação técnica. Use Focus NFe até a aprovação do conector.`,
           );
         }
         const baseUrl =
@@ -186,6 +240,22 @@ export class IntegrationsService {
       return null;
     }
     return connection;
+  }
+
+  async effectiveSettings(context: TenantContext, provider: Provider, branchId?: string | null) {
+    const base = await this.integration(context, provider);
+    const scopedBranchId = branchId ?? context.branchId;
+    if (!scopedBranchId) return base;
+    const override = await this.db.tenantQuery<{ enabled: boolean; settings: Settings }>(
+      context.tenantId,
+      `SELECT enabled,settings FROM branch_integration_overrides
+       WHERE tenant_id=$1 AND branch_id=$2 AND provider=$3`,
+      [context.tenantId, scopedBranchId, provider],
+    );
+    const item = override.rows[0];
+    if (!item) return base;
+    if (!item.enabled) return null;
+    return base ? { ...base, settings: { ...base.settings, ...item.settings } } : null;
   }
 
   async putScopedCredential(
