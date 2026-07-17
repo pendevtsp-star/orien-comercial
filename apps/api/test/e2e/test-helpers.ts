@@ -19,6 +19,8 @@ if (!connectionString) {
   throw new Error("DATABASE_MIGRATION_URL or DATABASE_URL is required for e2e tests.");
 }
 
+assertIsolatedE2eDatabase(connectionString);
+
 const permissionSlugs = [
   "platform.tenants.manage",
   "platform.audit.view",
@@ -187,6 +189,22 @@ export async function createTestApp(): Promise<INestApplication> {
 
 export function createAdminPool() {
   return new Pool({ connectionString, application_name: "sgc-e2e" });
+}
+
+function assertIsolatedE2eDatabase(url: string) {
+  let databaseName = "";
+
+  try {
+    databaseName = new URL(url).pathname.replace(/^\//, "");
+  } catch {
+    throw new Error("A URL de banco dos testes E2E e invalida.");
+  }
+
+  if (!/^orien_e2e(?:_[a-z0-9_]+)?$/i.test(databaseName)) {
+    throw new Error(
+      `Os testes E2E so podem usar bancos isolados com nome orien_e2e. Recebido: ${databaseName || "desconhecido"}.`,
+    );
+  }
 }
 
 export async function resetDatabase(pool: Pool) {

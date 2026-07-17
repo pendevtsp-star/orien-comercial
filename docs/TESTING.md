@@ -23,6 +23,25 @@ pnpm build
 
 Testes e2e reais devem rodar contra PostgreSQL/Redis em Docker.
 
+## VPS: banco isolado e descartavel
+
+Na VPS, execute somente o script abaixo a partir do checkout publicado:
+
+```bash
+chmod +x ops/run-e2e-vps.sh
+./ops/run-e2e-vps.sh
+```
+
+Ele cria `orien_e2e`, aplica todas as migrations, executa a suite critica e remove o banco ao final, inclusive em caso de falha. O runner possui uma trava no codigo: qualquer URL cujo banco nao comece com `orien_e2e` e recusada antes de truncar tabelas.
+
+Nunca aponte `DATABASE_URL` ou `DATABASE_MIGRATION_URL` dos testes para `sgc`, para um banco de staging compartilhado ou para qualquer base com dados de clientes.
+
+## Gates recorrentes
+
+- Pull requests que alteram API, banco ou pacotes executam `.github/workflows/e2e.yml`.
+- A verificacao agendada `.github/workflows/e2e-recurring.yml` roda diariamente os fluxos de PDV, caixa, NF-e, permissoes e documentos.
+- Antes de uma release, rode a suite VPS isolada e arquive o resultado junto do checklist de liberacao.
+
 ## Sem Docker
 
 Enquanto Docker/PostgreSQL nao estiverem disponiveis, avancar com:
