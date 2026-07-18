@@ -127,6 +127,18 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
+      - uses: actions/checkout@v5
+      - name: Sincronizar overlay de imagens na VPS
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          port: ${{ secrets.VPS_PORT }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          source: docker-compose.ghcr.yml
+          target: /srv/apps/orien_comercial/app
+          overwrite: true
+          timeout: 60s
       - uses: appleboy/ssh-action@v1.2.1
         env:
           VERSION: ${{ needs.publish-images.outputs.version }}

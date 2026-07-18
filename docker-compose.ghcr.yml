@@ -1,0 +1,16 @@
+services:
+  migrate:
+    image: ${ORIEN_API_IMAGE}
+    build: null
+  api:
+    image: ${ORIEN_API_IMAGE}
+    build: null
+  web:
+    image: ${ORIEN_WEB_IMAGE}
+    build: null
+  marketing:
+    image: ${ORIEN_MARKETING_IMAGE}
+    build: null
+  admin:
+    image: ${ORIEN_ADMIN_IMAGE}
+    build: null
