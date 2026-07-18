@@ -382,7 +382,9 @@ export class IntegrationsService {
   private decrypt(input: string) {
     const data = Buffer.from(input, "base64");
     const key = createHash("sha256").update(this.config.INTEGRATIONS_ENCRYPTION_KEY).digest();
-    const decipher = createDecipheriv("aes-256-gcm", key, data.subarray(0, 12));
+    const decipher = createDecipheriv("aes-256-gcm", key, data.subarray(0, 12), {
+      authTagLength: 16,
+    });
     decipher.setAuthTag(data.subarray(12, 28));
     return Buffer.concat([decipher.update(data.subarray(28)), decipher.final()]).toString("utf8");
   }

@@ -41,8 +41,8 @@ jobs:
       PLATFORM_OWNER_EMAIL: e2e@orien.test
       PLATFORM_OWNER_PASSWORD: E2eOwner123!
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: 24
           cache: pnpm

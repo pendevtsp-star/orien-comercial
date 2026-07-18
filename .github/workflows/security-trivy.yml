@@ -18,10 +18,10 @@ jobs:
     name: Dependencias, segredos e configuracao
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
 
       - name: Escanear dependencias e segredos
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8
         with:
           scan-type: fs
           scan-ref: .
@@ -33,7 +33,7 @@ jobs:
           exit-code: ${{ vars.SECURITY_ENFORCE == 'true' && '1' || '0' }}
 
       - name: Escanear Dockerfiles e Compose
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8
         with:
           scan-type: config
           scan-ref: .
@@ -44,7 +44,7 @@ jobs:
 
       - name: Guardar resultados Trivy
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: trivy-sarif
           path: |
@@ -56,7 +56,7 @@ jobs:
       - name: Publicar dependencias no Code Scanning
         if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         continue-on-error: true
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@eec0bff2f6c15bf3f1e8a0152f94d17664a06a06
         with:
           sarif_file: trivy-fs.sarif
           category: trivy-filesystem
@@ -64,7 +64,7 @@ jobs:
       - name: Publicar configuracao no Code Scanning
         if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         continue-on-error: true
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@eec0bff2f6c15bf3f1e8a0152f94d17664a06a06
         with:
           sarif_file: trivy-config.sarif
           category: trivy-config

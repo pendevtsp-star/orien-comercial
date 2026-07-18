@@ -17,5 +17,6 @@ COPY --from=builder /app/package.json /app/pnpm-workspace.yaml /app/tsconfig.bas
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/apps/api ./apps/api
+USER node
 EXPOSE 3334
 CMD ["node", "apps/api/dist/main.js"]

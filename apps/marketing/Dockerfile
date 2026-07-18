@@ -17,5 +17,6 @@ COPY --from=builder /app/package.json /app/pnpm-workspace.yaml ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/apps/marketing ./apps/marketing
+USER node
 EXPOSE 3001
 CMD ["pnpm", "--filter", "@sgc/marketing", "start"]

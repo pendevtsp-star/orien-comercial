@@ -20,7 +20,7 @@ jobs:
     env:
       SEMGREP_ENFORCE: ${{ vars.SECURITY_ENFORCE == 'true' && '--error' || '' }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
 
       - name: Executar Semgrep
         run: |
@@ -36,7 +36,7 @@ jobs:
 
       - name: Guardar resultado Semgrep
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: semgrep-sarif
           path: semgrep.sarif
@@ -46,7 +46,7 @@ jobs:
       - name: Publicar resultado no Code Scanning
         if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         continue-on-error: true
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@eec0bff2f6c15bf3f1e8a0152f94d17664a06a06
         with:
           sarif_file: semgrep.sarif
           category: semgrep

@@ -906,7 +906,9 @@ export class PlatformService {
   private decrypt(value: string) {
     const data = Buffer.from(value, "base64"),
       key = createHash("sha256").update(this.config.INTEGRATIONS_ENCRYPTION_KEY).digest(),
-      decipher = createDecipheriv("aes-256-gcm", key, data.subarray(0, 12));
+      decipher = createDecipheriv("aes-256-gcm", key, data.subarray(0, 12), {
+        authTagLength: 16,
+      });
     decipher.setAuthTag(data.subarray(12, 28));
     return Buffer.concat([decipher.update(data.subarray(28)), decipher.final()]).toString();
   }

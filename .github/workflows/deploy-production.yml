@@ -61,11 +61,11 @@ jobs:
       PLATFORM_OWNER_EMAIL: e2e@orien.test
       PLATFORM_OWNER_PASSWORD: E2eOwner123!
     steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
         with:
           version: 11.7.0
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: 24
           cache: pnpm
@@ -85,35 +85,35 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.value }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: version
         run: echo "value=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
         with:
           context: .
           file: apps/api/Dockerfile
           push: true
           tags: ${{ env.IMAGE_PREFIX }}-api:${{ github.sha }}
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
         with:
           context: .
           file: apps/web/Dockerfile
           push: true
           build-args: NEXT_PUBLIC_API_URL=https://api.useorien.com.br/api/v1
           tags: ${{ env.IMAGE_PREFIX }}-web:${{ github.sha }}
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
         with:
           context: .
           file: apps/marketing/Dockerfile
           push: true
           tags: ${{ env.IMAGE_PREFIX }}-marketing:${{ github.sha }}
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
         with:
           context: .
           file: apps/admin/Dockerfile
@@ -127,7 +127,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: appleboy/ssh-action@v1.2.1
+      - uses: appleboy/ssh-action@8faa84277b88b6cd1455986f459aa66cf72bc8a3
         env:
           VERSION: ${{ needs.publish-images.outputs.version }}
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
@@ -170,6 +170,8 @@ jobs:
             [ -f docker-compose.ghcr.yml ] || { echo "[deploy] docker-compose.ghcr.yml nao encontrado em $APP"; exit 13; }
             echo "[deploy] Pre-requisitos remotos validados para $APP"
             mkdir -p "$ROOT/backups"
+            mkdir -p "$ROOT/data/uploads"
+            chown 1000:1000 "$ROOT/data/uploads"
 
             timestamp=$(date -u +%Y%m%dT%H%M%SZ)
             docker compose --env-file .env -f docker-compose.prod.yml \
