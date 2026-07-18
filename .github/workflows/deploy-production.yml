@@ -124,22 +124,18 @@ jobs:
   deploy:
     name: Publicar na VPS
     needs: publish-images
-    runs-on: ubuntu-latest
+    # O runner fica na propria VPS. Assim o deploy nao depende de SSH vindo
+    # de IPs dinamicos dos runners hospedados pelo GitHub.
+    runs-on: self-hosted
     environment: production
     steps:
-      - uses: appleboy/ssh-action@8faa84277b88b6cd1455986f459aa66cf72bc8a3
+      - name: Publicar release local
         env:
           VERSION: ${{ needs.publish-images.outputs.version }}
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
           GHCR_TOKEN_ORIEN: ${{ secrets.GHCR_TOKEN_ORIEN }}
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          port: ${{ secrets.VPS_PORT }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.DEPLOY_KEY }}
-          envs: VERSION,GHCR_USERNAME,GHCR_TOKEN_ORIEN
-          timeout: 60s
-          script: |
+        shell: bash
+        run: |
             set -euo pipefail
             ROOT=/srv/apps/orien_comercial
             APP=$ROOT/app
@@ -168,10 +164,11 @@ jobs:
             [ -f .env ] || { echo "[deploy] Arquivo .env nao encontrado em $APP"; exit 11; }
             [ -f docker-compose.prod.yml ] || { echo "[deploy] docker-compose.prod.yml nao encontrado em $APP"; exit 12; }
             [ -f docker-compose.ghcr.yml ] || { echo "[deploy] docker-compose.ghcr.yml nao encontrado em $APP"; exit 13; }
+            [ -w "$APP" ] || { echo "[deploy] Runner sem permissao de escrita em $APP"; exit 14; }
+            [ -w "$ROOT/backups" ] || { echo "[deploy] Runner sem permissao de escrita em $ROOT/backups"; exit 15; }
+            [ -w "$ROOT/data/uploads" ] || { echo "[deploy] Runner sem permissao de escrita em $ROOT/data/uploads"; exit 16; }
+            docker info >/dev/null || { echo "[deploy] Runner sem acesso ao Docker"; exit 17; }
             echo "[deploy] Pre-requisitos remotos validados para $APP"
-            mkdir -p "$ROOT/backups"
-            mkdir -p "$ROOT/data/uploads"
-            chown 1000:1000 "$ROOT/data/uploads"
 
             timestamp=$(date -u +%Y%m%dT%H%M%SZ)
             docker compose --env-file .env -f docker-compose.prod.yml \
