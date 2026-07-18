@@ -191,14 +191,25 @@ jobs:
             $compose run --rm migrate
             $compose up -d --remove-orphans api web marketing admin
 
-            for attempt in $(seq 1 24); do
-              curl -fsS http://127.0.0.1:3334/health && break
-              sleep 5
-              [ "$attempt" -eq 24 ] && exit 1
-            done
-            curl -fsS http://127.0.0.1:3100 >/dev/null
-            curl -fsS http://127.0.0.1:3101 >/dev/null
-            curl -fsS http://127.0.0.1:3102 >/dev/null
+            wait_for_service() {
+              name="$1"
+              url="$2"
+              for attempt in $(seq 1 24); do
+                if curl -fsS --max-time 5 "$url" >/dev/null; then
+                  echo "[deploy] $name saudavel"
+                  return 0
+                fi
+                sleep 5
+              done
+              echo "[deploy] $name nao respondeu em 120 segundos: $url"
+              $compose ps
+              return 1
+            }
+
+            wait_for_service api http://127.0.0.1:3334/health
+            wait_for_service web http://127.0.0.1:3100
+            wait_for_service marketing http://127.0.0.1:3101
+            wait_for_service admin http://127.0.0.1:3102
             $compose ps
 
   notify-telegram:
