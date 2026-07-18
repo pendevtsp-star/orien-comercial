@@ -1,6 +1,9 @@
 name: Deploy de producao
 
 on:
+  push:
+    branches:
+      - master
   workflow_dispatch:
     inputs:
       confirmar_producao:
@@ -28,7 +31,7 @@ jobs:
   validate:
     name: Validar release
     runs-on: ubuntu-latest
-    if: github.event.inputs.confirmar_producao == 'PUBLICAR'
+    if: github.event_name == 'push' || github.event.inputs.confirmar_producao == 'PUBLICAR'
     services:
       postgres:
         image: postgres:17-alpine
