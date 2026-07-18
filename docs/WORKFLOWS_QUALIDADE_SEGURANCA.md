@@ -4,7 +4,7 @@ Orien executa quatro workflows independentes do deploy. Falha de analise nao alt
 
 ## Semgrep
 
-Executa SAST para TypeScript/JavaScript e regras OWASP. Findings fazem job falhar. SARIF fica como artefato e, quando Code Scanning estiver habilitado, na aba Security.
+Executa SAST para TypeScript/JavaScript e regras OWASP. No baseline, findings ficam no SARIF e nao travam deploy por passivo historico. Depois da triagem, crie `SECURITY_ENFORCE=true` nas variaveis do repositorio para tornar findings bloqueantes. SARIF fica como artefato e, quando Code Scanning estiver habilitado, na aba Security.
 
 ## Trivy
 

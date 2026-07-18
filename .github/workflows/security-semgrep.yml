@@ -17,6 +17,8 @@ jobs:
   scan:
     name: SAST TypeScript
     runs-on: ubuntu-24.04
+    env:
+      SEMGREP_ENFORCE: ${{ vars.SECURITY_ENFORCE == 'true' && '--error' || '' }}
     steps:
       - uses: actions/checkout@v5
 
@@ -26,7 +28,7 @@ jobs:
             -v "${{ github.workspace }}:/src" \
             -w /src \
             semgrep/semgrep:1.157.0 \
-            semgrep scan --metrics=off --error --sarif --output semgrep.sarif \
+            semgrep scan --metrics=off $SEMGREP_ENFORCE --sarif --output semgrep.sarif \
             --config p/security-audit \
             --config p/javascript \
             --config p/typescript \

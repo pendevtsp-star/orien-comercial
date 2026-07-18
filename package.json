@@ -17,7 +17,7 @@
     "lint": "pnpm -r --sort lint",
     "lint:copy": "cspell --config cspell.json --no-progress",
     "test": "pnpm -r --sort test",
-    "test:coverage": "pnpm --filter @sgc/api exec vitest run src --coverage --coverage.reporter=text --coverage.reporter=json-summary --coverage.reporter=lcov",
+    "test:coverage": "pnpm -r --filter \"./packages/*\" --sort build && pnpm --filter @sgc/api exec vitest run src --coverage --coverage.reporter=text --coverage.reporter=json-summary --coverage.reporter=lcov",
     "test:e2e": "pnpm --filter @sgc/api test:e2e",
     "typecheck": "pnpm -r --filter \"./packages/*\" --sort build && pnpm -r --sort typecheck",
     "db:migrate": "pnpm --filter @sgc/db migrate",
