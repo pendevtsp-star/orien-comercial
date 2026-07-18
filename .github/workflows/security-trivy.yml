@@ -1,0 +1,70 @@
+name: Security - Trivy
+
+on:
+  pull_request:
+  push:
+    branches: [master, main]
+  schedule:
+    - cron: "15 3 * * 0"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+jobs:
+  filesystem:
+    name: Dependencias, segredos e configuracao
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Escanear dependencias e segredos
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret
+          format: sarif
+          output: trivy-fs.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: ${{ vars.SECURITY_ENFORCE == 'true' && '1' || '0' }}
+
+      - name: Escanear Dockerfiles e Compose
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          format: sarif
+          output: trivy-config.sarif
+          severity: MEDIUM,HIGH,CRITICAL
+          exit-code: ${{ vars.SECURITY_ENFORCE == 'true' && '1' || '0' }}
+
+      - name: Guardar resultados Trivy
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-sarif
+          path: |
+            trivy-fs.sarif
+            trivy-config.sarif
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Publicar dependencias no Code Scanning
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-filesystem
+
+      - name: Publicar configuracao no Code Scanning
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-config.sarif
+          category: trivy-config

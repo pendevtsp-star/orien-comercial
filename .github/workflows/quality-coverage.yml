@@ -1,0 +1,61 @@
+name: Quality - Test Coverage
+
+on:
+  pull_request:
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    name: Cobertura da API
+    runs-on: ubuntu-24.04
+    env:
+      COVERAGE_MIN_LINES: "15"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Instalar dependencias
+        run: pnpm install --frozen-lockfile
+      - name: Gerar cobertura
+        run: pnpm test:coverage
+      - name: Validar linha de base
+        run: |
+          node <<'NODE'
+          const coverage = require('./apps/api/coverage/coverage-summary.json');
+          const lines = coverage.total.lines.pct;
+          const minimum = Number(process.env.COVERAGE_MIN_LINES);
+          console.log(`Cobertura de linhas: ${lines}% (minimo: ${minimum}%)`);
+          if (lines < minimum) process.exit(1);
+          NODE
+      - name: Resumir cobertura
+        if: always()
+        run: |
+          node <<'NODE' >> "$GITHUB_STEP_SUMMARY"
+          const coverage = require('./apps/api/coverage/coverage-summary.json');
+          const total = coverage.total;
+          console.log('## Cobertura da API');
+          console.log('');
+          console.log('| Metrica | Cobertura |');
+          console.log('| --- | ---: |');
+          for (const key of ['lines', 'statements', 'functions', 'branches']) {
+            console.log(`| ${key} | ${total[key].pct}% |`);
+          }
+          NODE
+      - name: Guardar relatorio de cobertura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-coverage
+          path: apps/api/coverage
+          if-no-files-found: warn
+          retention-days: 30
