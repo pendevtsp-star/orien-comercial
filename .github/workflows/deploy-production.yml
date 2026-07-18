@@ -138,14 +138,18 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.DEPLOY_KEY }}
           envs: VERSION,GHCR_USERNAME,GHCR_TOKEN_ORIEN
+          timeout: 60s
           script: |
             set -euo pipefail
             ROOT=/srv/apps/orien_comercial
             APP=$ROOT/app
+            [ -d "$APP" ] || { echo "[deploy] Diretorio da aplicacao nao encontrado: $APP"; exit 10; }
             cd "$APP"
 
-            test -f .env
-            test -f docker-compose.ghcr.yml
+            [ -f .env ] || { echo "[deploy] Arquivo .env nao encontrado em $APP"; exit 11; }
+            [ -f docker-compose.prod.yml ] || { echo "[deploy] docker-compose.prod.yml nao encontrado em $APP"; exit 12; }
+            [ -f docker-compose.ghcr.yml ] || { echo "[deploy] docker-compose.ghcr.yml nao encontrado em $APP"; exit 13; }
+            echo "[deploy] Pre-requisitos remotos validados para $APP"
             mkdir -p "$ROOT/backups"
 
             timestamp=$(date -u +%Y%m%dT%H%M%SZ)
