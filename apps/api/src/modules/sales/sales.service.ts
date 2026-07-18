@@ -570,6 +570,30 @@ export class SalesService {
         }
       }
 
+      // A comissão é provisionada na venda e permanece rastreável até a liquidação.
+      // Cancelamentos e devoluções ajustam esse saldo no mesmo fluxo transacional.
+      if (context.userId) {
+        const commissionRule = await client.query<{ rate_percent: string }>(
+          `SELECT rate_percent::text
+           FROM seller_commission_rules
+           WHERE tenant_id=$1 AND user_id=$2 AND is_active=true
+             AND (branch_id IS NULL OR branch_id=$3)
+           ORDER BY branch_id NULLS LAST
+           LIMIT 1`,
+          [context.tenantId, context.userId, input.branchId],
+        );
+        const ratePercent = Number(commissionRule.rows[0]?.rate_percent ?? 0);
+        if (ratePercent > 0) {
+          const commissionAmount = Number(((totalAmount * ratePercent) / 100).toFixed(2));
+          await client.query(
+            `INSERT INTO seller_commissions(tenant_id,sale_id,user_id,amount,base_amount,status)
+             VALUES($1,$2,$3,$4,$4,'pending')
+             ON CONFLICT(tenant_id,sale_id,user_id) DO NOTHING`,
+            [context.tenantId, saleId, context.userId, commissionAmount],
+          );
+        }
+      }
+
       await insertAuditLog(client, {
         tenantId: context.tenantId,
         actorUserId: context.userId,
@@ -686,6 +710,13 @@ export class SalesService {
 
       await client.query(
         "UPDATE accounts_receivable SET status = 'cancelled', updated_at = now() WHERE tenant_id = $1 AND sale_id = $2 AND status <> 'paid'",
+        [context.tenantId, saleId],
+      );
+
+      await client.query(
+        `UPDATE seller_commissions
+         SET amount=0,status='cancelled',adjusted_at=now(),adjustment_reason='Venda cancelada'
+         WHERE tenant_id=$1 AND sale_id=$2 AND status<>'paid'`,
         [context.tenantId, saleId],
       );
 

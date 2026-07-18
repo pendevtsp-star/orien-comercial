@@ -52,6 +52,8 @@ interface Summary {
   };
   salesHistory: Array<{ date: string; total: string }>;
   branchGoals: Array<{ branchId: string; name: string; target: string; sales: string }>;
+  cashForecastTimeline: Array<{ label: string; receivable: string; payable: string; net: number }>;
+  marginLeaders: Array<{ name: string; revenue: string; margin: string; marginPercent: string }>;
 }
 
 interface OperationalStatus {
@@ -118,6 +120,9 @@ export default function DashboardPage() {
   );
   const [endDate, setEndDate] = useState(today);
   const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
+  const [sellerGoals, setSellerGoals] = useState<
+    Array<{ userId: string; userName: string; branchName: string | null; target: string; sales: string; commission: string }>
+  >([]);
 
   async function load() {
     setLoading(true);
@@ -139,6 +144,9 @@ export default function DashboardPage() {
             nextAction: onboardingFallback[0] ?? null,
           });
         });
+      void apiFetch<{ data: Array<{ userId: string; userName: string; branchName: string | null; target: string; sales: string; commission: string }> }>(
+        `/dashboard/seller-goals?startDate=${startDate}&endDate=${endDate}`,
+      ).then((result) => setSellerGoals(result.data)).catch(() => setSellerGoals([]));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao carregar dashboard.");
     } finally {
@@ -749,6 +757,78 @@ export default function DashboardPage() {
                 );
               })}
             </div>
+          </CardContent>
+        </Card>
+      </section>
+      <section className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+        <Card>
+          <CardContent className="grid gap-4">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">
+                Previsão de caixa
+              </p>
+              <h2 className="mt-2 text-lg font-semibold text-[var(--brand-primary)]">
+                Entradas e saídas com horizonte de 30 dias
+              </h2>
+            </div>
+            <div className="grid gap-2">
+              {(summary?.cashForecastTimeline ?? []).map((bucket) => (
+                <div key={bucket.label} className="grid gap-2 rounded-md border border-[var(--brand-border)] p-3 sm:grid-cols-[1fr_auto_auto_auto] sm:items-center">
+                  <strong className="text-sm text-[var(--brand-primary)]">{bucket.label}</strong>
+                  <span className="text-xs text-slate-500">Entradas {Number(bucket.receivable).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</span>
+                  <span className="text-xs text-slate-500">Saídas {Number(bucket.payable).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</span>
+                  <strong className={bucket.net < 0 ? "text-rose-700" : "text-emerald-700"}>{bucket.net.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong>
+                </div>
+              ))}
+            </div>
+            <Link href="/financial" className="text-sm font-medium text-[var(--brand-secondary)]">Abrir fluxo financeiro</Link>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="grid gap-4">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Rentabilidade</p>
+              <h2 className="mt-2 text-lg font-semibold text-[var(--brand-primary)]">Produtos que mais contribuem para a margem</h2>
+            </div>
+            <div className="grid divide-y divide-[var(--brand-border)] rounded-md border border-[var(--brand-border)]">
+              {(summary?.marginLeaders ?? []).map((item) => (
+                <div key={item.name} className="grid gap-1 p-3 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
+                  <strong className="truncate text-sm text-[var(--brand-primary)]">{item.name}</strong>
+                  <span className="text-xs text-slate-500">Margem {Number(item.marginPercent).toFixed(1)}%</span>
+                  <span className="text-sm font-semibold text-emerald-700">{Number(item.margin).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</span>
+                </div>
+              ))}
+              {!summary?.marginLeaders?.length ? <p className="p-3 text-sm text-slate-500">Conclua vendas para calcular a margem por produto.</p> : null}
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+      <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+        <Card>
+          <CardContent className="grid gap-4">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Metas e comissão</p>
+              <h2 className="mt-2 text-lg font-semibold text-[var(--brand-primary)]">Desempenho dos vendedores</h2>
+            </div>
+            <div className="grid gap-2">
+              {sellerGoals.map((goal) => {
+                const progress = Number(goal.target) > 0 ? Math.min(100, (Number(goal.sales) / Number(goal.target)) * 100) : 0;
+                return <div key={`${goal.userId}-${goal.branchName ?? "all"}`} className="rounded-md border border-[var(--brand-border)] p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><strong>{goal.userName}</strong><span className="text-slate-500">{goal.branchName ?? "Todas as lojas"}</span></div>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--brand-surface)]"><div className="h-full rounded-full bg-[var(--brand-highlight)]" style={{ width: `${progress}%` }} /></div>
+                  <div className="mt-2 flex flex-wrap justify-between gap-2 text-xs text-slate-500"><span>{Number(goal.sales).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} de {Number(goal.target).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</span><strong className="text-[var(--brand-secondary)]">Comissão {Number(goal.commission).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong></div>
+                </div>;
+              })}
+              {!sellerGoals.length ? <p className="rounded-md bg-[var(--brand-surface)] p-3 text-sm text-slate-500">Defina metas e regras de comissão para acompanhar cada vendedor aqui.</p> : null}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="grid gap-3">
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Reposição sugerida</p>
+            <h2 className="text-lg font-semibold text-[var(--brand-primary)]">Ação antes da ruptura</h2>
+            {(summary?.health.purchaseSuggestions ?? []).slice(0, 4).map((item) => <div key={item.name} className="flex items-center justify-between gap-3 rounded-md border border-[var(--brand-border)] p-3 text-sm"><span className="min-w-0 truncate font-medium">{item.name}</span><span className="shrink-0 text-slate-500">Comprar {Number(item.suggestedQuantity).toLocaleString("pt-BR")}</span></div>)}
+            <Link href="/purchases" className="text-sm font-medium text-[var(--brand-secondary)]">Iniciar compra a partir das sugestões</Link>
           </CardContent>
         </Card>
       </section>

@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { OnboardingStateInput } from "@sgc/types";
 import type { TenantContext } from "../../shared/request-context";
+import { ensureBranchAccess } from "../../shared/resource-access";
 import { DatabaseService } from "../database/database.service";
 
 @Injectable()
@@ -346,6 +347,95 @@ export class DashboardService {
     return result.rows[0];
   }
 
+  async commissionRules(context: TenantContext) {
+    const result = await this.database.tenantQuery<{
+      id: string;
+      userId: string;
+      userName: string;
+      branchId: string | null;
+      branchName: string | null;
+      ratePercent: string;
+      isActive: boolean;
+    }>(
+      context.tenantId,
+      `SELECT r.id,r.user_id AS "userId",u.name AS "userName",r.branch_id AS "branchId",b.name AS "branchName",r.rate_percent::text AS "ratePercent",r.is_active AS "isActive"
+       FROM seller_commission_rules r
+       JOIN users u ON u.id=r.user_id
+       LEFT JOIN branches b ON b.id=r.branch_id
+       WHERE r.tenant_id=$1 ${context.branchId ? "AND (r.branch_id IS NULL OR r.branch_id=$2)" : ""}
+       ORDER BY u.name,b.name NULLS FIRST`,
+      context.branchId ? [context.tenantId, context.branchId] : [context.tenantId],
+    );
+    return { data: result.rows };
+  }
+
+  async saveCommissionRule(
+    context: TenantContext,
+    input: { userId: string; branchId?: string; ratePercent: number; isActive?: boolean },
+  ) {
+    if (input.branchId) ensureBranchAccess(context, input.branchId);
+    const member = await this.database.tenantQuery<{ userId: string }>(
+      context.tenantId,
+      `SELECT user_id AS "userId" FROM memberships
+       WHERE tenant_id=$1 AND user_id=$2 AND status='active' AND deleted_at IS NULL
+       LIMIT 1`,
+      [context.tenantId, input.userId],
+    );
+    if (!member.rows[0]) throw new Error("O colaborador precisa estar ativo nesta empresa.");
+    const result = await this.database.tenantQuery(
+      context.tenantId,
+      `INSERT INTO seller_commission_rules(tenant_id,user_id,branch_id,rate_percent,is_active)
+       VALUES($1,$2,$3,$4,$5)
+       ON CONFLICT (tenant_id,user_id,(COALESCE(branch_id, '00000000-0000-0000-0000-000000000000'::uuid)))
+       DO UPDATE SET rate_percent=EXCLUDED.rate_percent,is_active=EXCLUDED.is_active,updated_at=now()
+       RETURNING id,user_id AS "userId",branch_id AS "branchId",rate_percent::text AS "ratePercent",is_active AS "isActive"`,
+      [context.tenantId, input.userId, input.branchId ?? null, input.ratePercent, input.isActive ?? true],
+    );
+    return result.rows[0];
+  }
+
+  async sellerGoals(context: TenantContext, startDate?: string, endDate?: string) {
+    const start = startDate ?? new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
+    const end = endDate ?? new Date().toISOString().slice(0, 10);
+    const result = await this.database.tenantQuery<{
+      userId: string;
+      userName: string;
+      branchId: string | null;
+      branchName: string | null;
+      target: string;
+      sales: string;
+      commission: string;
+    }>(
+      context.tenantId,
+      `SELECT g.user_id AS "userId",u.name AS "userName",g.branch_id AS "branchId",b.name AS "branchName",
+        g.sales_target::text AS target,
+        COALESCE((SELECT sum(s.total_amount) FROM sales s WHERE s.tenant_id=$1 AND s.seller_user_id=g.user_id AND s.status='sold' AND s.created_at::date BETWEEN $2 AND $3 AND (g.branch_id IS NULL OR s.branch_id=g.branch_id)),0)::text AS sales,
+        COALESCE((SELECT sum(sc.amount) FROM seller_commissions sc WHERE sc.tenant_id=$1 AND sc.user_id=g.user_id AND sc.status='pending' AND sc.created_at::date BETWEEN $2 AND $3),0)::text AS commission
+       FROM seller_goals g JOIN users u ON u.id=g.user_id LEFT JOIN branches b ON b.id=g.branch_id
+       WHERE g.tenant_id=$1 AND g.period_start<=$3 AND g.period_end>=$2 ${context.branchId ? "AND (g.branch_id IS NULL OR g.branch_id=$4)" : ""}
+       ORDER BY u.name`,
+      context.branchId ? [context.tenantId, start, end, context.branchId] : [context.tenantId, start, end],
+    );
+    return { data: result.rows };
+  }
+
+  async setSellerGoal(
+    context: TenantContext,
+    input: { userId: string; branchId?: string; periodStart: string; periodEnd: string; salesTarget: number },
+  ) {
+    if (input.branchId) ensureBranchAccess(context, input.branchId);
+    const result = await this.database.tenantQuery(
+      context.tenantId,
+      `INSERT INTO seller_goals(tenant_id,user_id,branch_id,period_start,period_end,sales_target)
+       VALUES($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (tenant_id,user_id,(COALESCE(branch_id, '00000000-0000-0000-0000-000000000000'::uuid)),period_start,period_end)
+       DO UPDATE SET sales_target=EXCLUDED.sales_target,updated_at=now()
+       RETURNING *`,
+      [context.tenantId, input.userId, input.branchId ?? null, input.periodStart, input.periodEnd, input.salesTarget],
+    );
+    return result.rows[0];
+  }
+
   async branchOverview(context: TenantContext) {
     const params = context.branchId ? [context.tenantId, context.branchId] : [context.tenantId];
     const branchScope = context.branchId ? "AND b.id = $2" : "";
@@ -441,6 +531,8 @@ export class DashboardService {
       commissions,
       salesHistory,
       branchGoals,
+      cashForecastTimeline,
+      marginLeaders,
     ] = await Promise.all([
       this.database.tenantQuery<{ total: string }>(
         context.tenantId,
@@ -606,6 +698,38 @@ export class DashboardService {
           ? [context.tenantId, startDate, endDate, context.branchId]
           : [context.tenantId, startDate, endDate],
       ),
+      this.database.tenantQuery<{ label: string; receivable: string; payable: string }>(
+        context.tenantId,
+        `SELECT * FROM (
+           SELECT 'Próximos 7 dias'::text label,
+             COALESCE((SELECT sum(amount) FROM accounts_receivable WHERE tenant_id=$1 AND status IN ('open','overdue') AND due_date BETWEEN CURRENT_DATE AND CURRENT_DATE+7 ${context.branchId ? "AND branch_id=$2" : ""}),0)::text receivable,
+             COALESCE((SELECT sum(amount) FROM accounts_payable WHERE tenant_id=$1 AND status IN ('open','overdue') AND due_date BETWEEN CURRENT_DATE AND CURRENT_DATE+7 ${context.branchId ? "AND branch_id=$2" : ""}),0)::text payable
+           UNION ALL SELECT '8 a 14 dias',
+             COALESCE((SELECT sum(amount) FROM accounts_receivable WHERE tenant_id=$1 AND status IN ('open','overdue') AND due_date BETWEEN CURRENT_DATE+8 AND CURRENT_DATE+14 ${context.branchId ? "AND branch_id=$2" : ""}),0)::text,
+             COALESCE((SELECT sum(amount) FROM accounts_payable WHERE tenant_id=$1 AND status IN ('open','overdue') AND due_date BETWEEN CURRENT_DATE+8 AND CURRENT_DATE+14 ${context.branchId ? "AND branch_id=$2" : ""}),0)::text
+           UNION ALL SELECT '15 a 30 dias',
+             COALESCE((SELECT sum(amount) FROM accounts_receivable WHERE tenant_id=$1 AND status IN ('open','overdue') AND due_date BETWEEN CURRENT_DATE+15 AND CURRENT_DATE+30 ${context.branchId ? "AND branch_id=$2" : ""}),0)::text,
+             COALESCE((SELECT sum(amount) FROM accounts_payable WHERE tenant_id=$1 AND status IN ('open','overdue') AND due_date BETWEEN CURRENT_DATE+15 AND CURRENT_DATE+30 ${context.branchId ? "AND branch_id=$2" : ""}),0)::text
+         ) timeline`,
+        branchParams,
+      ),
+      this.database.tenantQuery<{ name: string; revenue: string; margin: string; marginPercent: string }>(
+        context.tenantId,
+        `SELECT p.name,
+           COALESCE(sum((si.unit_price*si.quantity)-si.discount_amount),0)::text revenue,
+           COALESCE(sum((si.unit_price*si.quantity)-si.discount_amount-(p.cost_price*si.quantity)),0)::text margin,
+           CASE WHEN COALESCE(sum((si.unit_price*si.quantity)-si.discount_amount),0)>0
+             THEN (100*COALESCE(sum((si.unit_price*si.quantity)-si.discount_amount-(p.cost_price*si.quantity)),0)/sum((si.unit_price*si.quantity)-si.discount_amount))::text
+             ELSE '0' END AS "marginPercent"
+         FROM products p
+         JOIN sale_items si ON si.product_id=p.id AND si.tenant_id=$1
+         JOIN sales s ON s.id=si.sale_id AND s.tenant_id=$1 AND s.status='sold'
+         WHERE p.tenant_id=$1 AND s.created_at::date BETWEEN $2 AND $3 ${context.branchId ? "AND s.branch_id=$4" : ""}
+         GROUP BY p.id
+         ORDER BY margin DESC
+         LIMIT 5`,
+        context.branchId ? [context.tenantId, startDate, endDate, context.branchId] : [context.tenantId, startDate, endDate],
+      ),
     ]);
 
     return {
@@ -652,6 +776,11 @@ export class DashboardService {
       },
       salesHistory: salesHistory.rows,
       branchGoals: branchGoals.rows,
+      cashForecastTimeline: cashForecastTimeline.rows.map((row) => ({
+        ...row,
+        net: Number(row.receivable) - Number(row.payable),
+      })),
+      marginLeaders: marginLeaders.rows,
     };
   }
 }

@@ -277,6 +277,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [selectedBranchId, setSelectedBranchId] = useState<string | undefined>(undefined);
   const [commandOpen, setCommandOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [posProductionMode, setPosProductionMode] = useState(false);
   const [editingFavorites, setEditingFavorites] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<
@@ -383,6 +384,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     window.addEventListener("sgc:session-expired", redirectToLogin);
     return () => window.removeEventListener("sgc:session-expired", redirectToLogin);
   }, [router]);
+
+  useEffect(() => {
+    const syncPosProduction = (event: Event) => {
+      setPosProductionMode(Boolean((event as CustomEvent<{ active?: boolean }>).detail?.active));
+    };
+    window.addEventListener("sgc:pos-production", syncPosProduction);
+    return () => window.removeEventListener("sgc:pos-production", syncPosProduction);
+  }, []);
+
+  useEffect(() => {
+    if (pathname !== "/pos") setPosProductionMode(false);
+  }, [pathname]);
 
   useEffect(() => {
     const shortcut = (event: KeyboardEvent) => {
@@ -680,7 +693,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-[var(--brand-surface)]">
-      {mobileNavigationOpen ? (
+      {!posProductionMode && mobileNavigationOpen ? (
         <div className="fixed inset-0 z-40 lg:hidden">
           <button
             type="button"
@@ -706,7 +719,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </aside>
         </div>
       ) : null}
-      {!collapsed ? (
+      {!posProductionMode && !collapsed ? (
         <aside
           className={`fixed inset-y-0 left-0 hidden border-r border-[#11284f] bg-[var(--brand-primary)] text-white lg:block ${compact ? "w-20" : "w-72"}`}
         >
@@ -733,8 +746,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           ) : null}
         </aside>
       ) : null}
-      <div className={collapsed ? "" : compact ? "lg:pl-20" : "lg:pl-72"}>
-        <header className="sticky top-0 z-20 flex min-h-16 items-center justify-between gap-2 border-b border-[var(--brand-border)] bg-white/95 px-3 py-3 backdrop-blur sm:gap-3 sm:px-4 lg:h-16 lg:px-8 lg:py-0">
+      <div className={posProductionMode ? "" : collapsed ? "" : compact ? "lg:pl-20" : "lg:pl-72"}>
+        {!posProductionMode ? <header className="sticky top-0 z-20 flex min-h-16 items-center justify-between gap-2 border-b border-[var(--brand-border)] bg-white/95 px-3 py-3 backdrop-blur sm:gap-3 sm:px-4 lg:h-16 lg:px-8 lg:py-0">
           <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
             <button
               type="button"
@@ -971,7 +984,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               ) : null}
             </div>
           </div>
-        </header>
+        </header> : null}
         {helpOpen ? (
           <aside
             ref={helpRef}
@@ -1077,7 +1090,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         ) : null}
-        <main className="mx-auto w-full min-w-0 max-w-[1600px] overflow-x-clip px-3 py-5 sm:px-4 lg:px-6 xl:px-8">
+        <main className={posProductionMode ? "w-full min-w-0 overflow-hidden" : "mx-auto w-full min-w-0 max-w-[1600px] overflow-x-clip px-3 py-5 sm:px-4 lg:px-6 xl:px-8"}>
           {!me ? (
             <div className="py-16 text-center text-sm text-slate-500">Carregando acesso...</div>
           ) : routeAllowed ? (
@@ -1088,9 +1101,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           )}
         </main>
-        <footer className="px-3 pb-4 text-center text-[11px] text-slate-500 sm:px-4 lg:px-6">
+        {!posProductionMode ? <footer className="px-3 pb-4 text-center text-[11px] text-slate-500 sm:px-4 lg:px-6">
           Orien · Gestão inteligente
-        </footer>
+        </footer> : null}
       </div>
     </div>
   );

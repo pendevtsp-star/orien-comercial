@@ -10,6 +10,21 @@ import { branchGoalSchema, dashboardQuerySchema, onboardingStateSchema } from "@
 import { ZodValidationPipe } from "../../shared/zod-validation.pipe";
 import { TenantContextGuard } from "../../shared/tenant-context.guard";
 import { DashboardService } from "./dashboard.service";
+import { z } from "zod";
+
+const commissionRuleSchema = z.object({
+  userId: z.string().uuid(),
+  branchId: z.string().uuid().optional(),
+  ratePercent: z.coerce.number().min(0).max(100),
+  isActive: z.boolean().optional(),
+});
+const sellerGoalSchema = z.object({
+  userId: z.string().uuid(),
+  branchId: z.string().uuid().optional(),
+  periodStart: z.string().date(),
+  periodEnd: z.string().date(),
+  salesTarget: z.coerce.number().nonnegative(),
+});
 
 @ApiTags("dashboard")
 @UseGuards(JwtAuthGuard, TenantContextGuard, PermissionsGuard)
@@ -54,5 +69,39 @@ export class DashboardController {
     @Body(new ZodValidationPipe(branchGoalSchema)) body: never,
   ) {
     return this.dashboardService.setGoal(tenant, body);
+  }
+
+  @RequirePermissions(permissions.dashboard.read)
+  @Get("commission-rules")
+  commissionRules(@CurrentTenant() tenant: TenantContext) {
+    return this.dashboardService.commissionRules(tenant);
+  }
+
+  @RequirePermissions(permissions.branches.update)
+  @Post("commission-rules")
+  saveCommissionRule(
+    @CurrentTenant() tenant: TenantContext,
+    @Body(new ZodValidationPipe(commissionRuleSchema)) body: never,
+  ) {
+    return this.dashboardService.saveCommissionRule(tenant, body);
+  }
+
+  @RequirePermissions(permissions.dashboard.read)
+  @Get("seller-goals")
+  sellerGoals(
+    @CurrentTenant() tenant: TenantContext,
+    @Query("startDate") startDate?: string,
+    @Query("endDate") endDate?: string,
+  ) {
+    return this.dashboardService.sellerGoals(tenant, startDate, endDate);
+  }
+
+  @RequirePermissions(permissions.branches.update)
+  @Post("seller-goals")
+  sellerGoal(
+    @CurrentTenant() tenant: TenantContext,
+    @Body(new ZodValidationPipe(sellerGoalSchema)) body: never,
+  ) {
+    return this.dashboardService.setSellerGoal(tenant, body);
   }
 }

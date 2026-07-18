@@ -1,7 +1,7 @@
 "use client";
 
 import { Badge, Button, Card, CardContent, DataTable, EmptyState, Input, PageHeader, Select, Tabs } from "@sgc/ui";
-import { LockKeyhole, MailPlus, Plus, RefreshCw, ShieldCheck, UsersRound, type LucideIcon } from "lucide-react";
+import { DollarSign, LockKeyhole, MailPlus, Plus, RefreshCw, ShieldCheck, Target, UsersRound, type LucideIcon } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../../lib/api";
 import { PaginationFooter } from "../../../components/pagination-footer";
@@ -51,6 +51,29 @@ interface RoleOption {
   roleName: string;
   roleSlug?: string;
   permissions?: string[];
+}
+
+interface CommissionRuleRow {
+  id: string;
+  userId: string;
+  userName: string;
+  branchId?: string | null;
+  branchName?: string | null;
+  ratePercent: number;
+  isActive: boolean;
+}
+
+interface SellerGoalRow {
+  id: string;
+  userId: string;
+  userName: string;
+  branchId?: string | null;
+  branchName?: string | null;
+  periodStart: string;
+  periodEnd: string;
+  salesTarget: number;
+  revenue: number;
+  provisionedCommission: number;
 }
 
 const permissionGroups = [
@@ -113,6 +136,10 @@ export default function TeamPage() {
   const [roles, setRoles] = useState<RoleOption[]>([]);
   const [simulatedRoleId, setSimulatedRoleId] = useState("");
   const [roleDrafts, setRoleDrafts] = useState<Record<string, string[]>>({});
+  const [commercialMembers, setCommercialMembers] = useState<MemberRow[]>([]);
+  const [commissionRules, setCommissionRules] = useState<CommissionRuleRow[]>([]);
+  const [sellerGoals, setSellerGoals] = useState<SellerGoalRow[]>([]);
+  const [commercialSaving, setCommercialSaving] = useState(false);
   const [savingRoleId, setSavingRoleId] = useState<string | null>(null);
   const [lastInvite, setLastInvite] = useState<{ inviteUrl: string; emailPreviewHtml: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -133,6 +160,10 @@ export default function TeamPage() {
     [branches]
   );
   const roleOptions = useMemo(() => roles.map((role) => ({ label: role.roleName, value: role.roleId })), [roles]);
+  const commercialMemberOptions = useMemo(
+    () => commercialMembers.filter((member) => member.status === "active").map((member) => ({ label: `${member.userName} · ${member.roleName ?? member.roleSlug}`, value: member.userId })),
+    [commercialMembers]
+  );
   const invitePageSize = 10;
 
   async function loadReferenceData() {
@@ -140,25 +171,47 @@ export default function TeamPage() {
     try {
       const inviteQuery = new URLSearchParams({ page: String(invitePage), pageSize: String(invitePageSize) });
       if (inviteSearch) inviteQuery.set("search", inviteSearch);
-      const [invitesResponse, branchesResponse, rolesResponse] = await Promise.all([
+      const [invitesResponse, branchesResponse, rolesResponse, membersResponse] = await Promise.all([
         apiFetch<ListResponse<InviteRow>>(`/invites?${inviteQuery.toString()}`),
         apiFetch<ListResponse<BranchRow>>("/branches?pageSize=100"),
-        apiFetch<ListResponse<RoleOption>>("/roles")
+        apiFetch<ListResponse<RoleOption>>("/roles"),
+        apiFetch<ListResponse<MemberRow>>("/memberships?pageSize=100&status=active")
       ]);
 
       setInvites(invitesResponse.data);
       setInvitePagination(invitesResponse.pagination ?? { total: invitesResponse.data.length, page: invitePage, pageSize: invitePageSize });
       setBranches(branchesResponse.data);
       setRoles(rolesResponse.data);
+      setCommercialMembers(membersResponse.data);
       setRoleDrafts(Object.fromEntries(rolesResponse.data.map((role) => [role.roleId, role.permissions ?? []])));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao carregar equipe.");
     }
   }
 
+  async function loadCommercialGovernance() {
+    try {
+      const now = new Date();
+      const startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+      const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
+      const [rulesResponse, goalsResponse] = await Promise.all([
+        apiFetch<CommissionRuleRow[]>("/dashboard/commission-rules"),
+        apiFetch<SellerGoalRow[]>(`/dashboard/seller-goals?startDate=${startDate}&endDate=${endDate}`)
+      ]);
+      setCommissionRules(rulesResponse);
+      setSellerGoals(goalsResponse);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao carregar metas e comissões.");
+    }
+  }
+
   useEffect(() => {
     void loadReferenceData();
   }, [invitePage, inviteSearch]);
+
+  useEffect(() => {
+    void loadCommercialGovernance();
+  }, []);
 
   useEffect(() => {
     void loadMembers();
@@ -284,6 +337,54 @@ export default function TeamPage() {
     }
   }
 
+  async function saveCommissionRule(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setCommercialSaving(true);
+    try {
+      await apiFetch("/dashboard/commission-rules", {
+        method: "POST",
+        body: JSON.stringify({
+          userId: form.get("userId"),
+          branchId: form.get("branchId") || undefined,
+          ratePercent: Number(form.get("ratePercent")),
+          isActive: true
+        })
+      });
+      event.currentTarget.reset();
+      await loadCommercialGovernance();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao salvar a regra de comissão.");
+    } finally {
+      setCommercialSaving(false);
+    }
+  }
+
+  async function saveSellerGoal(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setCommercialSaving(true);
+    try {
+      await apiFetch("/dashboard/seller-goals", {
+        method: "POST",
+        body: JSON.stringify({
+          userId: form.get("userId"),
+          branchId: form.get("branchId") || undefined,
+          periodStart: form.get("periodStart"),
+          periodEnd: form.get("periodEnd"),
+          salesTarget: Number(form.get("salesTarget"))
+        })
+      });
+      await loadCommercialGovernance();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao salvar a meta do vendedor.");
+    } finally {
+      setCommercialSaving(false);
+    }
+  }
+
   return (
     <div className="grid gap-6">
       <PageHeader
@@ -292,7 +393,7 @@ export default function TeamPage() {
         actions={
           <Button
             variant="secondary"
-            onClick={() => void Promise.all([loadReferenceData(), loadMembers(), loadAudit()])}
+            onClick={() => void Promise.all([loadReferenceData(), loadMembers(), loadAudit(), loadCommercialGovernance()])}
             icon={<RefreshCw size={16} />}
           >
             Atualizar dados
@@ -513,6 +614,79 @@ export default function TeamPage() {
             )
           },
           {
+            value: "commercial",
+            label: "Metas e comissões",
+            content: (
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+                <div className="grid gap-4">
+                  <Card>
+                    <CardContent className="grid gap-4">
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Comissão por venda</p>
+                        <h2 className="mt-2 text-lg font-semibold text-[var(--brand-primary)]">Regra por pessoa e filial</h2>
+                        <p className="mt-1 text-sm text-slate-500">A comissão é provisionada automaticamente ao concluir a venda e ajustada em cancelamentos ou devoluções.</p>
+                      </div>
+                      <form className="grid gap-3" onSubmit={(event) => void saveCommissionRule(event)}>
+                        <Select name="userId" label="Colaborador" options={[{ label: "Selecione", value: "" }, ...commercialMemberOptions]} required />
+                        <Select name="branchId" label="Filial" options={branchOptions} />
+                        <Input name="ratePercent" label="Comissão (%)" type="number" min="0" max="100" step="0.01" placeholder="Ex.: 2,5" required />
+                        <Button type="submit" icon={<DollarSign size={16} />} disabled={commercialSaving}>Salvar regra</Button>
+                      </form>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="grid gap-4">
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Meta comercial</p>
+                        <h2 className="mt-2 text-lg font-semibold text-[var(--brand-primary)]">Meta por vendedor</h2>
+                      </div>
+                      <form className="grid gap-3" onSubmit={(event) => void saveSellerGoal(event)}>
+                        <Select name="userId" label="Colaborador" options={[{ label: "Selecione", value: "" }, ...commercialMemberOptions]} required />
+                        <Select name="branchId" label="Filial" options={branchOptions} />
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <Input name="periodStart" label="Início" type="date" defaultValue={monthStart()} required />
+                          <Input name="periodEnd" label="Fim" type="date" defaultValue={monthEnd()} required />
+                        </div>
+                        <Input name="salesTarget" label="Meta de vendas (R$)" type="number" min="0" step="0.01" required />
+                        <Button type="submit" icon={<Target size={16} />} disabled={commercialSaving}>Salvar meta</Button>
+                      </form>
+                    </CardContent>
+                  </Card>
+                </div>
+                <div className="grid gap-4">
+                  <Card>
+                    <CardContent className="grid gap-3">
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Regras ativas</p>
+                        <h2 className="mt-2 text-lg font-semibold text-[var(--brand-primary)]">Comissões configuradas</h2>
+                      </div>
+                      <DataTable rows={commissionRules} empty={<EmptyState eyebrow="Comissões" title="Nenhuma regra criada." description="Cadastre a primeira regra para provisionar comissões automaticamente nas vendas." icon={<DollarSign size={20} />} />} columns={[
+                        { key: "person", header: "Colaborador", render: (row) => row.userName },
+                        { key: "branch", header: "Filial", render: (row) => row.branchName ?? "Todas" },
+                        { key: "rate", header: "Comissão", render: (row) => `${Number(row.ratePercent).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` },
+                        { key: "status", header: "Status", render: (row) => <Badge>{row.isActive ? "Ativa" : "Inativa"}</Badge> }
+                      ]} />
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="grid gap-3">
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Mês atual</p>
+                        <h2 className="mt-2 text-lg font-semibold text-[var(--brand-primary)]">Acompanhamento das metas</h2>
+                      </div>
+                      <DataTable rows={sellerGoals} empty={<EmptyState eyebrow="Metas" title="Nenhuma meta para este período." description="Defina metas por pessoa para acompanhar resultado e comissão provisionada." icon={<Target size={20} />} />} columns={[
+                        { key: "person", header: "Colaborador", render: (row) => row.userName },
+                        { key: "scope", header: "Filial", render: (row) => row.branchName ?? "Todas" },
+                        { key: "progress", header: "Realizado", render: (row) => `${currency(row.revenue)} de ${currency(row.salesTarget)}` },
+                        { key: "commission", header: "Comissão", render: (row) => currency(row.provisionedCommission) }
+                      ]} />
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+            )
+          },
+          {
             value: "invites",
             label: "Convites",
             content: (
@@ -698,4 +872,18 @@ function roleChanged(role: RoleOption, drafts: Record<string, string[]>) {
   const original = [...(role.permissions ?? [])].sort().join("|");
   const draft = [...(drafts[role.roleId] ?? role.permissions ?? [])].sort().join("|");
   return original !== draft;
+}
+
+function monthStart() {
+  const today = new Date();
+  return new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
+}
+
+function monthEnd() {
+  const today = new Date();
+  return new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0, 10);
+}
+
+function currency(value: number) {
+  return Number(value ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }

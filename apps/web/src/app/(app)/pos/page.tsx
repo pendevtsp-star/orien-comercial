@@ -132,6 +132,7 @@ export default function PosPage() {
   const [closingAmount, setClosingAmount] = useState("");
   const [closingNotes, setClosingNotes] = useState("");
   const [showClosingPanel, setShowClosingPanel] = useState(false);
+  const [cashToolPanel, setCashToolPanel] = useState<"movement" | "close" | null>(null);
   const [lastCashClose, setLastCashClose] = useState<CashCloseResult | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [scanner, setScanner] = useState("");
@@ -175,6 +176,12 @@ export default function PosPage() {
     document.addEventListener("fullscreenchange", onFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
   }, []);
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("sgc:pos-production", { detail: { active: productionMode } }));
+    return () => {
+      window.dispatchEvent(new CustomEvent("sgc:pos-production", { detail: { active: false } }));
+    };
+  }, [productionMode]);
   function repeatLastSale() {
     const last = window.localStorage.getItem("orien.pos.last-cart");
     if (!last) {
@@ -427,6 +434,7 @@ export default function PosPage() {
       setClosingAmount("");
       setClosingNotes("");
       setShowClosingPanel(false);
+      setCashToolPanel(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao fechar caixa.");
     }
@@ -454,6 +462,7 @@ export default function PosPage() {
       setMovementAmount("");
       setMovementReason("");
       setError(null);
+      if (productionMode) setCashToolPanel(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha na movimentação do caixa.");
     }
@@ -497,6 +506,7 @@ export default function PosPage() {
   function openClosingPanel() {
     if (!cash) return;
     setShowClosingPanel(true);
+    if (productionMode) setCashToolPanel("close");
     window.setTimeout(() => document.getElementById("cash-closing-amount")?.focus(), 0);
   }
   useEffect(() => {
@@ -630,61 +640,78 @@ export default function PosPage() {
     }
   }
 
+  const operationActions = (
+    <div className="flex flex-wrap gap-2">
+      <Button variant="secondary" onClick={repeatLastSale} disabled={!cash}>
+        Repetir última venda
+      </Button>
+      <Button variant="secondary" onClick={clearDraft} disabled={!cart.length}>
+        Limpar venda
+      </Button>
+      <Button
+        variant="secondary"
+        icon={productionMode ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+        onClick={() => void toggleProductionMode()}
+      >
+        {productionMode ? "Sair da tela cheia" : "Modo produção"}
+      </Button>
+      <Button
+        variant="secondary"
+        onClick={() => {
+          setMovementType("supply");
+          if (productionMode) setCashToolPanel("movement");
+          else document.getElementById("cash-movement-amount")?.focus();
+        }}
+        disabled={!cash}
+      >
+        Suprimento
+      </Button>
+      <Button
+        variant="secondary"
+        onClick={() => {
+          setMovementType("withdrawal");
+          if (productionMode) setCashToolPanel("movement");
+          else document.getElementById("cash-movement-amount")?.focus();
+        }}
+        disabled={!cash}
+      >
+        Sangria
+      </Button>
+      <Button variant="secondary" onClick={openClosingPanel} disabled={!cash}>
+        Fechar caixa
+      </Button>
+    </div>
+  );
+
   return (
     <div
-      className={`grid gap-4 ${productionMode ? "min-h-screen bg-[var(--brand-bg)] p-3 md:p-5" : ""}`}
+      className={productionMode ? "flex h-[100dvh] min-h-0 flex-col gap-3 overflow-hidden bg-[var(--brand-surface)] p-3 md:p-4" : "grid gap-4"}
     >
-      <PageHeader
-        title="PDV rápido"
-        description="Scanner sempre disponível, atalhos de pagamento e controle de abertura e fechamento do caixa."
-        actions={
-          <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" onClick={repeatLastSale} disabled={!cash}>
-              Repetir última venda
-            </Button>
-            <Button variant="secondary" onClick={clearDraft} disabled={!cart.length}>
-              Limpar venda
-            </Button>
-            <Button
-              variant="secondary"
-              icon={productionMode ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-              onClick={() => void toggleProductionMode()}
-            >
-              {productionMode ? "Sair da tela cheia" : "Modo produção"}
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setMovementType("supply");
-                document.getElementById("cash-movement-amount")?.focus();
-              }}
-              disabled={!cash}
-            >
-              Suprimento
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setMovementType("withdrawal");
-                document.getElementById("cash-movement-amount")?.focus();
-              }}
-              disabled={!cash}
-            >
-              Sangria
-            </Button>
-            <Button variant="secondary" onClick={openClosingPanel} disabled={!cash}>
-              Fechar caixa
-            </Button>
+      {productionMode ? (
+        <section className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--brand-border)] bg-white px-3 py-2 shadow-sm">
+          <div className="flex min-w-0 items-center gap-3">
+            <ScanBarcode className="shrink-0 text-[var(--brand-secondary)]" size={20} />
+            <div className="min-w-0">
+              <strong className="block text-sm text-[var(--brand-primary)]">PDV em operação</strong>
+              <span className="block truncate text-xs text-slate-500">{cash ? `Caixa aberto · ${cart.length} item(ns)` : "Abra o caixa para começar"}</span>
+            </div>
           </div>
-        }
+          <div className="flex flex-wrap gap-2">{operationActions}</div>
+        </section>
+      ) : (
+      <PageHeader
+        title={productionMode ? "PDV" : "PDV rápido"}
+        description={productionMode ? "Operação contínua com scanner, teclado e pagamento à vista." : "Scanner sempre disponível, atalhos de pagamento e controle de abertura e fechamento do caixa."}
+        actions={operationActions}
       />
+      )}
       {pendingSync ? (
         <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
           {pendingSync} venda(s) aguardando sincronização. Elas serão enviadas quando a conexão
           voltar.
         </p>
       ) : null}
-      <section className="grid gap-3 rounded-md border border-[var(--brand-border)] bg-white p-4 lg:grid-cols-[1fr_auto] lg:items-center">
+      {!productionMode ? <section className="grid gap-3 rounded-md border border-[var(--brand-border)] bg-white p-4 lg:grid-cols-[1fr_auto] lg:items-center">
         <div className="grid gap-2 sm:grid-cols-4">
           {[
             cash ? "Caixa aberto" : "Abrir caixa",
@@ -706,8 +733,8 @@ export default function PosPage() {
               : "Comprovante: padrão da loja"}
           </Badge>
         </div>
-      </section>
-      {cash ? (
+      </section> : null}
+      {!productionMode && cash ? (
         <section className="grid gap-3 rounded-md border border-[var(--brand-border)] bg-[var(--brand-surface)] p-3 sm:grid-cols-2 xl:grid-cols-4">
           <OperationalFigure
             label="Turno aberto"
@@ -808,9 +835,9 @@ export default function PosPage() {
           </Button>
         </section>
       ) : null}
-      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
-        <Card className="min-w-0">
-          <CardContent className="grid gap-3">
+      <div className={`grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_420px] ${productionMode ? "min-h-0 flex-1" : ""}`}>
+        <Card className={`min-w-0 ${productionMode ? "flex min-h-0 flex-col" : ""}`}>
+          <CardContent className={`grid gap-3 ${productionMode ? "min-h-0 flex-1 grid-rows-[auto_auto_auto_minmax(0,1fr)]" : ""}`}>
             <div className="flex flex-wrap items-end gap-3">
               <div className="min-w-[220px] flex-1">
                 <Select
@@ -922,7 +949,7 @@ export default function PosPage() {
               <span>F2 scanner · F4 dinheiro · F6 Pix · F8 crédito · F9 débito · F10 concluir</span>
               <span>{cart.length ? `${cart.length} item(ns) na venda` : "Venda em montagem"}</span>
             </div>
-            <div className="grid max-h-[42vh] gap-2 overflow-y-auto pr-1">
+            <div className={`grid gap-2 overflow-y-auto pr-1 ${productionMode ? "min-h-0" : "max-h-[42vh]"}`}>
               {cart.length ? (
                 cart.map((item) => (
                   <div
@@ -1017,8 +1044,8 @@ export default function PosPage() {
             </div>
           </CardContent>
         </Card>
-        <Card variant="brand" className="h-fit xl:sticky xl:top-24">
-          <CardContent className="grid gap-4">
+        <Card variant="brand" className={`h-fit ${productionMode ? "min-h-0 overflow-y-auto" : "xl:sticky xl:top-24"}`}>
+          <CardContent className={`grid gap-4 ${productionMode ? "pb-3" : ""}`}>
             <div>
               <p className="text-xs uppercase tracking-[0.18em] text-white/70">Total da venda</p>
               <p className="mt-2 text-5xl font-semibold text-white">
@@ -1234,7 +1261,33 @@ export default function PosPage() {
           </CardContent>
         </Card>
       </div>
-      {cash ? (
+      {productionMode && cashToolPanel ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/55 p-4" onMouseDown={() => setCashToolPanel(null)}>
+          <section className="w-full max-w-xl rounded-xl border border-[var(--brand-border)] bg-white p-5 shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Operação de caixa</p>
+                <h2 className="mt-1 text-lg font-semibold text-[var(--brand-primary)]">{cashToolPanel === "close" ? "Conferência cega" : movementType === "supply" ? "Registrar suprimento" : "Registrar sangria"}</h2>
+              </div>
+              <Button variant="ghost" className="h-9 w-9 px-0" aria-label="Fechar operação de caixa" onClick={() => setCashToolPanel(null)}><X size={17} /></Button>
+            </div>
+            {cashToolPanel === "movement" ? (
+              <div className="mt-5 grid gap-3 sm:grid-cols-[160px_160px_minmax(0,1fr)]">
+                <Select label="Tipo" value={movementType} onChange={(event) => setMovementType(event.target.value as "supply" | "withdrawal")} options={[{ label: "Suprimento", value: "supply" }, { label: "Sangria", value: "withdrawal" }]} />
+                <Input label="Valor" type="number" step="0.01" value={movementAmount} onChange={(event) => setMovementAmount(event.target.value)} autoFocus />
+                <Input label="Motivo" value={movementReason} placeholder="Ex.: retirada para depósito" onChange={(event) => setMovementReason(event.target.value)} />
+              </div>
+            ) : (
+              <div className="mt-5 grid gap-3">
+                <p className="rounded-md border border-dashed border-[var(--brand-border)] bg-[var(--brand-surface)] p-3 text-sm text-slate-600">Faça a contagem sem consultar o valor esperado. A divergência só aparece após confirmar.</p>
+                <div className="grid gap-3 sm:grid-cols-[180px_minmax(0,1fr)]"><Input id="cash-closing-amount" label="Valor contado" type="number" step="0.01" value={closingAmount} onChange={(event) => setClosingAmount(event.target.value)} autoFocus /><Input label="Observação" value={closingNotes} placeholder="Obrigatória se houver divergência" onChange={(event) => setClosingNotes(event.target.value)} /></div>
+              </div>
+            )}
+            <div className="mt-5 flex justify-end gap-2"><Button variant="secondary" onClick={() => setCashToolPanel(null)}>Cancelar</Button><Button onClick={() => { if (cashToolPanel === "movement") void cashMovement(); else void closeCash(); }}>{cashToolPanel === "movement" ? "Registrar" : "Fechar caixa"}</Button></div>
+          </section>
+        </div>
+      ) : null}
+      {!productionMode && cash ? (
         <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <Card
             id="cash-closing-panel"

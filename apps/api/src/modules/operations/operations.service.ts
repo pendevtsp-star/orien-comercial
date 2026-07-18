@@ -211,6 +211,25 @@ export class OperationsService {
         `UPDATE accounts_receivable SET amount=GREATEST(amount-$3,0),status=CASE WHEN amount-$3<=0 THEN 'cancelled' ELSE status END,updated_at=now() WHERE tenant_id=$1 AND sale_id=$2 AND status IN('open','overdue')`,
         [c.tenantId, input.saleId, total],
       );
+      await client.query(
+        `UPDATE seller_commissions sc
+         SET amount=ROUND(
+               COALESCE(sc.base_amount,sc.amount) * GREATEST(0,1-(
+                 SELECT COALESCE(sum(sr.total_amount),0) / NULLIF(s.total_amount,0)
+                 FROM sale_returns sr JOIN sales s ON s.id=sr.sale_id
+                 WHERE sr.tenant_id=$1 AND sr.sale_id=sc.sale_id AND sr.status='completed'
+                 GROUP BY s.total_amount
+               )),2),
+             status=CASE WHEN (
+               SELECT COALESCE(sum(sr.total_amount),0) >= s.total_amount
+               FROM sale_returns sr JOIN sales s ON s.id=sr.sale_id
+               WHERE sr.tenant_id=$1 AND sr.sale_id=sc.sale_id AND sr.status='completed'
+               GROUP BY s.total_amount
+             ) THEN 'reversed' ELSE sc.status END,
+             adjusted_at=now(),adjustment_reason='Devolução de venda'
+         WHERE sc.tenant_id=$1 AND sc.sale_id=$2 AND sc.status IN ('pending','approved')`,
+        [c.tenantId, input.saleId],
+      );
       await audit(client, c, "sale.returned", "sale_return", created.rows[0]!.id, {
         saleId: input.saleId,
         total,
