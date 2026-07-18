@@ -48,9 +48,10 @@ imagens do GHCR por um `GHCR_READ_TOKEN` de leitura ou por imagens publicas.
 
 ## Ajuste obrigatorio do Compose
 
-O `docker-compose.prod.yml` atual usa `build:`. O workflow sincroniza o overlay
-versionado `docker-compose.ghcr.yml` para `/srv/apps/orien_comercial/app/` antes
-de cada deploy, substituindo cada `build:` por uma imagem imutavel:
+O `docker-compose.prod.yml` atual usa `build:`. O workflow grava o overlay
+versionado `docker-compose.ghcr.yml` em `/srv/apps/orien_comercial/app/` na
+mesma sessao SSH do deploy, antes de cada release, substituindo cada `build:`
+por uma imagem imutavel:
 
 ```yaml
 services:
