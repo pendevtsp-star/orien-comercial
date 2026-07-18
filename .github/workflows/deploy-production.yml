@@ -166,8 +166,7 @@ jobs:
             [ -f docker-compose.ghcr.yml ] || { echo "[deploy] docker-compose.ghcr.yml nao encontrado em $APP"; exit 13; }
             [ -w "$APP" ] || { echo "[deploy] Runner sem permissao de escrita em $APP"; exit 14; }
             [ -w "$ROOT/backups" ] || { echo "[deploy] Runner sem permissao de escrita em $ROOT/backups"; exit 15; }
-            [ -w "$ROOT/data/uploads" ] || { echo "[deploy] Runner sem permissao de escrita em $ROOT/data/uploads"; exit 16; }
-            docker info >/dev/null || { echo "[deploy] Runner sem acesso ao Docker"; exit 17; }
+            docker info >/dev/null || { echo "[deploy] Runner sem acesso ao Docker"; exit 16; }
             echo "[deploy] Pre-requisitos remotos validados para $APP"
 
             timestamp=$(date -u +%Y%m%dT%H%M%SZ)
