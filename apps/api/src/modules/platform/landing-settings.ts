@@ -162,8 +162,20 @@ export function normalizeLandingSettings(value: unknown): LandingSettings {
 }
 
 export function toPublicLandingSettings(value: unknown): PublicLandingSettings {
-  const { admin: _admin, ...settings } = normalizeLandingSettings(value);
-  return { ...settings, whatsappNumber: settings.whatsappNumber.replace(/\D/g, "") };
+  const settings = normalizeLandingSettings(value);
+  return {
+    hero: settings.hero,
+    visibility: settings.visibility,
+    supportEmail: settings.supportEmail,
+    whatsappNumber: settings.whatsappNumber.replace(/\D/g, ""),
+    whatsappMessage: settings.whatsappMessage,
+    showcaseSlides: settings.showcaseSlides,
+    planPresentation: settings.planPresentation,
+    socialProof: settings.socialProof,
+    finalCta: settings.finalCta,
+    footerLinks: settings.footerLinks,
+    testimonials: settings.testimonials,
+  };
 }
 
 function mergeWithDefaults(value: unknown): z.input<typeof LandingSettingsSchema> {

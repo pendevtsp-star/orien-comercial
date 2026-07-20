@@ -49,7 +49,7 @@ describe("PlatformService landing publication", () => {
     }> = [];
     let draft: Record<string, unknown> = {};
     const statements: string[] = [];
-    const query = vi.fn(async (statement: string, values: unknown[] = []) => {
+    const query = vi.fn((statement: string, values: unknown[] = []) => {
       statements.push(statement);
       if (statement.includes("UPDATE platform_landing_settings")) {
         if (statement.includes("SET value=(SELECT value FROM platform_landing_revisions")) {
@@ -172,12 +172,19 @@ describe("PlatformService testimonials", () => {
 
     await service.decideTestimonial("operator-1", "request-2", "approve");
 
-    expect(harness.draft).toMatchObject({
-      testimonials: expect.arrayContaining([
-        expect.objectContaining({ testimonialRequestId: "request-1" }),
-        expect.objectContaining({ testimonialRequestId: "request-2" }),
-      ]),
+    const testimonialIds = (harness.draft.testimonials as unknown[]).flatMap((testimonial) => {
+      if (
+        typeof testimonial !== "object" ||
+        testimonial === null ||
+        !("testimonialRequestId" in testimonial) ||
+        typeof testimonial.testimonialRequestId !== "string"
+      )
+        return [];
+      return [testimonial.testimonialRequestId];
     });
+    expect(testimonialIds).toEqual(
+      expect.arrayContaining(["request-1", "request-2"]),
+    );
   });
 });
 
@@ -292,7 +299,7 @@ function createLandingTransactionHarness(options: {
   };
   let transaction: typeof committed | undefined;
   const state = () => transaction ?? committed;
-  const poolQuery = vi.fn(async (statement: string) => {
+  const poolQuery = vi.fn((statement: string) => {
     if (statement.includes("FROM platform_testimonial_requests")) return { rows: [committed.request] };
     if (statement.includes("FROM platform_landing_revisions"))
       return { rows: [committed.revisions.at(-1)] };
@@ -300,7 +307,7 @@ function createLandingTransactionHarness(options: {
       return { rows: [{ value: committed.draft }] };
     return { rows: [] };
   });
-  const clientQuery = vi.fn(async (statement: string, values: unknown[] = []) => {
+  const clientQuery = vi.fn((statement: string, values: unknown[] = []) => {
     if (statement === "BEGIN") {
       transaction = clone(committed);
       return { rows: [] };
