@@ -4,7 +4,7 @@ import { BrandLogo, Button, Input } from "@sgc/ui";
 import { Eye, EyeOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
-import { apiFetch, setTenantId } from "../../lib/api";
+import { apiFetch, clearBranchScope, setTenantId } from "../../lib/api";
 import type { UserPreferences } from "../../lib/preferences";
 
 interface MeResponse {
@@ -42,6 +42,7 @@ export default function LoginPage() {
           rememberMe: form.get("rememberMe") === "on",
         }),
       });
+      clearBranchScope();
       const me = await apiFetch<MeResponse>("/me");
       const firstTenant = me.memberships[0]?.tenantId;
       if (firstTenant) setTenantId(firstTenant);

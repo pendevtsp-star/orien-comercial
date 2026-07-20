@@ -43,7 +43,14 @@ import {
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { apiFetch, getBranchScopeId, getTenantId, setBranchScopeId, setTenantId } from "../lib/api";
+import {
+  apiFetch,
+  clearTenantContext,
+  getBranchScopeId,
+  getTenantId,
+  setBranchScopeId,
+  setTenantId,
+} from "../lib/api";
 import { applyPreferences, defaultPreferences, type UserPreferences } from "../lib/preferences";
 
 type NavigationItem = {
@@ -304,10 +311,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           router.replace("/change-password");
           return;
         }
-        setMe(payload);
-        if (!getTenantId() && payload.memberships[0]?.tenantId) {
-          setTenantId(payload.memberships[0].tenantId);
+        const storedTenantId = getTenantId();
+        const activeMembership =
+          payload.memberships.find((membership) => membership.tenantId === storedTenantId) ??
+          payload.memberships[0];
+        if (activeMembership && activeMembership.tenantId !== storedTenantId) {
+          setTenantId(activeMembership.tenantId);
         }
+        setMe(payload);
       })
       .catch(() => undefined);
   }, []);
@@ -555,6 +566,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   async function logout() {
     await apiFetch("/auth/logout", { method: "POST", body: "{}" }).catch(() => undefined);
+    clearTenantContext();
     router.push("/login");
   }
 
@@ -747,7 +759,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </aside>
       ) : null}
       <div className={posProductionMode ? "" : collapsed ? "" : compact ? "lg:pl-20" : "lg:pl-72"}>
-        {!posProductionMode ? <header className="sticky top-0 z-20 flex min-h-16 items-center justify-between gap-2 border-b border-[var(--brand-border)] bg-white/95 px-3 py-3 backdrop-blur sm:gap-3 sm:px-4 lg:h-16 lg:px-8 lg:py-0">
+        {!posProductionMode ? <header className="sticky top-0 z-20 flex min-h-16 items-center justify-between gap-2 border-b border-[var(--brand-border)] bg-white/95 px-3 py-2 backdrop-blur sm:gap-3 sm:px-4 sm:py-3 lg:h-16 lg:px-8 lg:py-0">
           <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
             <button
               type="button"
@@ -757,15 +769,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             >
               <Menu size={18} />
             </button>
-            <div className="grid min-w-0 gap-1">
-              <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">
+            <div className="grid min-w-0 flex-1 gap-0.5 sm:gap-1">
+              <p className="truncate text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--brand-secondary)] sm:text-xs sm:tracking-[0.18em]">
                 Tenant ativo
               </p>
-              <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-                <p className="max-w-[10rem] truncate text-sm font-semibold text-[var(--brand-primary)] sm:max-w-[18rem] lg:max-w-none">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold leading-5 text-[var(--brand-primary)]">
                   {currentMembership?.tenantName ?? "Carregando..."}
                 </p>
-                <p className="hidden max-w-[13rem] truncate text-xs text-slate-500 sm:block sm:max-w-none">
+                <p className="hidden truncate text-xs text-slate-500 sm:block">
                   Perfil {currentMembership?.roleSlug ?? "-"}
                   {` · ${branchScopeLabel}`}
                 </p>
@@ -803,7 +815,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               ) : null}
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             <button
               type="button"
               className="hidden h-10 items-center gap-2 rounded-md border border-[var(--brand-border)] bg-white px-3 text-sm text-slate-500 lg:flex"
@@ -920,7 +932,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   </strong>
                   <span className="text-[11px] text-slate-500">{roleName}</span>
                 </span>
-                <ChevronDown size={14} />
+                <ChevronDown className="hidden sm:block" size={14} />
               </button>
               {accountOpen ? (
                 <div className="absolute right-0 top-12 z-50 grid w-[min(92vw,288px)] gap-1 rounded-md border border-[var(--brand-border)] bg-white p-2 shadow-2xl">

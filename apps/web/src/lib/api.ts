@@ -3,6 +3,26 @@ const TENANT_KEY = "sgc.currentTenantId";
 const BRANCH_SCOPE_KEY = "sgc.currentBranchScopeId";
 let refreshPromise: Promise<boolean> | null = null;
 
+type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+
+/**
+ * The branch view is an operational session choice, never a durable user preference.
+ * Remove the legacy local value so a previous user's branch cannot leak into a new session.
+ */
+export function getScopedBranchId(local: StorageLike, session: StorageLike) {
+  local.removeItem(BRANCH_SCOPE_KEY);
+  return session.getItem(BRANCH_SCOPE_KEY) ?? undefined;
+}
+
+export function synchronizeTenantScope(local: StorageLike, session: StorageLike, tenantId: string) {
+  const previousTenantId = local.getItem(TENANT_KEY);
+  if (previousTenantId && previousTenantId !== tenantId) {
+    session.removeItem(BRANCH_SCOPE_KEY);
+  }
+  local.setItem(TENANT_KEY, tenantId);
+  local.removeItem(BRANCH_SCOPE_KEY);
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -21,20 +41,33 @@ export function getTenantId() {
 
 export function setTenantId(tenantId: string) {
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(TENANT_KEY, tenantId);
-    window.localStorage.removeItem(BRANCH_SCOPE_KEY);
+    synchronizeTenantScope(window.localStorage, window.sessionStorage, tenantId);
   }
 }
 
 export function getBranchScopeId() {
   if (typeof window === "undefined") return undefined;
-  return window.localStorage.getItem(BRANCH_SCOPE_KEY) ?? undefined;
+  return getScopedBranchId(window.localStorage, window.sessionStorage);
+}
+
+export function clearBranchScope() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(BRANCH_SCOPE_KEY);
+  window.sessionStorage.removeItem(BRANCH_SCOPE_KEY);
+  window.dispatchEvent(new CustomEvent("sgc:branch-scope-changed", { detail: { branchId: undefined } }));
+}
+
+export function clearTenantContext() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(TENANT_KEY);
+  clearBranchScope();
 }
 
 export function setBranchScopeId(branchId?: string) {
   if (typeof window === "undefined") return;
-  if (branchId) window.localStorage.setItem(BRANCH_SCOPE_KEY, branchId);
-  else window.localStorage.removeItem(BRANCH_SCOPE_KEY);
+  window.localStorage.removeItem(BRANCH_SCOPE_KEY);
+  if (branchId) window.sessionStorage.setItem(BRANCH_SCOPE_KEY, branchId);
+  else window.sessionStorage.removeItem(BRANCH_SCOPE_KEY);
   window.dispatchEvent(new CustomEvent("sgc:branch-scope-changed", { detail: { branchId } }));
 }
 
