@@ -4,6 +4,8 @@ import QRCode from "qrcode";
 import type { AppConfig } from "@sgc/config";
 import { APP_CONFIG } from "../config/config.module";
 import { DatabaseService } from "../database/database.service";
+import { OperationsFoundationService } from "../operations-foundation/operations-foundation.service";
+import { normalizeLandingSettings, toPublicLandingSettings } from "./landing-settings";
 
 type PlatformIdRow = { id: string };
 type PlatformSupportSessionRow = { id: string; expiresAt: Date };
@@ -35,6 +37,8 @@ export class PlatformService {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Inject(OperationsFoundationService)
+    private readonly operationsFoundation: OperationsFoundationService,
   ) {}
   async assertOwner(userId: string, sessionId?: string, requireMfa = true) {
     const row = await this.database.pool.query<{
@@ -383,7 +387,7 @@ export class PlatformService {
     return result.rows[0];
   }
   async health() {
-    const [failed, integrations, backups, recentErrors] = await Promise.all([
+    const [failed, integrations, backups, recentErrors, operational] = await Promise.all([
       q(this.database, "SELECT count(*)::int total FROM webhook_events WHERE status<>'processed'"),
       q(
         this.database,
@@ -397,6 +401,7 @@ export class PlatformService {
         this.database,
         "SELECT count(*)::int total FROM platform_error_events WHERE created_at>now()-interval '24 hours'",
       ),
+      this.operationsFoundation.operationalHealth(),
     ]);
     return {
       api: "operational",
@@ -406,6 +411,7 @@ export class PlatformService {
       disabledIntegrations: integrations.total,
       activeSessions: backups.total,
       recentApiErrors: recentErrors.total,
+      operational,
     };
   }
   async errors() {
@@ -777,102 +783,134 @@ export class PlatformService {
     return { ok: true };
   }
   async decideTestimonial(actor: string, id: string, action: "approve" | "reject" | "revoke") {
-    const request = await this.database.pool.query<{
-      id: string;
-      status: string;
-      name: string | null;
-      company: string | null;
-      role: string | null;
-      quote: string | null;
-      imageUrl: string | null;
-      consent: boolean;
-    }>(
-      `SELECT id,status,name,company,role,quote,image_url AS "imageUrl",consent_publication AS consent
-       FROM platform_testimonial_requests WHERE id=$1`,
-      [id],
-    );
-    const row = request.rows[0];
-    if (!row) throw new BadRequestException("Solicitação não encontrada.");
-    if (
-      action === "approve" &&
-      (!row.consent || !row.name || !row.quote || row.status !== "submitted")
-    )
-      throw new BadRequestException(
-        "Aprovação disponível somente para depoimentos enviados com autorização.",
+    const client = await this.database.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const draft = await client.query<{ value: Record<string, unknown> }>(
+        "SELECT value FROM platform_landing_settings WHERE id=true FOR UPDATE",
       );
-    const status = action === "approve" ? "approved" : action === "reject" ? "rejected" : "revoked";
-    await this.database.pool.query(
-      `UPDATE platform_testimonial_requests SET status=$2,approved_at=CASE WHEN $2='approved' THEN now() ELSE NULL END,
-       approved_by_user_id=CASE WHEN $2='approved' THEN $3 ELSE NULL END,updated_at=now() WHERE id=$1`,
-      [id, status, actor],
-    );
-    const landing = await this.landingSettings();
-    const current = normalizeTestimonials(landing.testimonials).filter(
-      (item) => item.testimonialRequestId !== id,
-    );
-    if (action === "approve")
-      current.unshift({
-        testimonialRequestId: id,
-        name: row.name!,
-        company: row.company ?? "",
-        role: row.role ?? "",
-        quote: row.quote!,
-        imageUrl: row.imageUrl ?? "",
-      });
-    await this.database.pool.query(
-      "UPDATE platform_landing_settings SET value=$1::jsonb,updated_at=now() WHERE id=true",
-      [JSON.stringify({ ...landing, testimonials: current.slice(0, 8) })],
-    );
-    await this.audit(
-      actor,
-      `platform.testimonial.${status}`,
-      "platform_testimonial_request",
-      id,
-      {},
-    );
-    return { ok: true, status };
+      const latestPublic = await client.query<{ value: Record<string, unknown> }>(
+        `SELECT value FROM platform_landing_revisions
+         ORDER BY published_at DESC,id DESC
+         LIMIT 1`,
+      );
+      const request = await client.query<{
+        id: string;
+        status: string;
+        name: string | null;
+        company: string | null;
+        role: string | null;
+        quote: string | null;
+        imageUrl: string | null;
+        consent: boolean;
+      }>(
+        `SELECT id,status,name,company,role,quote,image_url AS "imageUrl",consent_publication AS consent
+         FROM platform_testimonial_requests WHERE id=$1`,
+        [id],
+      );
+      const row = request.rows[0];
+      if (!row) throw new BadRequestException("Solicitação não encontrada.");
+      if (
+        action === "approve" &&
+        (!row.consent || !row.name || !row.quote || row.status !== "submitted")
+      )
+        throw new BadRequestException(
+          "Aprovação disponível somente para depoimentos enviados com autorização.",
+        );
+      const status = action === "approve" ? "approved" : action === "reject" ? "rejected" : "revoked";
+      await client.query(
+        `UPDATE platform_testimonial_requests SET status=$2,approved_at=CASE WHEN $2='approved' THEN now() ELSE NULL END,
+         approved_by_user_id=CASE WHEN $2='approved' THEN $3 ELSE NULL END,updated_at=now() WHERE id=$1`,
+        [id, status, actor],
+      );
+      const nextTestimonials = (source: unknown) => {
+        const testimonials = normalizeLandingSettings(source).testimonials.filter(
+          (item) => item.testimonialRequestId !== id,
+        );
+        if (action === "approve")
+          testimonials.unshift({
+            testimonialRequestId: id,
+            name: row.name!,
+            company: row.company ?? "",
+            role: row.role ?? "",
+            quote: row.quote!,
+            imageUrl: row.imageUrl ?? "",
+          });
+        return testimonials.slice(0, 8);
+      };
+      const draftSource = draft.rows[0]?.value ?? {};
+      const publicSource = latestPublic.rows[0]?.value ?? {};
+      const draftValue = { ...draftSource, testimonials: nextTestimonials(draftSource) };
+      const publicValue = { ...publicSource, testimonials: nextTestimonials(publicSource) };
+      const revision = await client.query<{
+        id: string;
+        value: Record<string, unknown>;
+        publishedAt: Date;
+        restoredFromId: string | null;
+      }>(
+        `INSERT INTO platform_landing_revisions (value,published_by)
+         VALUES ($1::jsonb,$2)
+         RETURNING id,value,published_at AS "publishedAt",restored_from_id AS "restoredFromId"`,
+        [JSON.stringify(publicValue), actor],
+      );
+      await client.query(
+        "UPDATE platform_landing_settings SET value=$1::jsonb,updated_at=now() WHERE id=true",
+        [JSON.stringify(draftValue)],
+      );
+      const published = revision.rows[0]!;
+      await this.auditWithQuery(
+        client,
+        actor,
+        `platform.testimonial.${status}`,
+        "platform_testimonial_request",
+        id,
+        { landingRevisionId: published.id },
+      );
+      await client.query("COMMIT");
+      return { ok: true, status, revisionId: published.id };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
   private testimonialUrl(token: string) {
     return `${this.config.MARKETING_APP_URL}/avaliar/${encodeURIComponent(token)}`;
   }
   async landingSettings() {
+    return normalizeLandingSettings(await this.rawLandingSettings());
+  }
+  private async rawLandingSettings() {
     const result = await this.database.pool.query<{ value: Record<string, unknown> }>(
       "SELECT value FROM platform_landing_settings WHERE id=true",
     );
     return result.rows[0]?.value ?? {};
   }
   async publicLandingSettings() {
-    const stored = await this.landingSettings();
-    const defaults = {
-      heroCta: "Começar teste gratuito",
-      supportEmail: "suporte@useorien.com.br",
-      whatsappNumber: "",
-      whatsappMessage: "Olá, quero conhecer a Orien.",
-      showCalculator: true,
-      showTestimonials: true,
-      showFaq: true,
-      showPlans: true,
-      showSegments: true,
-      testimonials: [] as Array<Record<string, string>>,
-    };
-    const settings = { ...defaults, ...stored } as Record<string, unknown>;
-    return {
-      heroCta: stringSetting(settings.heroCta, defaults.heroCta, 80),
-      supportEmail: stringSetting(settings.supportEmail, defaults.supportEmail, 160),
-      whatsappNumber: stringSetting(settings.whatsappNumber, "", 32).replace(/\D/g, ""),
-      whatsappMessage: stringSetting(settings.whatsappMessage, defaults.whatsappMessage, 400),
-      showCalculator: settings.showCalculator !== false,
-      showTestimonials: settings.showTestimonials !== false,
-      showFaq: settings.showFaq !== false,
-      showPlans: settings.showPlans !== false,
-      showSegments: settings.showSegments !== false,
-      testimonials: normalizeTestimonials(settings.testimonials),
-    };
+    const result = await this.database.pool.query<{ value: Record<string, unknown> }>(
+      `SELECT value FROM platform_landing_revisions
+       ORDER BY published_at DESC,id DESC
+       LIMIT 1`,
+    );
+    return toPublicLandingSettings(result.rows[0]?.value);
   }
   async updateLandingSettings(actor: string, value: Record<string, unknown>) {
+    const existing = await this.landingSettings();
+    const requested = normalizeLandingSettings(value);
+    const existingRequestIds = new Set(
+      existing.testimonials.map((testimonial) => testimonial.testimonialRequestId),
+    );
+    const testimonials = [
+      ...existing.testimonials,
+      ...requested.testimonials.filter(
+        (testimonial) => !existingRequestIds.has(testimonial.testimonialRequestId),
+      ),
+    ].slice(0, 8);
+    const normalized = normalizeLandingSettings({ ...requested, testimonials });
     await this.database.pool.query(
       "UPDATE platform_landing_settings SET value=$1::jsonb,updated_at=now() WHERE id=true",
-      [JSON.stringify(value)],
+      [JSON.stringify(normalized)],
     );
     await this.audit(
       actor,
@@ -883,6 +921,101 @@ export class PlatformService {
     );
     return this.landingSettings();
   }
+  async publishLandingSettings(actor: string) {
+    const client = await this.database.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const draft = await client.query<{ value: Record<string, unknown> }>(
+        "SELECT value FROM platform_landing_settings WHERE id=true FOR UPDATE",
+      );
+      const value = normalizeLandingSettings(draft.rows[0]?.value);
+      const revision = await client.query<{
+        id: string;
+        value: Record<string, unknown>;
+        publishedAt: Date;
+        restoredFromId: string | null;
+      }>(
+        `INSERT INTO platform_landing_revisions (value,published_by)
+         VALUES ($1::jsonb,$2)
+         RETURNING id,value,published_at AS "publishedAt",restored_from_id AS "restoredFromId"`,
+        [JSON.stringify(value), actor],
+      );
+      const published = revision.rows[0]!;
+      await this.auditWithQuery(
+        client,
+        actor,
+        "platform.landing.published",
+        "platform_landing_revision",
+        published.id,
+        {},
+      );
+      await client.query("COMMIT");
+      return published;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+  async landingRevisions() {
+    const result = await this.database.pool.query<{
+      id: string;
+      value: Record<string, unknown>;
+      publishedBy: string | null;
+      publishedAt: Date;
+      restoredFromId: string | null;
+    }>(
+      `SELECT id,value,published_by AS "publishedBy",published_at AS "publishedAt",
+        restored_from_id AS "restoredFromId"
+       FROM platform_landing_revisions
+       ORDER BY published_at DESC,id DESC`,
+    );
+    return { data: result.rows };
+  }
+  async restoreLandingRevision(actor: string, revisionId: string) {
+    const client = await this.database.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT value FROM platform_landing_settings WHERE id=true FOR UPDATE");
+      const inserted = await client.query<{
+        id: string;
+        value: Record<string, unknown>;
+        publishedAt: Date;
+        restoredFromId: string | null;
+      }>(
+        `INSERT INTO platform_landing_revisions (value,published_by,restored_from_id)
+         SELECT value,$2,id
+         FROM platform_landing_revisions
+         WHERE id=$1
+         RETURNING id,value,published_at AS "publishedAt",restored_from_id AS "restoredFromId"`,
+        [revisionId, actor],
+      );
+      const restored = inserted.rows[0]!;
+      if (!restored) throw new BadRequestException("Revisão da landing não encontrada.");
+      await client.query(
+        `UPDATE platform_landing_settings
+         SET value=(SELECT value FROM platform_landing_revisions WHERE id=$1),updated_at=now()
+         WHERE id=true`,
+        [revisionId],
+      );
+      await this.auditWithQuery(
+        client,
+        actor,
+        "platform.landing.restored",
+        "platform_landing_revision",
+        restored.id,
+        { restoredFromId: revisionId },
+      );
+      await client.query("COMMIT");
+      return restored;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
   async audit(
     actor: string,
     action: string,
@@ -891,6 +1024,19 @@ export class PlatformService {
     metadata: Record<string, unknown>,
   ) {
     await this.database.pool.query(
+      "INSERT INTO platform_audit_logs (actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,$2,$3,$4,$5::jsonb)",
+      [actor, action, entityType, entityId, JSON.stringify(metadata)],
+    );
+  }
+  private async auditWithQuery(
+    client: { query: (query: string, values?: unknown[]) => Promise<unknown> },
+    actor: string,
+    action: string,
+    entityType: string,
+    entityId: string,
+    metadata: Record<string, unknown>,
+  ) {
+    await client.query(
       "INSERT INTO platform_audit_logs (actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,$2,$3,$4,$5::jsonb)",
       [actor, action, entityType, entityId, JSON.stringify(metadata)],
     );
@@ -987,27 +1133,4 @@ function platformSlaStateSql(alias: string) {
 
 function stringSetting(value: unknown, fallback: string, maxLength: number) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : fallback;
-}
-
-function normalizeTestimonials(value: unknown): Array<Record<string, string>> {
-  if (!Array.isArray(value)) return [];
-  return value.slice(0, 8).flatMap((item) => {
-    if (!item || typeof item !== "object") return [];
-    const record = item as Record<string, unknown>;
-    const quote = stringSetting(record.quote, "", 700);
-    const name = stringSetting(record.name, "", 100);
-    if (!quote || !name) return [];
-    return [
-      {
-        ...(stringSetting(record.testimonialRequestId, "", 80)
-          ? { testimonialRequestId: stringSetting(record.testimonialRequestId, "", 80) }
-          : {}),
-        quote,
-        name,
-        company: stringSetting(record.company, "", 120),
-        role: stringSetting(record.role, "", 100),
-        imageUrl: stringSetting(record.imageUrl, "", 500),
-      },
-    ];
-  });
 }

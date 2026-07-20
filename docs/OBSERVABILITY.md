@@ -30,3 +30,9 @@
 - `ops/monitor-health.sh` executa essa verificacao localmente a cada cinco minutos via `/etc/cron.d/orien-monitor`.
 - Defina `HEALTHCHECK_WEBHOOK_URL` no `.env` de producao para receber uma notificacao JSON quando a verificacao falhar. O URL nao deve ser versionado.
 - Acompanhe `backups/health-monitor.log`, logs Docker e espaco em disco durante o beta.
+
+## Evolução operacional
+
+- A fundação de operações persiste eventos, jobs e tentativas no PostgreSQL. O worker reserva tarefas com trava transacional para evitar duplicidade entre réplicas.
+- O painel interno deve acompanhar jobs pendentes, tarefas na fila morta, integracoes desabilitadas, webhooks pendentes, backup recente e erros nas últimas 24 horas.
+- Sentry e traces distribuídos são integrações externas. Consulte `docs/DEPENDENCIAS_DO_PROPRIETARIO.md` antes de ativá-los em produção.

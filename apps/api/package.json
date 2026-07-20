@@ -6,7 +6,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsx watch src/main.ts",
+    "dev:worker": "tsx watch src/worker.ts",
     "start": "node dist/main.js",
+    "worker": "node dist/worker.js",
     "lint": "eslint src --ext .ts",
     "test": "vitest run src",
     "test:e2e": "vitest run test/e2e",

@@ -35,20 +35,3 @@ h3,
 [data-brand-display="true"] {
   font-family: var(--font-display), Georgia, serif;
 }
-
-html[data-orien-show-calculator="false"] #calculator,
-html[data-orien-show-plans="false"] #plans,
-html[data-orien-show-segments="false"] #segments,
-html[data-orien-show-faq="false"] #faq {
-  display: none;
-}
-
-/* Texto comercial do teste gratuito no primeiro conjunto de benefícios da hero. */
-main > section:first-of-type .mt-10.flex.flex-wrap > span:first-child {
-  font-size: 0;
-}
-
-main > section:first-of-type .mt-10.flex.flex-wrap > span:first-child::after {
-  content: "Teste gratuito de 7 dias, sem cobrança inicial";
-  font-size: 0.875rem;
-}

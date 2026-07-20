@@ -1,4 +1,7 @@
+import { sql } from "drizzle-orm";
 import {
+  bigint,
+  type AnyPgColumn,
   boolean,
   date,
   index,
@@ -461,3 +464,154 @@ export const plans = pgTable("plans", {
   isActive: boolean("is_active").notNull().default(true),
   ...timestamps,
 });
+
+export const platformFeatureFlags = pgTable("platform_feature_flags", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  key: varchar("key", { length: 120 }).notNull().unique(),
+  description: text("description"),
+  defaultEnabled: boolean("default_enabled").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const platformLandingRevisions = pgTable(
+  "platform_landing_revisions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    value: jsonb("value").notNull(),
+    publishedBy: uuid("published_by").references(() => users.id, { onDelete: "set null" }),
+    publishedAt: timestamp("published_at", { withTimezone: true })
+      .notNull()
+      .default(sql`clock_timestamp()`),
+    restoredFromId: uuid("restored_from_id").references((): AnyPgColumn => platformLandingRevisions.id, {
+      onDelete: "restrict",
+    }),
+  },
+  (table) => ({
+    publicationIdx: index("platform_landing_revisions_published_idx").on(table.publishedAt.desc()),
+  }),
+);
+
+export const tenantFeatureFlagOverrides = pgTable(
+  "tenant_feature_flag_overrides",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    featureFlagId: uuid("feature_flag_id")
+      .notNull()
+      .references(() => platformFeatureFlags.id, { onDelete: "cascade" }),
+    enabled: boolean("enabled").notNull(),
+    actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    tenantFlagIdx: uniqueIndex("tenant_feature_flag_overrides_tenant_flag_idx").on(
+      table.tenantId,
+      table.featureFlagId,
+    ),
+  }),
+);
+
+export const configurationVersions = pgTable(
+  "configuration_versions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    branchId: uuid("branch_id").references(() => branches.id, { onDelete: "cascade" }),
+    configurationKey: varchar("configuration_key", { length: 120 }).notNull(),
+    version: integer("version").notNull(),
+    value: jsonb("value").notNull().default({}),
+    actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    lookupIdx: index("configuration_versions_lookup_idx").on(
+      table.tenantId,
+      table.branchId,
+      table.configurationKey,
+      table.version,
+    ),
+  }),
+);
+
+export const operationalEvents = pgTable(
+  "operational_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    branchId: uuid("branch_id").references(() => branches.id, { onDelete: "set null" }),
+    eventType: varchar("event_type", { length: 120 }).notNull(),
+    aggregateType: varchar("aggregate_type", { length: 120 }),
+    aggregateId: uuid("aggregate_id"),
+    idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+    payload: jsonb("payload").notNull().default({}),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    tenantIdempotencyIdx: uniqueIndex("operational_events_tenant_idempotency_idx").on(
+      table.tenantId,
+      table.idempotencyKey,
+    ),
+  }),
+);
+
+export const operationalJobs = pgTable(
+  "operational_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id, { onDelete: "cascade" }),
+    type: varchar("type", { length: 120 }).notNull(),
+    payload: jsonb("payload").notNull().default({}),
+    idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+    status: varchar("status", { length: 16 }).notNull().default("queued"),
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(5),
+    availableAt: timestamp("available_at", { withTimezone: true }).notNull().defaultNow(),
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
+    lockedBy: varchar("locked_by", { length: 120 }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    tenantStatusIdx: index("operational_jobs_tenant_status_idx").on(
+      table.tenantId,
+      table.status,
+      table.availableAt,
+    ),
+  }),
+);
+
+export const backupRuns = pgTable(
+  "backup_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    provider: varchar("provider", { length: 80 }).notNull(),
+    status: varchar("status", { length: 16 }).notNull().default("started"),
+    artifactUri: text("artifact_uri"),
+    checksum: varchar("checksum", { length: 160 }),
+    byteCount: bigint("byte_count", { mode: "number" }),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    restoreTestedAt: timestamp("restore_tested_at", { withTimezone: true }),
+    verificationError: text("verification_error"),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    recentIdx: index("backup_runs_recent_idx").on(table.startedAt),
+  }),
+);

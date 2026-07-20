@@ -74,6 +74,23 @@ services:
       retries: 6
     mem_limit: 512m
 
+  worker:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://sgc_app:${SGC_APP_PASSWORD}@postgres:5432/sgc
+      DATABASE_MIGRATION_URL: postgresql://sgc_owner:${POSTGRES_OWNER_PASSWORD}@postgres:5432/sgc
+      REDIS_URL: redis://redis:6379
+    command: ["node", "apps/api/dist/worker.js"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    stop_grace_period: 30s
+    mem_limit: 256m
+
   web:
     build:
       context: .

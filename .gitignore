@@ -17,3 +17,5 @@ tmp/
 uploads/
 docker-data/
 cookies.txt
+
+testsprite_tests\tmp\config.json

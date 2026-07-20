@@ -29,7 +29,9 @@ describe("Integrações - credenciais cifradas", () => {
       decrypt: (value: string) => string;
     };
     const payload = Buffer.from(target.encrypt("senha-de-integracao"), "base64");
-    payload[12] ^= 1;
+    const authTagByte = payload[12];
+    if (authTagByte === undefined) throw new Error("Payload cifrado sem tag de autenticacao");
+    payload[12] = authTagByte ^ 1;
 
     expect(() => target.decrypt(payload.toString("base64"))).toThrow();
   });

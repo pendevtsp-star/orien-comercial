@@ -39,20 +39,20 @@ jobs:
           POSTGRES_DB: orien_e2e
           POSTGRES_USER: sgc_owner
           POSTGRES_PASSWORD: sgc_owner_password
-        ports: ['5432:5432']
+        ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U sgc_owner -d orien_e2e"
           --health-interval 10s --health-timeout 5s --health-retries 10
       redis:
         image: redis:8-alpine
-        ports: ['6379:6379']
+        ports: ["6379:6379"]
     env:
       NODE_ENV: test
       APP_ENV: e2e
       DATABASE_URL: postgresql://sgc_owner:sgc_owner_password@localhost:5432/orien_e2e
       DATABASE_MIGRATION_URL: postgresql://sgc_owner:sgc_owner_password@localhost:5432/orien_e2e
       REDIS_URL: redis://localhost:6379
-      COOKIE_SECURE: 'false'
+      COOKIE_SECURE: "false"
       JWT_ACCESS_SECRET: e2e-access-secret-at-least-thirty-two-chars
       JWT_REFRESH_SECRET: e2e-refresh-secret-at-least-thirty-two-chars
       COOKIE_SECRET: e2e-cookie-secret-at-least-thirty-two-chars
@@ -136,79 +136,82 @@ jobs:
           GHCR_TOKEN_ORIEN: ${{ secrets.GHCR_TOKEN_ORIEN }}
         shell: bash
         run: |
-            set -euo pipefail
-            ROOT=/srv/apps/orien_comercial
-            APP=$ROOT/app
-            [ -d "$APP" ] || { echo "[deploy] Diretorio da aplicacao nao encontrado: $APP"; exit 10; }
-            cd "$APP"
+          set -euo pipefail
+          ROOT=/srv/apps/orien_comercial
+          APP=$ROOT/app
+          [ -d "$APP" ] || { echo "[deploy] Diretorio da aplicacao nao encontrado: $APP"; exit 10; }
+          cd "$APP"
 
-            cat > docker-compose.ghcr.yml <<'EOF'
-            services:
-              migrate:
-                image: ${ORIEN_API_IMAGE}
-                build: null
-              api:
-                image: ${ORIEN_API_IMAGE}
-                build: null
-              web:
-                image: ${ORIEN_WEB_IMAGE}
-                build: null
-              marketing:
-                image: ${ORIEN_MARKETING_IMAGE}
-                build: null
-              admin:
-                image: ${ORIEN_ADMIN_IMAGE}
-                build: null
-            EOF
+          cat > docker-compose.ghcr.yml <<'EOF'
+          services:
+            migrate:
+              image: ${ORIEN_API_IMAGE}
+              build: null
+            api:
+              image: ${ORIEN_API_IMAGE}
+              build: null
+            worker:
+              image: ${ORIEN_API_IMAGE}
+              build: null
+            web:
+              image: ${ORIEN_WEB_IMAGE}
+              build: null
+            marketing:
+              image: ${ORIEN_MARKETING_IMAGE}
+              build: null
+            admin:
+              image: ${ORIEN_ADMIN_IMAGE}
+              build: null
+          EOF
 
-            [ -f .env ] || { echo "[deploy] Arquivo .env nao encontrado em $APP"; exit 11; }
-            [ -f docker-compose.prod.yml ] || { echo "[deploy] docker-compose.prod.yml nao encontrado em $APP"; exit 12; }
-            [ -f docker-compose.ghcr.yml ] || { echo "[deploy] docker-compose.ghcr.yml nao encontrado em $APP"; exit 13; }
-            [ -w "$APP" ] || { echo "[deploy] Runner sem permissao de escrita em $APP"; exit 14; }
-            [ -w "$ROOT/backups" ] || { echo "[deploy] Runner sem permissao de escrita em $ROOT/backups"; exit 15; }
-            docker info >/dev/null || { echo "[deploy] Runner sem acesso ao Docker"; exit 16; }
-            echo "[deploy] Pre-requisitos remotos validados para $APP"
+          [ -f .env ] || { echo "[deploy] Arquivo .env nao encontrado em $APP"; exit 11; }
+          [ -f docker-compose.prod.yml ] || { echo "[deploy] docker-compose.prod.yml nao encontrado em $APP"; exit 12; }
+          [ -f docker-compose.ghcr.yml ] || { echo "[deploy] docker-compose.ghcr.yml nao encontrado em $APP"; exit 13; }
+          [ -w "$APP" ] || { echo "[deploy] Runner sem permissao de escrita em $APP"; exit 14; }
+          [ -w "$ROOT/backups" ] || { echo "[deploy] Runner sem permissao de escrita em $ROOT/backups"; exit 15; }
+          docker info >/dev/null || { echo "[deploy] Runner sem acesso ao Docker"; exit 16; }
+          echo "[deploy] Pre-requisitos remotos validados para $APP"
 
-            timestamp=$(date -u +%Y%m%dT%H%M%SZ)
-            docker compose --env-file .env -f docker-compose.prod.yml \
-              exec -T postgres pg_dump -U sgc_owner sgc | gzip > "$ROOT/backups/predeploy-${timestamp}-${VERSION}.sql.gz"
-            test -s "$ROOT/backups/predeploy-${timestamp}-${VERSION}.sql.gz"
+          timestamp=$(date -u +%Y%m%dT%H%M%SZ)
+          docker compose --env-file .env -f docker-compose.prod.yml \
+            exec -T postgres pg_dump -U sgc_owner sgc | gzip > "$ROOT/backups/predeploy-${timestamp}-${VERSION}.sql.gz"
+          test -s "$ROOT/backups/predeploy-${timestamp}-${VERSION}.sql.gz"
 
-            if [ -f .release.env ]; then cp .release.env .release.env.previous; fi
-            cat > .release.env <<EOF
-            ORIEN_API_IMAGE=ghcr.io/pendevtsp-star/orien-comercial-api:${VERSION}
-            ORIEN_WEB_IMAGE=ghcr.io/pendevtsp-star/orien-comercial-web:${VERSION}
-            ORIEN_MARKETING_IMAGE=ghcr.io/pendevtsp-star/orien-comercial-marketing:${VERSION}
-            ORIEN_ADMIN_IMAGE=ghcr.io/pendevtsp-star/orien-comercial-admin:${VERSION}
-            PRODUCTION_VERSION=${VERSION}
-            EOF
+          if [ -f .release.env ]; then cp .release.env .release.env.previous; fi
+          cat > .release.env <<EOF
+          ORIEN_API_IMAGE=ghcr.io/pendevtsp-star/orien-comercial-api:${VERSION}
+          ORIEN_WEB_IMAGE=ghcr.io/pendevtsp-star/orien-comercial-web:${VERSION}
+          ORIEN_MARKETING_IMAGE=ghcr.io/pendevtsp-star/orien-comercial-marketing:${VERSION}
+          ORIEN_ADMIN_IMAGE=ghcr.io/pendevtsp-star/orien-comercial-admin:${VERSION}
+          PRODUCTION_VERSION=${VERSION}
+          EOF
 
-            echo "$GHCR_TOKEN_ORIEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
-            compose="docker compose --env-file .env --env-file .release.env -f docker-compose.prod.yml -f docker-compose.ghcr.yml"
-            $compose pull api web marketing admin migrate
-            $compose run --rm migrate
-            $compose up -d --remove-orphans api web marketing admin
+          echo "$GHCR_TOKEN_ORIEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+          compose="docker compose --env-file .env --env-file .release.env -f docker-compose.prod.yml -f docker-compose.ghcr.yml"
+          $compose pull api worker web marketing admin migrate
+          $compose run --rm migrate
+          $compose up -d --remove-orphans api worker web marketing admin
 
-            wait_for_service() {
-              name="$1"
-              url="$2"
-              for attempt in $(seq 1 24); do
-                if curl -fsS --max-time 5 "$url" >/dev/null; then
-                  echo "[deploy] $name saudavel"
-                  return 0
-                fi
-                sleep 5
-              done
-              echo "[deploy] $name nao respondeu em 120 segundos: $url"
-              $compose ps
-              return 1
-            }
-
-            wait_for_service api http://127.0.0.1:3334/health
-            wait_for_service web http://127.0.0.1:3100
-            wait_for_service marketing http://127.0.0.1:3101
-            wait_for_service admin http://127.0.0.1:3102
+          wait_for_service() {
+            name="$1"
+            url="$2"
+            for attempt in $(seq 1 24); do
+              if curl -fsS --max-time 5 "$url" >/dev/null; then
+                echo "[deploy] $name saudavel"
+                return 0
+              fi
+              sleep 5
+            done
+            echo "[deploy] $name nao respondeu em 120 segundos: $url"
             $compose ps
+            return 1
+          }
+
+          wait_for_service api http://127.0.0.1:3334/health
+          wait_for_service web http://127.0.0.1:3100
+          wait_for_service marketing http://127.0.0.1:3101
+          wait_for_service admin http://127.0.0.1:3102
+          $compose ps
 
   notify-telegram:
     name: Notificar resultado no Telegram

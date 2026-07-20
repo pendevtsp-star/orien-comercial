@@ -29,6 +29,7 @@ import { TasksModule } from "../modules/tasks/tasks.module";
 import { SupportModule } from "../modules/support/support.module";
 import { UpdatesModule } from "../modules/updates/updates.module";
 import { FiscalModule } from "../modules/fiscal/fiscal.module";
+import { OperationsFoundationModule } from "../modules/operations-foundation/operations-foundation.module";
 
 @Module({
   imports: [
@@ -67,6 +68,7 @@ import { FiscalModule } from "../modules/fiscal/fiscal.module";
     SupportModule,
     UpdatesModule,
     FiscalModule,
+    OperationsFoundationModule,
   ],
 })
 export class AppModule {}

@@ -246,4 +246,19 @@ export class PlatformController {
     await this.ok(u);
     return this.p.updateLandingSettings(u.userId, b);
   }
+  @Post("landing/publish") async publishLanding(@CurrentUser() u: AuthUser) {
+    await this.ok(u);
+    return this.p.publishLandingSettings(u.userId);
+  }
+  @Get("landing/revisions") async landingRevisions(@CurrentUser() u: AuthUser) {
+    await this.ok(u);
+    return this.p.landingRevisions();
+  }
+  @Post("landing/revisions/:id/restore") async restoreLandingRevision(
+    @CurrentUser() u: AuthUser,
+    @Param("id") id: string,
+  ) {
+    await this.ok(u);
+    return this.p.restoreLandingRevision(u.userId, id);
+  }
 }

@@ -5,6 +5,9 @@ services:
   api:
     image: ${ORIEN_API_IMAGE}
     build: null
+  worker:
+    image: ${ORIEN_API_IMAGE}
+    build: null
   web:
     image: ${ORIEN_WEB_IMAGE}
     build: null
