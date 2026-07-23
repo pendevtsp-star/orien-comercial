@@ -378,7 +378,7 @@ Regras:
     return suggestions.slice(0, 4);
   }
 
-  async getHelpForPage(page: string): Promise<{ title: string; content: string; tips: string[] }> {
+  getHelpForPage(page: string): { title: string; content: string; tips: string[] } {
     const helpContent: Record<string, { title: string; content: string; tips: string[] }> = {
       dashboard: {
         title: "Dashboard Executivo",
