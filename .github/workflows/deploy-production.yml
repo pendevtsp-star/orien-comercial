@@ -72,6 +72,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r --filter "./packages/*" exec rm -rf dist .turbo
       - run: pnpm -r --filter "./packages/*" --sort build
+      - run: pnpm --filter @sgc/types build
+      - run: pnpm --filter @sgc/config build
       - run: pnpm security:artifacts
       - run: pnpm lint
       - run: pnpm lint:copy
