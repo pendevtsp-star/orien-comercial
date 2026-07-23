@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+export {
+  findDockerIgnorePolicyGaps,
+  isAllowedRepositoryExample,
+  isSensitiveArtifact,
+} from "./artifact-policy";
+
 const optionalUrl = z.preprocess((value) => (value === "" ? undefined : value), z.string().url().optional());
 
 const envSchema = z.object({
@@ -34,8 +40,16 @@ const envSchema = z.object({
   EMAIL_FROM: z.string().email().default("no-reply@useorien.com.br"),
   SUPPORT_EMAIL: z.string().email().default("suporte@useorien.com.br"),
   SENTRY_DSN: optionalUrl,
+  SENTRY_DSN_API: optionalUrl,
+  SENTRY_DSN_WEB: optionalUrl,
+  SENTRY_DSN_ADMIN: optionalUrl,
+  SENTRY_DSN_MARKETING: optionalUrl,
   SENTRY_ENVIRONMENT: z.string().default("local"),
+  SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.1),
   NEXT_PUBLIC_SENTRY_DSN: optionalUrl,
+  // OpenRouter AI
+  OPENROUTER_API_KEY: z.string().optional(),
+  OPENROUTER_MODEL: z.string().default("meta-llama/llama-3.1-8b-instruct:free"),
 });
 
 export type AppConfig = z.infer<typeof envSchema>;

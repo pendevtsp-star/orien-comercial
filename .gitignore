@@ -17,5 +17,41 @@ tmp/
 uploads/
 docker-data/
 cookies.txt
+cookies.json
+cookiejar.txt
+.envrc
+backup/
+backups/
+dump/
+dumps/
+certs/
+certificates/
+*.pfx
+*.p12
+*.pem
+*.key
+*.bak
+*.dump
+*.sql.gz
+backup*.sql
+dump*.sql
+**/*.backup.sql
+**/*.dump.sql
+!packages/db/migrations/*.sql
 
 testsprite_tests\tmp\config.json
+
+# Local tool configs
+.claude/
+.coderabbit.yaml
+.superpowers/
+.vscode/
+.idea/
+
+# Local documentation
+ENTERPRISE_PLAN.md
+orien-architecture.*
+docs/superpowers/
+
+# Seed scripts (local use only)
+seed-reports-test.py

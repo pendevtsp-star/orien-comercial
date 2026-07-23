@@ -1,6 +1,6 @@
 {
   "name": "saas-gestao-comercial",
-  "version": "1.22.1",
+  "version": "1.23.0",
   "private": true,
   "description": "Monorepo do SaaS multitenant para gestao comercial, estoque, financeiro e relacionamento.",
   "packageManager": "pnpm@11.7.0",
@@ -23,6 +23,7 @@
     "db:migrate": "pnpm --filter @sgc/db migrate",
     "db:seed": "pnpm --filter @sgc/db seed",
     "format": "prettier --check .",
+    "security:artifacts": "pnpm --filter @sgc/config build && node ops/check-sensitive-artifacts.mjs",
     "security:scan": "echo \"Use Codex Security plugin for repository scans; do not paste secrets into tools.\""
   },
   "devDependencies": {

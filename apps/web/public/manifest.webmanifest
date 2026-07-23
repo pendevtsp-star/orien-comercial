@@ -1,9 +1,61 @@
 {
-  "name": "Orien - Gestão inteligente",
+  "name": "Orien - Gestão Inteligente de Negócios",
   "short_name": "Orien",
+  "description": "Plataforma completa para gestão comercial, estoque, financeiro e relacionamento.",
   "start_url": "/dashboard",
   "display": "standalone",
+  "orientation": "any",
   "background_color": "#f7f8fc",
   "theme_color": "#0b1d3d",
-  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+  "categories": ["business", "finance", "productivity"],
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "scope": "/",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "short_name": "Dashboard",
+      "url": "/dashboard",
+      "description": "Visão geral do negócio"
+    },
+    {
+      "name": "PDV",
+      "short_name": "PDV",
+      "url": "/pos",
+      "description": "Ponto de venda"
+    },
+    {
+      "name": "Vendas",
+      "short_name": "Vendas",
+      "url": "/sales",
+      "description": "Histórico de vendas"
+    },
+    {
+      "name": "Relatórios",
+      "short_name": "Relatórios",
+      "url": "/reports",
+      "description": "Relatórios gerenciais"
+    }
+  ]
 }
