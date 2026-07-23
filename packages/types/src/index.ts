@@ -1,6 +1,30 @@
 import { z } from "zod";
 
 export const uuidSchema = z.string().uuid();
+export const sha256FingerprintSchema = z.string().regex(/^[0-9a-f]{64}$/);
+
+function hasMaximumDecimalPlaces(value: number, scale: number) {
+  const scaled = value * 10 ** scale;
+  return Math.abs(scaled - Math.round(scaled)) < 1e-8;
+}
+
+export const moneySchema = z.coerce
+  .number()
+  .finite()
+  .min(0)
+  .max(9_999_999_999.99)
+  .refine((value) => hasMaximumDecimalPlaces(value, 2), "Valor monetário aceita no máximo 2 casas decimais.");
+
+export const quantitySchema = z.coerce
+  .number()
+  .finite()
+  .positive()
+  .max(999_999_999.999)
+  .refine((value) => hasMaximumDecimalPlaces(value, 3), "Quantidade aceita no máximo 3 casas decimais.");
+
+export function normalizeQuantity(value: number) {
+  return Number(value.toFixed(3));
+}
 
 export const paginationQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -16,11 +40,94 @@ export const resourceListQuerySchema = paginationQuerySchema.extend({
     .optional(),
 });
 
+const bulkIdsSchema = z
+  .array(uuidSchema)
+  .min(1, "Selecione ao menos um registro.")
+  .max(100, "Cada lote aceita no máximo 100 registros.")
+  .transform((ids) => Array.from(new Set(ids)));
+
+export const bulkStatusUpdateSchema = z.object({
+  ids: bulkIdsSchema,
+  isActive: z.boolean(),
+  reason: z.string().trim().min(3).max(240).optional(),
+}).strict();
+
+export const membershipBulkStatusUpdateSchema = z.object({
+  membershipIds: bulkIdsSchema,
+  status: z.enum(["active", "disabled"]),
+  reason: z.string().trim().min(3).max(240).optional(),
+}).strict();
+
 export const salesListQuerySchema = paginationQuerySchema.extend({
   status: z.enum(["sold", "cancelled"]).optional(),
   sortBy: z.enum(["createdAt", "totalAmount", "status"]).optional(),
   sortDirection: z.enum(["asc", "desc"]).default("desc"),
 });
+
+export const commercialDocumentTypeSchema = z.enum(["quote", "order", "dav"]);
+export const commercialDocumentStatusSchema = z.enum([
+  "draft",
+  "sent",
+  "approved",
+  "reserved",
+  "converted",
+  "expired",
+  "cancelled",
+]);
+
+export const commercialDocumentCreateSchema = z
+  .object({
+    type: commercialDocumentTypeSchema.default("quote"),
+    branchId: uuidSchema,
+    customerId: uuidSchema.optional(),
+    validUntil: z.string().date(),
+    notes: z.string().trim().max(500).optional(),
+    reserveStock: z.boolean().default(false),
+    items: z
+      .array(
+        z.object({
+          productId: uuidSchema,
+          quantity: quantitySchema,
+          unitPrice: moneySchema,
+          discountAmount: moneySchema.default(0),
+        }),
+      )
+      .min(1)
+      .max(100),
+  })
+  .strict();
+
+export const commercialDocumentTransitionSchema = z
+  .object({
+    action: z.enum(["send", "approve", "reserve", "expire", "cancel"]),
+    reason: z.string().trim().min(3).max(500).optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.action === "cancel" && !value.reason) {
+      context.addIssue({
+        code: "custom",
+        path: ["reason"],
+        message: "Informe o motivo do cancelamento.",
+      });
+    }
+  });
+
+export const commercialDocumentListQuerySchema = paginationQuerySchema
+  .extend({
+    branchId: uuidSchema.optional(),
+    customerId: uuidSchema.optional(),
+    sellerId: uuidSchema.optional(),
+    type: commercialDocumentTypeSchema.optional(),
+    status: commercialDocumentStatusSchema.optional(),
+    startDate: z.string().date().optional(),
+    endDate: z.string().date().optional(),
+    sortBy: z.enum(["createdAt", "validUntil", "totalAmount", "status", "number"]).optional(),
+    sortDirection: z.enum(["asc", "desc"]).default("desc"),
+  })
+  .refine((value) => !value.startDate || !value.endDate || value.endDate >= value.startDate, {
+    path: ["endDate"],
+    message: "A data final deve ser igual ou posterior à inicial.",
+  });
 
 export const stockListQuerySchema = paginationQuerySchema.extend({
   stockStatus: z.enum(["critical", "healthy"]).optional(),
@@ -74,6 +181,44 @@ export const dashboardQuerySchema = z
   })
   .refine((value) => !value.startDate || !value.endDate || value.endDate >= value.startDate, {
     message: "endDate must be after startDate",
+  });
+
+const reportStatusSchema = z.enum([
+  "draft",
+  "sent",
+  "approved",
+  "reserved",
+  "converted",
+  "expired",
+  "cancelled",
+  "pending",
+  "paid",
+  "refunded",
+]);
+
+export const reportFiltersSchema = z
+  .object({
+    startDate: z.string().date().optional(),
+    endDate: z.string().date().optional(),
+    branchId: uuidSchema.optional(),
+    sellerId: uuidSchema.optional(),
+    customerId: uuidSchema.optional(),
+    documentType: z.enum(["quote", "order", "dav"]).optional(),
+    status: reportStatusSchema.optional(),
+    acquirerId: uuidSchema.optional(),
+    cardBrand: z.string().trim().min(1).max(60).transform((value) => value.toLowerCase()).optional(),
+  })
+  .superRefine((value, context) => {
+    if (!value.startDate || !value.endDate) return;
+    if (value.endDate < value.startDate) {
+      context.addIssue({ code: "custom", path: ["endDate"], message: "A data final deve ser igual ou posterior à inicial." });
+      return;
+    }
+    const start = Date.parse(`${value.startDate}T00:00:00.000Z`);
+    const end = Date.parse(`${value.endDate}T00:00:00.000Z`);
+    if ((end - start) / 86_400_000 > 366) {
+      context.addIssue({ code: "custom", path: ["endDate"], message: "O período máximo para exportação é de 366 dias." });
+    }
   });
 
 export const branchGoalSchema = z
@@ -177,9 +322,9 @@ export const productCreateSchema = z.object({
   barcode: z.string().trim().max(64).optional(),
   description: z.string().trim().max(2000).optional(),
   unit: z.string().trim().min(1).max(16).default("un"),
-  costPrice: z.coerce.number().min(0).default(0),
-  salePrice: z.coerce.number().min(0),
-  promotionalPrice: z.coerce.number().min(0).optional(),
+  costPrice: moneySchema.default(0),
+  salePrice: moneySchema,
+  promotionalPrice: moneySchema.optional(),
   minStock: z.coerce.number().min(0).default(0),
   initialStock: z.coerce.number().min(0).optional(),
   initialStockBranchId: uuidSchema.optional(),
@@ -206,6 +351,7 @@ export const productSkuSuggestionSchema = z.object({
 
 export const customerCreateSchema = z.object({
   branchId: uuidSchema.optional(),
+  customerSegmentId: uuidSchema.optional().nullable(),
   type: z.enum(["individual", "company"]).default("individual"),
   name: z.string().trim().min(2).max(180),
   document: z.string().trim().max(20).optional(),
@@ -234,19 +380,95 @@ export const stockAdjustmentSchema = z.object({
 
 export const saleItemSchema = z.object({
   productId: uuidSchema,
-  quantity: z.coerce.number().positive(),
-  unitPrice: z.coerce.number().min(0).optional(),
-  discountAmount: z.coerce.number().min(0).default(0),
+  quantity: quantitySchema,
+  unitPrice: moneySchema.optional(),
+  discountAmount: moneySchema.default(0),
+  pricingApprovalId: uuidSchema.optional(),
+});
+
+export const customerSegmentCreateSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  code: z.string().trim().toUpperCase().regex(/^[A-Z0-9_-]{2,80}$/),
+  isActive: z.boolean().default(true),
+});
+
+export const pricePolicyCreateSchema = z
+  .object({
+    productId: uuidSchema,
+    branchId: uuidSchema.optional(),
+    customerSegmentId: uuidSchema.optional(),
+    startsAt: z.string().datetime().optional(),
+    endsAt: z.string().datetime().optional(),
+    minQuantity: quantitySchema.default(1),
+    referencePrice: moneySchema,
+    minPrice: moneySchema,
+    maxPrice: moneySchema,
+    minMarginPercent: z.coerce.number().min(-100).max(10_000).optional(),
+    marginMode: z.enum(["warn", "block", "approval_required"]).default("warn"),
+    priority: z.coerce.number().int().min(0).max(1000).default(0),
+  })
+  .refine((value) => value.minPrice <= value.referencePrice, {
+    message: "O preço mínimo não pode superar o preço de referência.",
+    path: ["minPrice"],
+  })
+  .refine((value) => value.referencePrice <= value.maxPrice, {
+    message: "O preço de referência não pode superar o preço máximo.",
+    path: ["referencePrice"],
+  })
+  .refine((value) => !value.startsAt || !value.endsAt || value.startsAt <= value.endsAt, {
+    message: "A vigência final deve ser posterior à inicial.",
+    path: ["endsAt"],
+  });
+
+export const pricePolicyListQuerySchema = paginationQuerySchema.extend({
+  productId: uuidSchema.optional(),
+  branchId: uuidSchema.optional(),
+  customerSegmentId: uuidSchema.optional(),
+  isActive: z
+    .union([z.boolean(), z.enum(["true", "false"]).transform((value) => value === "true")])
+    .optional(),
+});
+
+export const pricePolicyResolveQuerySchema = z.object({
+  productId: uuidSchema,
+  branchId: uuidSchema,
+  quantity: quantitySchema,
+  customerId: uuidSchema.optional(),
+  unitPrice: moneySchema.optional(),
+});
+
+export const pricingApprovalRequestSchema = z.object({
+  productId: uuidSchema,
+  branchId: uuidSchema,
+  customerId: uuidSchema.optional(),
+  quantity: quantitySchema,
+  unitPrice: moneySchema,
+  discountAmount: moneySchema.default(0),
+  allocatedAdjustmentAmount: moneySchema.default(0),
+  basketFingerprint: sha256FingerprintSchema,
+  reason: z.string().trim().min(10).max(500),
+});
+
+export const pricingApprovalDecisionSchema = z.object({
+  approved: z.boolean(),
+  reason: z.string().trim().min(10).max(500).optional(),
+}).refine((value) => value.approved || Boolean(value.reason), {
+  message: "Informe o motivo da recusa.",
+  path: ["reason"],
 });
 
 export const salePaymentSchema = z.object({
   method: z.string().trim().min(2).max(60),
-  amount: z.coerce.number().positive(),
+  amount: moneySchema.refine((value) => value > 0, "O valor deve ser maior que zero."),
   status: z.enum(["pending", "paid"]).default("paid"),
+  acquirerId: uuidSchema.optional(),
+  brand: z.string().trim().min(2).max(60).transform((value) => value.toLowerCase()).optional(),
+  installments: z.coerce.number().int().min(1).max(120).default(1),
 });
 
 export const saleCreateSchema = z.object({
   branchId: uuidSchema,
+  compositionFingerprint: sha256FingerprintSchema.optional(),
   cashRegisterSessionId: uuidSchema.optional(),
   customerId: uuidSchema.optional(),
   customerDocument: z.string().trim().max(20).optional(),
@@ -257,13 +479,18 @@ export const saleCreateSchema = z.object({
   items: z.array(saleItemSchema).min(1).max(100),
   payments: z.array(salePaymentSchema).max(10).default([]),
   notes: z.string().trim().max(500).optional(),
-});
+}).strict().refine(
+  (value) => !value.items.some((item) => item.pricingApprovalId) || Boolean(value.compositionFingerprint),
+  { message: "A composição da venda é obrigatória ao usar uma aprovação.", path: ["compositionFingerprint"] },
+);
+
+export const salePreviewSchema = saleCreateSchema;
 
 export const financialEntryCreateSchema = z.object({
   branchId: uuidSchema.optional(),
   customerId: uuidSchema.optional(),
   supplierId: uuidSchema.optional(),
-  amount: z.coerce.number().positive(),
+  amount: moneySchema.refine((value) => value > 0, "O valor deve ser maior que zero."),
   dueDate: z.string().date(),
   status: z.enum(["open", "paid", "cancelled"]).default("open"),
   description: z.string().trim().max(220).optional(),
@@ -278,12 +505,12 @@ export const saleCancelSchema = z.object({
 
 export const cashRegisterOpenSchema = z.object({
   branchId: uuidSchema,
-  openingAmount: z.coerce.number().min(0).default(0),
+  openingAmount: moneySchema.default(0),
   notes: z.string().trim().max(500).optional(),
 });
 
 export const cashRegisterCloseSchema = z.object({
-  closingAmount: z.coerce.number().min(0),
+  closingAmount: moneySchema,
   notes: z.string().trim().max(500).optional(),
 });
 
@@ -291,7 +518,7 @@ export const cashRegisterCurrentQuerySchema = z.object({ branchId: uuidSchema })
 
 export const cashRegisterMovementSchema = z.object({
   type: z.enum(["supply", "withdrawal"]),
-  amount: z.coerce.number().positive(),
+  amount: moneySchema.refine((value) => value > 0, "O valor deve ser maior que zero."),
   reason: z.string().trim().min(3).max(180),
 });
 
@@ -305,7 +532,7 @@ export const purchaseOrderCreateSchema = z.object({
       z.object({
         productId: uuidSchema,
         quantity: z.coerce.number().positive(),
-        unitCost: z.coerce.number().min(0),
+        unitCost: moneySchema,
       }),
     )
     .min(1)
@@ -460,8 +687,8 @@ export const purchaseXmlCommitSchema = z
           barcode: z.string().trim().max(64).optional(),
           sku: z.string().trim().max(64).optional(),
           quantity: z.coerce.number().positive(),
-          unitCost: z.coerce.number().min(0),
-          salePrice: z.coerce.number().min(0).optional(),
+          unitCost: moneySchema,
+          salePrice: moneySchema.optional(),
           applyCost: z.boolean().default(false),
           applySalePrice: z.boolean().default(false),
         }),
@@ -498,8 +725,8 @@ export const inboundFiscalItemResolutionSchema = z
     name: z.string().trim().min(2).max(180).optional(),
     sku: z.string().trim().max(64).optional(),
     quantity: z.coerce.number().positive().optional(),
-    unitCost: z.coerce.number().min(0).optional(),
-    salePrice: z.coerce.number().min(0).optional(),
+    unitCost: moneySchema.optional(),
+    salePrice: moneySchema.optional(),
     applyCost: z.boolean().default(false),
     applySalePrice: z.boolean().default(false),
   })
@@ -585,6 +812,123 @@ export const financialMarkPaidSchema = z.object({
 
 export const financialReconcileSchema = z.object({
   reconciliationStatus: z.enum(["pending", "reconciled", "diverged"]),
+});
+
+const financialCodeSchema = z.string().trim().min(2).max(60).transform((value) => value.toUpperCase());
+const centsSchema = z.coerce.number().int().min(0).max(999_999_999_999);
+const basisPointsSchema = z.coerce.number().int().min(0).max(10_000);
+
+export const paymentAcquirerCreateSchema = z.object({
+  branchId: uuidSchema.optional(),
+  name: z.string().trim().min(2).max(120),
+  code: financialCodeSchema,
+  isActive: z.boolean().default(true),
+}).strict();
+
+export const paymentAcquirerUpdateSchema = paymentAcquirerCreateSchema.partial().strict();
+
+export const paymentFeeRuleCreateSchema = z.object({
+  acquirerId: uuidSchema,
+  paymentMethod: z.string().trim().min(2).max(60),
+  brand: z.string().trim().min(2).max(60).transform((value) => value.toLowerCase()).optional(),
+  installmentFrom: z.coerce.number().int().min(1).max(120).default(1),
+  installmentTo: z.coerce.number().int().min(1).max(120).default(1),
+  percentageBasisPoints: basisPointsSchema.default(0),
+  fixedFeeCents: centsSchema.default(0),
+  anticipationBasisPoints: basisPointsSchema.default(0),
+  settlementDays: z.coerce.number().int().min(0).max(3650).default(0),
+  validFrom: z.string().datetime(),
+  validUntil: z.string().datetime().optional(),
+}).strict().refine((value) => value.installmentTo >= value.installmentFrom, {
+  message: "A parcela final deve ser maior ou igual à inicial.",
+  path: ["installmentTo"],
+}).refine((value) => !value.validUntil || value.validUntil >= value.validFrom, {
+  message: "A vigência final deve ser posterior à inicial.",
+  path: ["validUntil"],
+});
+
+export const paymentFeeRuleDeactivateSchema = z.object({
+  reason: z.string().trim().min(3).max(240),
+}).strict();
+
+export const financialForecastListQuerySchema = paginationQuerySchema.extend({
+  branchId: uuidSchema.optional(),
+  acquirerId: uuidSchema.optional(),
+  paymentMethod: z.string().trim().min(2).max(60).optional(),
+  status: z.enum(["pending", "partially_settled", "settled", "diverged", "cancelled"]).optional(),
+  expectedFrom: z.string().date().optional(),
+  expectedTo: z.string().date().optional(),
+  sortBy: z.enum(["expectedSettlementDate", "grossAmount", "netAmount", "createdAt"]).default("expectedSettlementDate"),
+  sortDirection: z.enum(["asc", "desc"]).default("asc"),
+});
+
+export const paymentSnapshotResolveSchema = z.object({
+  branchId: uuidSchema,
+  acquirerId: uuidSchema.optional(),
+  paymentMethod: z.string().trim().min(2).max(60),
+  brand: z.string().trim().min(2).max(60).transform((value) => value.toLowerCase()).optional(),
+  installments: z.coerce.number().int().min(1).max(120).default(1),
+  grossAmountCents: centsSchema.refine((value) => value > 0, "O valor bruto deve ser maior que zero."),
+  occurredAt: z.string().datetime(),
+}).strict();
+
+export const paymentSettlementCreateSchema = z.object({
+  paymentId: uuidSchema,
+  receivableId: uuidSchema.optional(),
+  settledAmountCents: centsSchema.refine((value) => value > 0, "O valor liquidado deve ser maior que zero."),
+  effectiveAt: z.string().datetime(),
+  externalReference: z.string().trim().min(3).max(180),
+  status: z.literal("posted").default("posted"),
+  notes: z.string().trim().max(500).optional(),
+}).strict();
+
+export const paymentSettlementReverseSchema = z.object({
+  reason: z.string().trim().min(3).max(240),
+  externalReference: z.string().trim().min(3).max(180),
+}).strict();
+
+export const paymentSnapshotsResolveSchema = z.object({
+  payments: z.array(paymentSnapshotResolveSchema).min(1).max(10),
+}).strict();
+
+export const paymentSettlementBatchSchema = z.object({
+  settlements: z.array(paymentSettlementCreateSchema).min(1).max(500),
+}).strict();
+
+const reconciliationItemSchema = z.object({
+  paymentId: uuidSchema,
+  actualAmountCents: centsSchema,
+  externalReference: z.string().trim().min(3).max(180),
+  effectiveAt: z.string().datetime().optional(),
+}).strict();
+
+export const reconciliationBatchCreateSchema = z.object({
+  branchId: uuidSchema,
+  acquirerId: uuidSchema,
+  externalReference: z.string().trim().min(3).max(180),
+  statementDate: z.string().date().optional(),
+  items: z.array(reconciliationItemSchema).min(1).max(2000),
+}).strict().superRefine((value, context) => {
+  const paymentIds = new Set<string>();
+  const references = new Set<string>();
+  value.items.forEach((item, index) => {
+    if (paymentIds.has(item.paymentId)) {
+      context.addIssue({
+        code: "custom",
+        path: ["items", index, "paymentId"],
+        message: "Um pagamento não pode aparecer mais de uma vez no lote.",
+      });
+    }
+    if (references.has(item.externalReference)) {
+      context.addIssue({
+        code: "custom",
+        path: ["items", index, "externalReference"],
+        message: "A referência de um item não pode se repetir no lote.",
+      });
+    }
+    paymentIds.add(item.paymentId);
+    references.add(item.externalReference);
+  });
 });
 
 export const userInviteSchema = z.object({
@@ -810,13 +1154,19 @@ export const fiscalDocumentListQuerySchema = paginationQuerySchema.extend({
 export type LoginInput = z.infer<typeof loginSchema>;
 export type PaginationQuery = z.infer<typeof paginationQuerySchema>;
 export type ResourceListQuery = z.infer<typeof resourceListQuerySchema>;
+export type BulkStatusUpdateInput = z.infer<typeof bulkStatusUpdateSchema>;
+export type MembershipBulkStatusUpdateInput = z.infer<typeof membershipBulkStatusUpdateSchema>;
 export type SalesListQuery = z.infer<typeof salesListQuerySchema>;
+export type CommercialDocumentCreateInput = z.infer<typeof commercialDocumentCreateSchema>;
+export type CommercialDocumentTransitionInput = z.infer<typeof commercialDocumentTransitionSchema>;
+export type CommercialDocumentListQuery = z.infer<typeof commercialDocumentListQuerySchema>;
 export type StockListQuery = z.infer<typeof stockListQuerySchema>;
 export type StockMovementListQuery = z.infer<typeof stockMovementListQuerySchema>;
 export type FinancialListQuery = z.infer<typeof financialListQuerySchema>;
 export type MembershipListQuery = z.infer<typeof membershipListQuerySchema>;
 export type InviteListQuery = z.infer<typeof inviteListQuerySchema>;
 export type AuditLogListQuery = z.infer<typeof auditLogListQuerySchema>;
+export type ReportFilters = z.infer<typeof reportFiltersSchema>;
 export type OnboardingStateInput = z.infer<typeof onboardingStateSchema>;
 export type BranchCreateInput = z.infer<typeof branchCreateSchema>;
 export type BranchUpdateInput = z.infer<typeof branchUpdateSchema>;
@@ -825,6 +1175,12 @@ export type ProductUpdateInput = z.infer<typeof productUpdateSchema>;
 export type ProductFiscalInput = z.infer<typeof productFiscalSchema>;
 export type CustomerCreateInput = z.infer<typeof customerCreateSchema>;
 export type CustomerUpdateInput = z.infer<typeof customerUpdateSchema>;
+export type CustomerSegmentCreateInput = z.infer<typeof customerSegmentCreateSchema>;
+export type PricePolicyCreateInput = z.infer<typeof pricePolicyCreateSchema>;
+export type PricePolicyListQuery = z.infer<typeof pricePolicyListQuerySchema>;
+export type PricePolicyResolveQuery = z.infer<typeof pricePolicyResolveQuerySchema>;
+export type PricingApprovalRequestInput = z.infer<typeof pricingApprovalRequestSchema>;
+export type PricingApprovalDecisionInput = z.infer<typeof pricingApprovalDecisionSchema>;
 export type StockAdjustmentInput = z.infer<typeof stockAdjustmentSchema>;
 export type SaleCreateInput = z.infer<typeof saleCreateSchema>;
 export type FinancialEntryCreateInput = z.infer<typeof financialEntryCreateSchema>;
@@ -856,6 +1212,17 @@ export type SupplierUpdateInput = z.infer<typeof supplierUpdateSchema>;
 export type FinancialCategoryInput = z.infer<typeof financialCategorySchema>;
 export type FinancialMarkPaidInput = z.infer<typeof financialMarkPaidSchema>;
 export type FinancialReconcileInput = z.infer<typeof financialReconcileSchema>;
+export type PaymentAcquirerCreateInput = z.infer<typeof paymentAcquirerCreateSchema>;
+export type PaymentAcquirerUpdateInput = z.infer<typeof paymentAcquirerUpdateSchema>;
+export type PaymentFeeRuleCreateInput = z.infer<typeof paymentFeeRuleCreateSchema>;
+export type PaymentFeeRuleDeactivateInput = z.infer<typeof paymentFeeRuleDeactivateSchema>;
+export type FinancialForecastListQuery = z.infer<typeof financialForecastListQuerySchema>;
+export type PaymentSnapshotResolveInput = z.infer<typeof paymentSnapshotResolveSchema>;
+export type PaymentSettlementCreateInput = z.infer<typeof paymentSettlementCreateSchema>;
+export type PaymentSettlementReverseInput = z.infer<typeof paymentSettlementReverseSchema>;
+export type PaymentSnapshotsResolveInput = z.infer<typeof paymentSnapshotsResolveSchema>;
+export type PaymentSettlementBatchInput = z.infer<typeof paymentSettlementBatchSchema>;
+export type ReconciliationBatchCreateInput = z.infer<typeof reconciliationBatchCreateSchema>;
 export type SupportTicketListQuery = z.infer<typeof supportTicketListQuerySchema>;
 export type SupportTicketCreateInput = z.infer<typeof supportTicketCreateSchema>;
 export type SupportTicketMessageInput = z.infer<typeof supportTicketMessageSchema>;
