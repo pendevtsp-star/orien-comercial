@@ -108,7 +108,7 @@ export function AiAssistant() {
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      sendMessage();
+      void sendMessage();
     }
   };
 
@@ -176,7 +176,7 @@ export function AiAssistant() {
                       {message.suggestions.map((suggestion, i) => (
                         <button
                           key={i}
-                          onClick={() => sendMessage(suggestion)}
+                          onClick={() => void sendMessage(suggestion)}
                           className="text-xs px-2 py-1 bg-white/20 hover:bg-white/30 rounded-full transition-colors"
                         >
                           {suggestion}
@@ -217,7 +217,7 @@ export function AiAssistant() {
                 disabled={isLoading}
               />
               <button
-                onClick={() => sendMessage()}
+                onClick={() => void sendMessage()}
                 disabled={!input.trim() || isLoading}
                 className="px-4 py-2 bg-[var(--brand-primary)] text-white rounded-lg hover:bg-[var(--brand-primary)]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >

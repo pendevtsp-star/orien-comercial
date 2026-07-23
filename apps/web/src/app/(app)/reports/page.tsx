@@ -1,7 +1,7 @@
 "use client";
 
 import { Button, Card, CardContent, EmptyState, PageHeader } from "@sgc/ui";
-import { BarChart3, Calendar, Clock, DollarSign, Download, FileCheck2, FileText, Landmark, PackageCheck, ShoppingCart, Users, Filter, ChevronDown, ChevronUp, PieChart, TrendingUp, UserCheck } from "lucide-react";
+import { BarChart3, Calendar, Clock, DollarSign, Download, FileCheck2, FileText, Landmark, PackageCheck, ShoppingCart, Users, ChevronDown, ChevronUp, TrendingUp, UserCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch, downloadApiFile, openApiDocument } from "../../../lib/api";
 
@@ -156,7 +156,7 @@ export default function ReportsPage() {
     URL.revokeObjectURL(url);
   }
 
-  const overview = data as Record<string, unknown> | null;
+  const overview = data;
   const rows = arrayRows(data);
   const summary = data?.summary as Array<{ label: string; value: unknown; format?: string }> | undefined;
   const warnings = data?.warnings as string[] | undefined;
@@ -406,14 +406,14 @@ export default function ReportsPage() {
       {!loading && tab === "overview" && overview ? (
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {([
-            ["Vendas", String(overview.salesCount ?? 0)],
-            ["Receita", money(overview.grossRevenue)],
-            ["Ticket médio", money(overview.averageTicket)],
-            ["Clientes", String(overview.customers ?? 0)],
-            ["Margem bruta", money(overview.grossMargin)],
-            ["Inadimplência", money(overview.overdueReceivables)],
-            ["Estoque crítico", String(overview.lowStockProducts ?? 0)],
-            ["Descontos", money(overview.discounts)],
+            ["Vendas", String((overview as Record<string, string>).salesCount ?? 0)],
+            ["Receita", money((overview as Record<string, string>).grossRevenue)],
+            ["Ticket médio", money((overview as Record<string, string>).averageTicket)],
+            ["Clientes", String((overview as Record<string, string>).customers ?? 0)],
+            ["Margem bruta", money((overview as Record<string, string>).grossMargin)],
+            ["Inadimplência", money((overview as Record<string, string>).overdueReceivables)],
+            ["Estoque crítico", String((overview as Record<string, string>).lowStockProducts ?? 0)],
+            ["Descontos", money((overview as Record<string, string>).discounts)],
           ] as [string, string][]).map(([lbl, value]) => (
             <Card key={lbl}>
               <CardContent>
@@ -502,11 +502,13 @@ function formatCell(value: unknown) {
   return JSON.stringify(value);
 }
 
-function formatSummaryValue(value: unknown, format?: string) {
+function formatSummaryValue(value: unknown, format?: string): string {
   if (format === "money" || format === "money-optional") return money(value);
   if (format === "integer") return Number(value ?? 0).toLocaleString("pt-BR");
   if (value === null || value === undefined) return "-";
-  return String(value);
+  if (typeof value === "object") return JSON.stringify(value);
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  return "-";
 }
 
 function label(key: string): string {
