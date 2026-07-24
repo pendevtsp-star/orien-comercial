@@ -260,7 +260,7 @@ Regras:
       : "";
 
     const apiKey = this.config?.OPENROUTER_API_KEY;
-    const model = this.config?.OPENROUTER_MODEL ?? "meta-llama/llama-3.1-8b-instruct:free";
+    const model = this.config?.OPENROUTER_MODEL ?? "google/gemma-2-9b-it:free";
 
     if (!apiKey) {
       throw new Error("OpenRouter API key not configured");
