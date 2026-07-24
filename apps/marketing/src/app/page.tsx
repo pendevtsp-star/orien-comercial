@@ -83,8 +83,26 @@ export default async function MarketingPage() {
     ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(settings.whatsappMessage)}`
     : null;
 
+  const faqSchema = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: faqs.map(([question, answer]) => ({
+      "@type": "Question",
+      name: question,
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: answer,
+      },
+    })),
+  };
+
   return (
-    <main className="min-h-screen overflow-hidden bg-[#f7f8fb] text-[#0b1d3d]">
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }}
+      />
+      <main className="min-h-screen overflow-hidden bg-[#f7f8fb] text-[#0b1d3d]">
       <header className="sticky top-0 z-30 border-b border-[#d9e1ee] bg-white/95 backdrop-blur">
         <div className="mx-auto flex h-18 max-w-7xl items-center justify-between gap-4 px-5 py-3 lg:px-8">
           <BrandLogo size="sm" />
@@ -282,5 +300,6 @@ export default async function MarketingPage() {
         </div>
       </footer>
     </main>
+    </>
   );
 }
