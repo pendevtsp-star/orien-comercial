@@ -259,23 +259,32 @@ export default async function MarketingPage() {
           </div>
         </section>
       ) : null}
-      <section className="bg-[#f5c34a]">
-        <div className="mx-auto flex max-w-7xl flex-col gap-6 px-5 py-14 lg:flex-row lg:items-center lg:justify-between lg:px-8">
-          <div>
-            <p className="text-xs font-bold tracking-[.2em] text-[#725000]">
-              PRONTO PARA ORGANIZAR
+      <section className="bg-gradient-to-br from-[#f5c34a] via-[#f5c34a] to-[#e8b730]">
+        <div className="mx-auto flex max-w-7xl flex-col gap-8 px-5 py-16 lg:flex-row lg:items-center lg:justify-between lg:px-8">
+          <div className="max-w-xl">
+            <p className="text-xs font-bold tracking-[.2em] text-[#725000] uppercase">
+              Comece agora
             </p>
-            <h2 data-brand-display="true" className="mt-2 text-4xl">
-              Comece a operar com mais clareza.
+            <h2 data-brand-display="true" className="mt-3 text-4xl md:text-5xl leading-tight">
+              Teste grátis por 14 dias.
             </h2>
+            <p className="mt-4 text-lg leading-7 text-[#725000]">
+              Sem cartão de crédito. Cancele quando quiser. Suporte humano incluso.
+            </p>
           </div>
-          <a
-            href={settings.finalCta.href}
-            className="inline-flex items-center justify-center gap-2 bg-[#0b1d3d] px-5 py-3.5 font-semibold text-white"
-          >
-            {settings.finalCta.label}
-            <ArrowRight size={17} />
-          </a>
+          <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
+            <a
+              href={settings.finalCta.href}
+              className="inline-flex items-center gap-2.5 rounded-xl bg-[#0b1d3d] px-7 py-4 text-base font-semibold text-white shadow-[0_8px_30px_rgba(11,29,61,.25)] transition-all duration-200 hover:bg-[#133a7c] hover:shadow-[0_12px_40px_rgba(11,29,61,.3)]"
+              aria-label={settings.finalCta.label}
+            >
+              {settings.finalCta.label}
+              <ArrowRight size={18} aria-hidden="true" />
+            </a>
+            <span className="text-sm text-[#725000]">
+              Sem compromisso • Cancele quando quiser
+            </span>
+          </div>
         </div>
       </section>
       <footer aria-label="Rodapé" className="bg-[#081731] text-slate-300">

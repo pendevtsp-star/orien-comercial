@@ -16,23 +16,25 @@ export function LandingHero({ hero }: LandingHeroProps) {
             {hero.title}
           </h1>
           <p className="mt-7 max-w-xl text-lg leading-8 text-slate-600">{hero.description}</p>
-          <div className="mt-10 flex flex-wrap gap-4">
+          <div className="mt-10 flex flex-wrap items-center gap-4">
             <a
               href={hero.primaryCta.href}
-              className="inline-flex items-center gap-2.5 rounded-lg bg-[#0b1d3d] px-6 py-4 text-base font-semibold text-white shadow-[0_16px_40px_rgba(11,29,61,.2)] transition-all duration-200 hover:bg-[#133a7c] hover:shadow-[0_20px_50px_rgba(11,29,61,.25)]"
+              className="inline-flex items-center gap-2.5 rounded-xl bg-[#0b1d3d] px-7 py-4 text-base font-semibold text-white shadow-[0_16px_40px_rgba(11,29,61,.2)] transition-all duration-200 hover:bg-[#133a7c] hover:shadow-[0_20px_50px_rgba(11,29,61,.25)]"
               aria-label={hero.primaryCta.label}
             >
-              {hero.primaryCta.label} <ArrowRight size={18} aria-hidden="true" />
+              {hero.primaryCta.label}
+              <ArrowRight size={18} aria-hidden="true" />
             </a>
             {hero.secondaryCta ? (
               <a
                 href={hero.secondaryCta.href}
-                className="inline-flex items-center rounded-lg border-2 border-[#cbd7e9] bg-white px-6 py-4 text-base font-semibold text-[#0b1d3d] transition-all duration-200 hover:border-[#133a7c] hover:bg-[#f8f9fb]"
+                className="inline-flex items-center rounded-xl border-2 border-[#cbd7e9] bg-white px-7 py-4 text-base font-semibold text-[#0b1d3d] transition-all duration-200 hover:border-[#133a7c] hover:bg-[#f8f9fb]"
                 aria-label={hero.secondaryCta.label}
               >
                 {hero.secondaryCta.label}
               </a>
             ) : null}
+            <span className="text-sm text-slate-500">Teste grátis • Sem cartão</span>
           </div>
           <div className="mt-12 flex flex-wrap gap-x-8 gap-y-4 text-sm text-slate-600">
             <span className="flex items-center gap-2.5">
