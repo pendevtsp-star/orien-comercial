@@ -226,17 +226,30 @@ export default async function MarketingPage() {
         <section id="faq" className="border-y border-[#d9e1ee] bg-white">
           <div className="mx-auto max-w-4xl px-5 py-20">
             <div className="text-center">
-              <p className="text-xs font-bold tracking-[.2em] text-[#2563eb]">
-                DÚVIDAS ANTES DE COMEÇAR
+              <p className="text-xs font-bold tracking-[.2em] text-[#2563eb] uppercase">
+                Dúvidas antes de começar
               </p>
-              <h2 data-brand-display="true" className="mt-3 text-4xl">
+              <h2 data-brand-display="true" className="mt-4 text-4xl md:text-5xl">
                 Perguntas frequentes
               </h2>
+              <p className="mt-4 text-lg text-slate-600">
+                Respostas para as dúvidas mais comuns sobre a Orien.
+              </p>
             </div>
-            <div className="mt-10 grid gap-3">
+            <div className="mt-12 space-y-4">
               {faqs.map(([question, answer]) => (
-                <details key={question} className="border border-[#d9e1ee] bg-[#f7f8fb]">
-                  <summary className="cursor-pointer p-5 font-semibold">{question}</summary>
+                <details
+                  key={question}
+                  className="group rounded-xl border border-[#d9e1ee] bg-[#f7f8fb] transition-all duration-200 hover:border-[#2563eb]/30 [&[open]]:border-[#2563eb]/50 [&[open]]:bg-white"
+                >
+                  <summary className="flex cursor-pointer items-center justify-between p-5 font-semibold text-[#0b1d3d] transition-colors group-hover:text-[#2563eb]">
+                    {question}
+                    <span className="ml-4 text-slate-400 transition-transform duration-200 group-open:rotate-180">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="m6 9 6 6 6-6" />
+                      </svg>
+                    </span>
+                  </summary>
                   <p className="border-t border-[#e8edf4] px-5 py-4 leading-7 text-slate-600">
                     {answer}
                   </p>
