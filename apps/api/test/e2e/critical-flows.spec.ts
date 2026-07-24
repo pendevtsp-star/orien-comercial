@@ -538,9 +538,25 @@ describe.sequential("critical api flows", { timeout: 60_000 }, () => {
     expect(access.body.token).toBeTruthy();
     expect(access.body.url).toContain("/contador?token=");
 
+    const codeRequest = await request(app.getHttpServer())
+      .post("/api/v1/accountant-portal/login/request")
+      .send({ token: access.body.token, email: "contador-e2e@example.com" });
+    expect(codeRequest.status).toBe(201);
+    expect(codeRequest.body.devCode).toMatch(/^\d{6}$/);
+
+    const verification = await request(app.getHttpServer())
+      .post("/api/v1/accountant-portal/login/verify")
+      .send({
+        token: access.body.token,
+        email: "contador-e2e@example.com",
+        code: codeRequest.body.devCode,
+      });
+    expect(verification.status).toBe(201);
+    expect(verification.body.sessionToken).toBeTruthy();
+
     const overview = await request(app.getHttpServer())
       .get("/api/v1/accountant-portal/overview")
-      .query({ token: access.body.token, period: "2026-07" });
+      .query({ sessionToken: verification.body.sessionToken, period: "2026-07" });
     expect(overview.status).toBe(200);
     expect(overview.body.tenant.name).toBe("Tenant Demonstracao");
     expect(overview.body.accountant.email).toBe("contador-e2e@example.com");
@@ -553,7 +569,7 @@ describe.sequential("critical api flows", { timeout: 60_000 }, () => {
 
     const revoked = await request(app.getHttpServer())
       .get("/api/v1/accountant-portal/overview")
-      .query({ token: access.body.token, period: "2026-07" });
+      .query({ sessionToken: verification.body.sessionToken, period: "2026-07" });
     expect(revoked.status).toBe(401);
   });
 

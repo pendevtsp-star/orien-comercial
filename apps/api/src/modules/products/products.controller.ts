@@ -15,6 +15,7 @@ import { ApiTags } from "@nestjs/swagger";
 import { permissions } from "@sgc/auth";
 import {
   productBarcodeLookupSchema,
+  bulkStatusUpdateSchema,
   productCreateSchema,
   productSkuSuggestionSchema,
   productUpdateSchema,
@@ -103,6 +104,15 @@ export class ProductsController {
     @Body(new ZodValidationPipe(productCreateSchema)) body: never,
   ) {
     return this.productsService.create(tenant, body);
+  }
+
+  @RequirePermissions(permissions.products.update)
+  @Post("bulk/status")
+  bulkStatus(
+    @CurrentTenant() tenant: TenantContext,
+    @Body(new ZodValidationPipe(bulkStatusUpdateSchema)) body: never,
+  ) {
+    return this.productsService.bulkUpdateStatus(tenant, body);
   }
 
   @RequirePermissions(permissions.products.update)

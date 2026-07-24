@@ -12,7 +12,12 @@ import {
 } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { permissions } from "@sgc/auth";
-import { saleCancelSchema, saleCreateSchema, salesListQuerySchema } from "@sgc/types";
+import {
+  saleCancelSchema,
+  saleCreateSchema,
+  salePreviewSchema,
+  salesListQuerySchema,
+} from "@sgc/types";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../shared/auth.guard";
 import { CurrentTenant } from "../../shared/current-user.decorator";
@@ -36,6 +41,15 @@ export class SalesController {
     @Query(new ZodValidationPipe(salesListQuerySchema)) query: never,
   ) {
     return this.salesService.list(tenant, query);
+  }
+
+  @RequirePermissions(permissions.sales.create)
+  @Post("preview")
+  preview(
+    @CurrentTenant() tenant: TenantContext,
+    @Body(new ZodValidationPipe(salePreviewSchema)) body: never,
+  ) {
+    return this.salesService.preview(tenant, body);
   }
 
   @RequirePermissions(permissions.sales.create)

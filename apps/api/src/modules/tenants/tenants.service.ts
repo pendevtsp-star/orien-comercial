@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import type { AppConfig } from "@sgc/config";
 import {
   defaultTenantBranding,
@@ -10,6 +10,7 @@ import type {
   AuditLogListQuery,
   InviteListQuery,
   MembershipListQuery,
+  MembershipBulkStatusUpdateInput,
   MembershipUpdateInput,
   PrintingSettingsInput,
   PrinterProfileInput,
@@ -420,6 +421,72 @@ export class TenantsService {
       });
 
       return membership;
+    });
+  }
+
+  async bulkUpdateMembershipStatus(
+    context: TenantContext,
+    input: MembershipBulkStatusUpdateInput,
+  ) {
+    return this.database.tenantTransaction(context.tenantId, async (client) => {
+      const current = await client.query<{
+        id: string;
+        user_id: string;
+        branch_id: string | null;
+        status: "active" | "disabled";
+        role_slug: string;
+      }>(
+        `SELECT m.id, m.user_id, m.branch_id, m.status, r.slug AS role_slug
+         FROM memberships m
+         JOIN roles r ON r.id=m.role_id AND r.tenant_id=m.tenant_id
+         WHERE m.tenant_id=$1 AND m.id=ANY($2::uuid[]) AND m.deleted_at IS NULL
+         ORDER BY m.id FOR UPDATE`,
+        [context.tenantId, input.membershipIds],
+      );
+      if (current.rows.length !== input.membershipIds.length) {
+        throw new BadRequestException("Um ou mais membros não estão disponíveis no seu escopo.");
+      }
+      if (context.branchId && current.rows.some((row) => row.branch_id !== context.branchId)) {
+        throw new ForbiddenException("Você só pode alterar acessos vinculados à sua filial.");
+      }
+      if (input.status === "disabled") {
+        if (current.rows.some((row) => row.id === context.membershipId)) {
+          throw new BadRequestException("Você não pode desativar o próprio acesso.");
+        }
+        if (current.rows.some((row) => row.role_slug === "owner")) {
+          throw new BadRequestException("O acesso de Proprietário não pode ser desativado em lote.");
+        }
+      }
+
+      const updated = await client.query<{ id: string }>(
+        `UPDATE memberships SET status=$3, updated_at=now()
+         WHERE tenant_id=$1 AND id=ANY($2::uuid[]) AND deleted_at IS NULL
+         RETURNING id`,
+        [context.tenantId, input.membershipIds, input.status],
+      );
+      const batchId = randomUUID();
+      for (const row of current.rows) {
+        await insertAuditLog(client, {
+          tenantId: context.tenantId,
+          actorUserId: currentActor(context),
+          action: "membership.bulk_status_updated",
+          entityType: "membership",
+          entityId: row.id,
+          metadata: {
+            batchId,
+            previousStatus: row.status,
+            status: input.status,
+            reason: input.reason ?? null,
+            batchSize: input.membershipIds.length,
+          },
+        });
+      }
+      return {
+        ok: true,
+        updatedCount: updated.rows.length,
+        membershipIds: input.membershipIds,
+        status: input.status,
+      };
     });
   }
 

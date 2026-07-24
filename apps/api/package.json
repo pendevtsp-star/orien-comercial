@@ -11,7 +11,7 @@
     "worker": "node dist/worker.js",
     "lint": "eslint src --ext .ts",
     "test": "vitest run src",
-    "test:e2e": "vitest run test/e2e",
+    "test:e2e": "vitest run test/e2e --no-file-parallelism",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -31,7 +31,7 @@
     "drizzle-orm": "^0.45.1",
     "exceljs": "^4.4.0",
     "express": "5.1.0",
-    "fast-xml-parser": "5.3.3",
+    "fast-xml-parser": "5.7.0",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "jszip": "^3.10.1",

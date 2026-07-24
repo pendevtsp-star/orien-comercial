@@ -5,6 +5,8 @@ import { CircleDollarSign, Landmark, Plus, RefreshCw, Receipt, Wallet, type Luci
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { apiFetch, openApiDocument } from "../../../lib/api";
 import { PaginationFooter } from "../../../components/pagination-footer";
+import { FinancialSettlementsPanel } from "../../../components/financial-settlements-panel";
+import { useCurrentPermissions } from "../../../lib/current-permissions";
 
 interface ListResponse<T> {
   data: T[];
@@ -48,6 +50,7 @@ interface CashflowSummary {
 }
 
 export default function FinancialPage() {
+  const { permissions } = useCurrentPermissions();
   const [activeTab, setActiveTab] = useState("receber");
   const [receivables, setReceivables] = useState<EntryRow[]>([]);
   const [payables, setPayables] = useState<EntryRow[]>([]);
@@ -464,6 +467,11 @@ export default function FinancialPage() {
                 </CardContent>
               </Card>
             )
+          },
+          {
+            value: "liquidacoes",
+            label: "Recebimentos líquidos",
+            content: <FinancialSettlementsPanel permissions={permissions} />,
           }
         ]}
       />

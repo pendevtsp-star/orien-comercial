@@ -357,6 +357,17 @@ export default function Admin() {
             </p>
           </div>
           <div className="actions">
+            <button
+              className="btn"
+              onClick={() =>
+                void act(
+                  () => call("/platform/observability/test", { method: "POST", body: "{}" }),
+                  "Evento de teste enviado ao monitoramento.",
+                )
+              }
+            >
+              Testar monitoramento
+            </button>
             <button className="btn" onClick={() => void act(load, "Dados atualizados.")}>
               Atualizar
             </button>

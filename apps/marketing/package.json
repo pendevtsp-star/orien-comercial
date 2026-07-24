@@ -11,6 +11,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@sentry/browser": "10.42.0",
     "@sgc/ui": "workspace:*",
     "lucide-react": "^0.556.0",
     "next": "16.2.10",

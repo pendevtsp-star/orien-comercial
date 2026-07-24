@@ -1,5 +1,10 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { permissions } from "@sgc/auth";
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+} from "@nestjs/common";
 import { renderDocumentHtml } from "@sgc/documents";
 import type { SaleCancelInput, SaleCreateInput, SalesListQuery } from "@sgc/types";
 import type { PoolClient, QueryResult } from "pg";
@@ -13,12 +18,29 @@ import type { TenantContext } from "../../shared/request-context";
 import { loadTenantBranding } from "../../shared/tenant-branding";
 import { DatabaseService } from "../database/database.service";
 import { FiscalService } from "../fiscal/fiscal.service";
+import { FinancialSettlementsService } from "../financial/financial-settlements.service";
+import { LoyaltyService } from "../loyalty/loyalty.service";
+import { PricingService } from "../pricing/pricing.service";
+import { roundMoney } from "../pricing/pricing-policy";
+import { SaleCommissionService } from "./sale-commission.service";
+import { SaleCompositionService } from "./sale-composition.service";
+import { createSaleRequestHash } from "./sale-request-hash";
+
+export type CommercialSaleOrigin = {
+  id: string;
+  type: "quote" | "order" | "dav";
+};
 
 @Injectable()
 export class SalesService {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(FiscalService) private readonly fiscal: FiscalService,
+    @Inject(PricingService) private readonly pricing: PricingService,
+    @Inject(SaleCompositionService) private readonly composition: SaleCompositionService,
+    @Inject(LoyaltyService) private readonly loyalty: LoyaltyService,
+    @Inject(FinancialSettlementsService) private readonly financialSettlements: FinancialSettlementsService,
+    @Inject(SaleCommissionService) private readonly commissions: SaleCommissionService,
   ) {}
 
   async list(context: TenantContext, query: SalesListQuery) {
@@ -122,527 +144,535 @@ export class SalesService {
     return sale;
   }
 
+  preview(context: TenantContext, input: SaleCreateInput) {
+    return this.composition.preview(context, input);
+  }
+
   async create(context: TenantContext, input: SaleCreateInput, idempotencyKey?: string) {
     ensureBranchAccess(context, input.branchId);
-
     if (idempotencyKey && !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey)) {
       throw new BadRequestException("Chave de idempotência inválida.");
     }
+    return this.database.tenantTransaction(context.tenantId, (client) =>
+      this.createInTransaction(client, context, input, idempotencyKey, undefined),
+    );
+  }
 
-    return this.database.tenantTransaction(context.tenantId, async (client) => {
-      if (idempotencyKey) {
-        const key = await client.query<{ response: unknown }>(
-          `INSERT INTO idempotency_keys(tenant_id,scope,key) VALUES($1,'sales.create',$2)
-           ON CONFLICT(tenant_id,scope,key) DO NOTHING RETURNING response`,
+  async createInTransaction(
+    client: PoolClient,
+    context: TenantContext,
+    input: SaleCreateInput,
+    idempotencyKey?: string,
+    commercialOrigin?: CommercialSaleOrigin,
+  ) {
+    ensureBranchAccess(context, input.branchId);
+    if (idempotencyKey && !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey)) {
+      throw new BadRequestException("Chave de idempotência inválida.");
+    }
+    const requestHash = createSaleRequestHash({
+      input,
+      commercialOrigin: commercialOrigin ?? null,
+    });
+    if (idempotencyKey) {
+      const key = await client.query<{ response: unknown }>(
+        `INSERT INTO idempotency_keys(tenant_id,scope,key,request_hash)
+         VALUES($1,'sales.create',$2,$3)
+         ON CONFLICT(tenant_id,scope,key) DO NOTHING RETURNING response`,
+        [context.tenantId, idempotencyKey, requestHash],
+      );
+      if (!key.rowCount) {
+        const existing = await client.query<{ request_hash: string | null; response: unknown }>(
+          `SELECT request_hash,response FROM idempotency_keys
+           WHERE tenant_id=$1 AND scope='sales.create' AND key=$2 FOR UPDATE`,
           [context.tenantId, idempotencyKey],
         );
-        if (!key.rowCount) {
-          const existing = await client.query<{ response: unknown }>(
-            "SELECT response FROM idempotency_keys WHERE tenant_id=$1 AND scope='sales.create' AND key=$2 FOR UPDATE",
-            [context.tenantId, idempotencyKey],
-          );
-          if (existing.rows[0]?.response)
-            return existing.rows[0].response as {
-              id: string;
-              totalAmount: number;
-              paidAmount: number;
-              openAmount: number;
-            };
-          throw new BadRequestException(
-            "Venda em processamento. Aguarde alguns segundos e tente novamente.",
-          );
+        if (existing.rows[0]?.request_hash !== requestHash) {
+          throw new ConflictException({
+            code: "IDEMPOTENCY_PAYLOAD_MISMATCH",
+            message: "A chave de idempotência já foi usada com outra venda.",
+          });
         }
-      }
-      await assertBranch(client, context.tenantId, input.branchId);
-      if (input.customerId) await assertCustomer(client, context.tenantId, input.customerId);
-      if (input.cashRegisterSessionId) {
-        const cashSession = await client.query(
-          "SELECT id FROM cash_register_sessions WHERE tenant_id = $1 AND id = $2 AND branch_id = $3 AND status = 'open'",
-          [context.tenantId, input.cashRegisterSessionId, input.branchId],
+        if (existing.rows[0]?.response) {
+          return existing.rows[0].response as {
+            id: string;
+            totalAmount: number;
+            paidAmount: number;
+            openAmount: number;
+          };
+        }
+        throw new BadRequestException(
+          "Venda em processamento. Aguarde alguns segundos e tente novamente.",
         );
-        if (!cashSession.rowCount)
-          throw new BadRequestException("Caixa informado nao esta aberto para esta loja.");
       }
-
-      const productIds = input.items.map((item) => item.productId);
-      const products = await client.query<{
-        id: string;
-        name: string;
-        sale_price: string;
-        category_id: string | null;
-      }>(
-        `
-        SELECT id, name, sale_price, category_id
-        FROM products
-        WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NULL AND is_active = true
-        `,
-        [context.tenantId, productIds],
+    }
+    const prepared = await this.composition.prepareForCommit(client, context, input);
+    if (input.compositionFingerprint && input.compositionFingerprint !== prepared.fingerprint) {
+      throw new ConflictException({
+        code: "SALE_COMPOSITION_CHANGED",
+        message: "A composição da venda mudou. Revise os valores antes de concluir.",
+        fingerprint: prepared.fingerprint,
+      });
+    }
+    if (commercialOrigin) {
+      const origin = await client.query<{ id: string }>(
+        `SELECT id FROM quotes
+         WHERE tenant_id=$1 AND id=$2 AND branch_id=$3 AND commercial_document_type=$4
+         FOR UPDATE`,
+        [context.tenantId, commercialOrigin.id, input.branchId, commercialOrigin.type],
       );
-
-      if (products.rowCount !== productIds.length) {
-        throw new BadRequestException("Um ou mais produtos nao existem ou estao inativos.");
+      ensureFound(origin.rows[0], "Documento comercial");
+    }
+    if (input.cashRegisterSessionId) {
+      const cashSession = await client.query(
+        `SELECT id FROM cash_register_sessions
+         WHERE tenant_id=$1 AND id=$2 AND branch_id=$3 AND status='open'`,
+        [context.tenantId, input.cashRegisterSessionId, input.branchId],
+      );
+      if (!cashSession.rowCount) {
+        throw new BadRequestException("Caixa informado não está aberto para esta loja.");
       }
+    }
+    const totalAmount = centsToMoney(prepared.totals.netCents);
+    const productIds = input.items.map((item) => item.productId);
+    const plannedPaidAmount = input.payments
+      .filter((payment) => payment.status === "paid")
+      .reduce((sum, payment) => sum + payment.amount, 0);
+    if (roundMoney(plannedPaidAmount) > totalAmount) {
+      throw new BadRequestException({
+        code: "SALE_PAYMENT_EXCEEDS_TOTAL",
+        message: "O valor pago não pode superar o total da venda.",
+      });
+    }
+    const plannedPaymentAmount = input.payments.reduce((sum, payment) => sum + payment.amount, 0);
+    if (roundMoney(plannedPaymentAmount) > totalAmount) {
+      throw new BadRequestException({
+        code: "SALE_PAYMENT_PLAN_EXCEEDS_TOTAL",
+        message: "A soma das formas de pagamento não pode superar o total da venda.",
+      });
+    }
+    const plannedCreditAmount = Math.max(0, totalAmount - plannedPaidAmount);
+    if (input.customerId && plannedCreditAmount > 0) {
+      const policy = await client.query<{ credit_limit: string; blocked: boolean }>(
+        `SELECT credit_limit::text,blocked FROM customer_credit_accounts WHERE tenant_id=$1 AND customer_id=$2`,
+        [context.tenantId, input.customerId],
+      );
+      const exposure = await client.query<{ total: string }>(
+        `SELECT COALESCE(sum(amount),0)::text total FROM accounts_receivable WHERE tenant_id=$1 AND customer_id=$2 AND status IN('open','overdue')`,
+        [context.tenantId, input.customerId],
+      );
+      if (policy.rows[0]?.blocked)
+        throw new ForbiddenException("Crediário bloqueado para este cliente.");
+      if (
+        policy.rows[0] &&
+        Number(exposure.rows[0]?.total ?? 0) + plannedCreditAmount >
+          Number(policy.rows[0].credit_limit)
+      )
+        throw new ForbiddenException("Venda excede o limite de crediário do cliente.");
+    }
 
-      const productById = new Map(products.rows.map((product) => [product.id, product]));
-      for (const item of input.items) {
-        const product = productById.get(item.productId);
-        const unitPrice = item.unitPrice ?? Number(product?.sale_price ?? 0);
-        const grossAmount = item.quantity * unitPrice;
-        if (item.discountAmount > grossAmount)
-          throw new BadRequestException("Desconto nao pode superar o valor do item.");
-        if (
-          grossAmount > 0 &&
-          item.discountAmount / grossAmount > 0.1 &&
-          !context.permissions.includes(permissions.sales.cancel)
-        ) {
-          throw new ForbiddenException(
-            "Descontos acima de 10% exigem autorizacao de gerente ou administrador.",
-          );
-        }
-      }
-      const grossSaleAmount = input.items.reduce((total, item) => {
-        const product = productById.get(item.productId);
-        const unitPrice = item.unitPrice ?? Number(product?.sale_price ?? 0);
-        return total + item.quantity * unitPrice - item.discountAmount;
-      }, 0);
-      let loyaltyDiscountAmount = 0;
-      let loyaltyWalletId: string | null = null;
-      let redeemedCouponId: string | null = null;
-      type LoyaltyRewardRow = {
-        id: string;
-        name: string;
-        reward_type: "discount" | "coupon" | "cashback" | "bonus_product";
-        points_required: number;
-        value_amount: string | null;
-        product_id: string | null;
-        coupon_code: string | null;
+    const validatedItems = [];
+    for (const item of prepared.items) {
+      const quantity = item.quantityMilliunits / 1_000;
+      const resolution = await this.pricing.resolveForSale(
+        context,
+        {
+          productId: item.productId,
+          branchId: input.branchId,
+          customerId: input.customerId,
+          quantity,
+          unitPrice: centsToMoney(item.unitPriceCents),
+        },
+        client,
+      );
+      const projectedMarginPercent = Number(((item.marginBasisPoints ?? 0) / 100).toFixed(2));
+      const finalResolution = {
+        ...resolution,
+        policyId: item.policy.id,
+        policyVersion: item.policy.version,
+        unitPrice: centsToMoney(item.unitPriceCents),
+        projectedMarginPercent,
+        marginStatus: item.marginStatus,
+        priceWithinLimits: item.priceWithinLimits,
       };
-      let loyaltyReward: LoyaltyRewardRow | null = null;
-      let loyaltyPointsToRedeem = Math.floor(Number(input.loyaltyPointsToRedeem ?? 0));
-      if (input.loyaltyCouponCode) {
-        if (!input.customerId)
-          throw new BadRequestException("Informe o cliente para utilizar um cupom de fidelidade.");
-        const coupon = await client.query<{ id: string; value_amount: string }>(
-          "SELECT id,value_amount::text FROM loyalty_customer_coupons WHERE tenant_id=$1 AND customer_id=$2 AND code=$3 AND status='available' AND (expires_at IS NULL OR expires_at>=now()) FOR UPDATE",
-          [context.tenantId, input.customerId, input.loyaltyCouponCode.trim().toUpperCase()],
-        );
-        if (!coupon.rows[0])
-          throw new BadRequestException("Cupom inválido, expirado ou já utilizado.");
-        redeemedCouponId = coupon.rows[0].id;
-        loyaltyDiscountAmount = Math.min(grossSaleAmount, Number(coupon.rows[0].value_amount));
-      }
-      if (input.loyaltyRewardId) {
-        if (!input.customerId)
-          throw new BadRequestException("Informe um cliente para resgatar uma recompensa.");
-        const reward = await client.query<LoyaltyRewardRow>(
-          "SELECT id,name,reward_type,points_required,value_amount::text,product_id,coupon_code FROM loyalty_rewards WHERE tenant_id=$1 AND id=$2 AND is_active=true AND (ends_at IS NULL OR ends_at>=now()) FOR UPDATE",
-          [context.tenantId, input.loyaltyRewardId],
-        );
-        loyaltyReward = reward.rows[0] ?? null;
-        if (!loyaltyReward)
-          throw new BadRequestException("A recompensa selecionada não está disponível.");
-        if (redeemedCouponId)
-          throw new BadRequestException(
-            "Use um cupom ou uma recompensa por venda, não os dois juntos.",
+      const approval = item.isGift
+        ? null
+        : await this.pricing.validateApproval(
+            client,
+            context,
+            {
+              approvalId: item.pricingApprovalId,
+              quantity,
+              unitPrice: centsToMoney(item.unitPriceCents),
+              discountAmount: centsToMoney(item.directDiscountCents),
+              allocatedAdjustmentAmount: centsToMoney(item.allocatedAdjustmentCents),
+              netTotal: centsToMoney(item.netCents),
+              costTotal: centsToMoney(item.costCents),
+              projectedMarginPercent,
+              branchId: input.branchId,
+              basketFingerprint: prepared.fingerprint,
+            },
+            finalResolution,
           );
-        loyaltyPointsToRedeem = loyaltyReward.points_required;
-        if (loyaltyReward.reward_type === "discount")
-          loyaltyDiscountAmount = Math.min(
-            grossSaleAmount,
-            Number(loyaltyReward.value_amount ?? loyaltyPointsToRedeem * 0.01),
-          );
-        if (loyaltyReward.reward_type === "cashback" && Number(loyaltyReward.value_amount) <= 0)
-          throw new BadRequestException("Configure o valor do crédito para esta recompensa.");
-        if (loyaltyReward.reward_type === "bonus_product" && !loyaltyReward.product_id)
-          throw new BadRequestException("Configure o produto brinde para esta recompensa.");
-      }
-      if (loyaltyPointsToRedeem > 0) {
-        if (!input.customerId)
-          throw new BadRequestException("Informe um cliente para resgatar pontos.");
-        const policy = await client.query<{
-          max_redemption_points: number | null;
-          approval_threshold_points: number | null;
-        }>(
-          `SELECT max_redemption_points,approval_threshold_points
-           FROM loyalty_campaigns
-           WHERE tenant_id=$1 AND is_active=true AND (branch_id IS NULL OR branch_id=$2)
-             AND (starts_at IS NULL OR starts_at<=now()) AND (ends_at IS NULL OR ends_at>=now())
-           ORDER BY created_at DESC LIMIT 1`,
-          [context.tenantId, input.branchId],
-        );
-        const maxPoints = policy.rows[0]?.max_redemption_points;
-        if (maxPoints && loyaltyPointsToRedeem > maxPoints)
-          throw new BadRequestException(`O limite desta campanha é ${maxPoints} pontos por venda.`);
-        const approvalThreshold = policy.rows[0]?.approval_threshold_points;
-        if (
-          approvalThreshold &&
-          loyaltyPointsToRedeem >= approvalThreshold &&
-          !context.permissions.includes(permissions.sales.cancel)
-        )
-          throw new ForbiddenException("Este resgate exige aprovação de gerente ou administrador.");
-        const wallet = await client.query<{ id: string; points_balance: number }>(
-          "SELECT id, points_balance FROM loyalty_wallets WHERE tenant_id=$1 AND customer_id=$2 FOR UPDATE",
-          [context.tenantId, input.customerId],
-        );
-        if (!wallet.rows[0] || wallet.rows[0].points_balance < loyaltyPointsToRedeem)
-          throw new BadRequestException("Saldo de pontos insuficiente para o desconto.");
-        loyaltyWalletId = wallet.rows[0].id;
-        loyaltyDiscountAmount ||= Math.min(grossSaleAmount, loyaltyPointsToRedeem * 0.01);
-      }
-      const totalAmount = Math.max(0, grossSaleAmount - loyaltyDiscountAmount);
+      validatedItems.push({ item, quantity, resolution: finalResolution, approval });
+    }
 
-      if (totalAmount < 0) {
-        throw new BadRequestException("Total da venda nao pode ser negativo.");
-      }
-
-      const plannedPaidAmount = input.payments
-        .filter((payment) => payment.status === "paid")
-        .reduce((sum, payment) => sum + payment.amount, 0);
-      const plannedCreditAmount = Math.max(0, totalAmount - plannedPaidAmount);
-      if (input.customerId && plannedCreditAmount > 0) {
-        const policy = await client.query<{ credit_limit: string; blocked: boolean }>(
-          `SELECT credit_limit::text,blocked FROM customer_credit_accounts WHERE tenant_id=$1 AND customer_id=$2`,
-          [context.tenantId, input.customerId],
+    const sale = await client.query<{ id: string }>(
+      `INSERT INTO sales (
+         tenant_id,branch_id,customer_id,customer_document,seller_user_id,
+         cash_register_session_id,status,total_amount,notes,composition_fingerprint,
+         commercial_origin_id,commercial_origin_type
+       ) VALUES ($1,$2,$3,$4,$5,$6,'sold',$7,$8,$9,$10,$11)
+       RETURNING id`,
+      [
+        context.tenantId,
+        input.branchId,
+        input.customerId ?? null,
+        normalizeDocument(input.customerDocument),
+        context.userId ?? null,
+        input.cashRegisterSessionId ?? null,
+        totalAmount,
+        input.notes ?? null,
+        prepared.fingerprint,
+        commercialOrigin?.id ?? null,
+        commercialOrigin?.type ?? null,
+      ],
+    );
+    const saleId = ensureFound(sale.rows[0], "Venda").id;
+    const saleItemIds = new Map<string, string>();
+    for (const validated of validatedItems) {
+      const { item, quantity, resolution, approval } = validated;
+      const inserted = await client.query<{ id: string }>(
+        `INSERT INTO sale_items (
+           tenant_id,sale_id,product_id,description,quantity,unit_price,discount_amount,
+           allocated_adjustment_amount,net_amount,final_margin_percent,
+           price_policy_id,price_policy_version,price_reference,price_min,price_max,cost_snapshot,
+           projected_margin_percent,pricing_exception_reason,pricing_exception_requested_by_user_id,
+           pricing_exception_approved_by_user_id,pricing_approval_id
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+         RETURNING id`,
+        [
+          context.tenantId,
+          saleId,
+          item.productId,
+          item.isGift ? `Brinde fidelidade: ${item.productName}` : item.productName,
+          quantity,
+          centsToMoney(item.unitPriceCents),
+          centsToMoney(item.directDiscountCents),
+          centsToMoney(item.allocatedAdjustmentCents),
+          centsToMoney(item.netCents),
+          resolution.projectedMarginPercent,
+          resolution.policyId,
+          resolution.policyVersion,
+          resolution.referencePrice,
+          resolution.minPrice,
+          resolution.maxPrice,
+          resolution.costPrice,
+          resolution.projectedMarginPercent,
+          approval?.approvedReason ?? null,
+          approval ? context.userId : null,
+          approval?.approvedByUserId ?? null,
+          approval?.approvalId ?? null,
+        ],
+      );
+      const saleItemId = ensureFound(inserted.rows[0], "Item da venda").id;
+      saleItemIds.set(item.id, saleItemId);
+      if (approval) {
+        await this.pricing.consumeApproval(
+          client,
+          context,
+          approval.approvalId,
+          saleId,
+          saleItemId,
+          {
+            unitPrice: centsToMoney(item.unitPriceCents),
+            discountAmount: centsToMoney(item.directDiscountCents),
+            allocatedAdjustmentAmount: centsToMoney(item.allocatedAdjustmentCents),
+            netTotal: centsToMoney(item.netCents),
+            quantity,
+            costTotal: centsToMoney(item.costCents),
+            projectedMarginPercent: resolution.projectedMarginPercent,
+            policyId: resolution.policyId,
+            policyVersion: resolution.policyVersion,
+            basketFingerprint: prepared.fingerprint,
+          },
         );
-        const exposure = await client.query<{ total: string }>(
-          `SELECT COALESCE(sum(amount),0)::text total FROM accounts_receivable WHERE tenant_id=$1 AND customer_id=$2 AND status IN('open','overdue')`,
-          [context.tenantId, input.customerId],
-        );
-        if (policy.rows[0]?.blocked)
-          throw new ForbiddenException("Crediario bloqueado para este cliente.");
-        if (
-          policy.rows[0] &&
-          Number(exposure.rows[0]?.total ?? 0) + plannedCreditAmount >
-            Number(policy.rows[0].credit_limit)
-        )
-          throw new ForbiddenException("Venda excede o limite de crediario do cliente.");
+        await insertAuditLog(client, {
+          tenantId: context.tenantId,
+          actorUserId: context.userId,
+          action: "pricing.exception.applied",
+          entityType: "sale",
+          entityId: saleId,
+          metadata: {
+            productId: item.productId,
+            policyId: resolution.policyId,
+            approvalId: approval.approvalId,
+            referencePrice: resolution.referencePrice,
+            minPrice: resolution.minPrice,
+            maxPrice: resolution.maxPrice,
+            requestedUnitPrice: centsToMoney(item.unitPriceCents),
+            netAmount: centsToMoney(item.netCents),
+            allocatedAdjustmentAmount: centsToMoney(item.allocatedAdjustmentCents),
+            projectedMarginPercent: resolution.projectedMarginPercent,
+            requesterUserId: context.userId,
+            approverUserId: approval.approvedByUserId,
+            basketFingerprint: prepared.fingerprint,
+          },
+        });
       }
+    }
 
-      const sale = await client.query<{ id: string }>(
+    for (const adjustment of prepared.adjustments) {
+      const inserted = await client.query<{ id: string }>(
+        `INSERT INTO sale_adjustments (
+           tenant_id,sale_id,adjustment_key,adjustment_type,source_type,source_id,
+           amount,basket_fingerprint,metadata
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'{}'::jsonb)
+         RETURNING id`,
+        [
+          context.tenantId,
+          saleId,
+          adjustment.id,
+          adjustment.type,
+          adjustmentSourceType(adjustment.type),
+          adjustment.sourceId,
+          centsToMoney(adjustment.amountCents),
+          prepared.fingerprint,
+        ],
+      );
+      const adjustmentId = ensureFound(inserted.rows[0], "Ajuste da venda").id;
+      for (const allocation of adjustment.allocations) {
+        const saleItemId = saleItemIds.get(allocation.itemId);
+        if (!saleItemId) throw new BadRequestException("Rateio da venda inválido.");
+        await client.query(
+          `INSERT INTO sale_item_adjustments
+             (tenant_id,sale_id,sale_item_id,adjustment_id,amount)
+           VALUES ($1,$2,$3,$4,$5)`,
+          [
+            context.tenantId,
+            saleId,
+            saleItemId,
+            adjustmentId,
+            centsToMoney(allocation.amountCents),
+          ],
+        );
+      }
+    }
+
+    for (const item of [...prepared.items].sort(
+      (left, right) =>
+        left.productId.localeCompare(right.productId) || left.id.localeCompare(right.id),
+    )) {
+      await decrementStock(
+        client,
+        context.tenantId,
+        input.branchId,
+        item.productId,
+        item.quantityMilliunits / 1_000,
+        saleId,
+      );
+    }
+
+    const paidAmount = input.payments
+      .filter((payment) => payment.status === "paid")
+      .reduce((sum, payment) => sum + payment.amount, 0);
+
+    const paymentOccurredAt = new Date().toISOString();
+    let representedPendingAmountCents = 0;
+    for (const payment of input.payments) {
+      const snapshot = await this.financialSettlements.resolvePaymentSnapshotInTransaction(
+        client,
+        context,
+        {
+          branchId: input.branchId,
+          acquirerId: payment.acquirerId,
+          paymentMethod: payment.method,
+          brand: payment.brand,
+          installments: payment.installments ?? 1,
+          grossAmountCents: moneyToCents(payment.amount),
+          occurredAt: paymentOccurredAt,
+        },
+      );
+      const settlementStatus = payment.status === "paid" && !snapshot.acquirerId ? "settled" : "pending";
+      const insertedPayment = await client.query<{ id: string }>(
+        `INSERT INTO sale_payments (
+           tenant_id,sale_id,branch_id,method,amount,status,paid_at,acquirer_id,fee_rule_id,
+           fee_rule_version,brand,installments,gross_amount,processing_fee_amount,
+           anticipation_fee_amount,total_fee_amount,net_amount,expected_settlement_date,
+           settlement_status,snapshot_locked_at
+         ) VALUES (
+           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20
+         ) RETURNING id`,
+        [
+          context.tenantId,
+          saleId,
+          input.branchId,
+          payment.method,
+          centsToMoney(snapshot.grossAmountCents),
+          payment.status,
+          payment.status === "paid" ? paymentOccurredAt : null,
+          snapshot.acquirerId,
+          snapshot.feeRuleId,
+          snapshot.feeRuleVersion,
+          snapshot.brand,
+          snapshot.installments,
+          centsToMoney(snapshot.grossAmountCents),
+          centsToMoney(snapshot.processingFeeCents),
+          centsToMoney(snapshot.anticipationFeeCents),
+          centsToMoney(snapshot.totalFeeCents),
+          centsToMoney(snapshot.netAmountCents),
+          snapshot.expectedSettlementDate,
+          settlementStatus,
+          paymentOccurredAt,
+        ],
+      );
+      const salePaymentId = ensureFound(insertedPayment.rows[0], "Pagamento da venda").id;
+      const createsReceivable = payment.status === "pending" || Boolean(snapshot.acquirerId);
+      if (payment.status === "pending") representedPendingAmountCents += snapshot.grossAmountCents;
+      if (createsReceivable) {
+        await client.query(
+          `INSERT INTO accounts_receivable (
+             tenant_id,branch_id,customer_id,sale_id,sale_payment_id,source_type,source_document_id,
+             payment_method,amount,gross_amount,fee_amount,net_amount,due_date,
+             expected_settlement_date,status,description,snapshot_locked_at
+           ) VALUES ($1,$2,$3,$4,$5,'sale_payment',$5,$6,$7,$8,$9,$10,$11,$11,'open',$12,$13)`,
+          [
+            context.tenantId,
+            input.branchId,
+            payment.status === "pending" ? input.customerId ?? null : null,
+            saleId,
+            salePaymentId,
+            payment.method,
+            centsToMoney(snapshot.netAmountCents),
+            centsToMoney(snapshot.grossAmountCents),
+            centsToMoney(snapshot.totalFeeCents),
+            centsToMoney(snapshot.netAmountCents),
+            snapshot.expectedSettlementDate,
+            `Recebimento ${payment.method} da venda ${saleId}`,
+            paymentOccurredAt,
+          ],
+        );
+      }
+    }
+
+    const loyaltyApplication = await this.loyalty.applySaleBenefits(client, context, {
+      saleId,
+      branchId: input.branchId,
+      benefits: prepared.loyaltyBenefits,
+    });
+
+    const openAmount = roundMoney(totalAmount - paidAmount);
+    const residualOpenAmountCents = Math.max(0, moneyToCents(openAmount) - representedPendingAmountCents);
+    if (residualOpenAmountCents > 0) {
+      const residualOpenAmount = centsToMoney(residualOpenAmountCents);
+      await client.query(
         `
-        INSERT INTO sales (tenant_id, branch_id, customer_id, customer_document, seller_user_id, cash_register_session_id, status, total_amount, notes)
-        VALUES ($1, $2, $3, $4, $5, $6, 'sold', $7, $8)
-        RETURNING id
-        `,
+          INSERT INTO accounts_receivable (
+            tenant_id,branch_id,customer_id,sale_id,source_type,source_document_id,amount,
+            gross_amount,fee_amount,net_amount,due_date,expected_settlement_date,status,
+            description,snapshot_locked_at
+          ) VALUES ($1,$2,$3,$4,'sale_balance',$4,$5,$5,0,$5,$6::timestamptz::date,$6::timestamptz::date,'open',$7,$6)
+          `,
         [
           context.tenantId,
           input.branchId,
           input.customerId ?? null,
-          normalizeDocument(input.customerDocument),
-          context.userId ?? null,
-          input.cashRegisterSessionId ?? null,
-          totalAmount,
-          input.notes ?? null,
+          saleId,
+          residualOpenAmount,
+          paymentOccurredAt,
+          `Saldo da venda ${saleId}`,
         ],
       );
-      const saleId = sale.rows[0]!.id;
+    }
 
-      for (const item of input.items) {
-        const product = productById.get(item.productId)!;
-        const unitPrice = item.unitPrice ?? Number(product.sale_price);
-
-        await client.query(
-          `
-          INSERT INTO sale_items (tenant_id, sale_id, product_id, description, quantity, unit_price, discount_amount)
-          VALUES ($1, $2, $3, $4, $5, $6, $7)
-          `,
-          [
-            context.tenantId,
-            saleId,
-            item.productId,
-            product.name,
-            item.quantity,
-            unitPrice,
-            item.discountAmount,
-          ],
-        );
-
-        await decrementStock(
-          client,
-          context.tenantId,
-          input.branchId,
-          item.productId,
-          item.quantity,
-          saleId,
-        );
-      }
-
-      if (loyaltyReward?.reward_type === "bonus_product") {
-        const gift = await client.query<{ id: string; name: string }>(
-          "SELECT id,name FROM products WHERE tenant_id=$1 AND id=$2 AND is_active=true AND deleted_at IS NULL",
-          [context.tenantId, loyaltyReward.product_id],
-        );
-        if (!gift.rows[0]) throw new BadRequestException("O produto brinde não está disponível.");
-        await client.query(
-          "INSERT INTO sale_items (tenant_id,sale_id,product_id,description,quantity,unit_price,discount_amount) VALUES ($1,$2,$3,$4,1,0,0)",
-          [context.tenantId, saleId, gift.rows[0].id, `Brinde fidelidade: ${gift.rows[0].name}`],
-        );
-        await decrementStock(client, context.tenantId, input.branchId, gift.rows[0].id, 1, saleId);
-      }
-
-      const paidAmount = input.payments
-        .filter((payment) => payment.status === "paid")
-        .reduce((sum, payment) => sum + payment.amount, 0);
-
-      for (const payment of input.payments) {
-        await client.query(
-          `
-          INSERT INTO sale_payments (tenant_id, sale_id, method, amount, status, paid_at)
-          VALUES ($1, $2, $3, $4, $5::varchar, CASE WHEN $5::varchar = 'paid' THEN now() ELSE NULL END)
-          `,
-          [context.tenantId, saleId, payment.method, payment.amount, payment.status],
-        );
-      }
-
-      if (loyaltyWalletId && loyaltyPointsToRedeem > 0) {
-        await consumeLoyaltyLots(client, context.tenantId, loyaltyWalletId, loyaltyPointsToRedeem);
-        await client.query(
-          "UPDATE loyalty_wallets SET points_balance=points_balance-$2,updated_at=now() WHERE id=$1",
-          [loyaltyWalletId, loyaltyPointsToRedeem],
-        );
-        await client.query(
-          "INSERT INTO loyalty_ledger (tenant_id,wallet_id,movement_type,points,metadata) VALUES ($1,$2,'sale_discount',$3,$4::jsonb)",
-          [
-            context.tenantId,
-            loyaltyWalletId,
-            -loyaltyPointsToRedeem,
-            JSON.stringify({
-              saleId,
-              discountAmount: loyaltyDiscountAmount,
-              rewardId: loyaltyReward?.id ?? null,
-            }),
-          ],
-        );
-        await client.query(
-          "INSERT INTO loyalty_redemptions (tenant_id,wallet_id,sale_id,reward_id,amount,status,metadata) VALUES ($1,$2,$3,$4,$5,'confirmed',$6::jsonb)",
-          [
-            context.tenantId,
-            loyaltyWalletId,
-            saleId,
-            loyaltyReward?.id ?? null,
-            loyaltyDiscountAmount,
-            JSON.stringify({ rewardName: loyaltyReward?.name ?? null }),
-          ],
-        );
-        if (loyaltyReward?.reward_type === "cashback") {
-          const amount = Number(loyaltyReward.value_amount ?? 0);
-          await client.query(
-            "INSERT INTO customer_credits (tenant_id,customer_id,branch_id,amount,balance) VALUES ($1,$2,$3,$4,$4)",
-            [context.tenantId, input.customerId, input.branchId, amount],
-          );
-        }
-        if (loyaltyReward?.reward_type === "coupon") {
-          const code = `${loyaltyReward.coupon_code?.trim().toUpperCase() || "LOY"}-${saleId.slice(0, 8).toUpperCase()}`;
-          await client.query(
-            "INSERT INTO loyalty_customer_coupons (tenant_id,customer_id,reward_id,code,value_amount,expires_at,issued_sale_id) VALUES ($1,$2,$3,$4,$5,(SELECT ends_at FROM loyalty_rewards WHERE id=$3),$6)",
-            [
-              context.tenantId,
-              input.customerId,
-              loyaltyReward.id,
-              code,
-              Number(loyaltyReward.value_amount ?? 0),
-              saleId,
-            ],
-          );
-        }
-      }
-
-      if (redeemedCouponId) {
-        await client.query(
-          "UPDATE loyalty_customer_coupons SET status='redeemed',redeemed_sale_id=$2,redeemed_at=now() WHERE id=$1",
-          [redeemedCouponId, saleId],
-        );
-      }
-
-      const openAmount = totalAmount - paidAmount;
-      if (openAmount > 0) {
-        await client.query(
-          `
-          INSERT INTO accounts_receivable (tenant_id, branch_id, customer_id, sale_id, amount, due_date, status, description)
-          VALUES ($1, $2, $3, $4, $5, CURRENT_DATE, 'open', $6)
-          `,
-          [
-            context.tenantId,
-            input.branchId,
-            input.customerId ?? null,
-            saleId,
-            openAmount,
-            `Saldo da venda ${saleId}`,
-          ],
-        );
-      }
-
-      if (input.customerId && openAmount <= 0) {
-        const campaign = await client.query<{
-          id: string;
-          rule: { pointsPerReal?: number };
-          expires_in_days: number | null;
-          minimum_sale_amount: string;
-        }>(
-          `SELECT lc.id,lr.rule,lc.expires_in_days,lc.minimum_sale_amount::text FROM loyalty_campaigns lc JOIN loyalty_rules lr ON lr.campaign_id=lc.id WHERE lc.tenant_id=$1 AND lc.is_active=true AND lc.automation_type IS NULL AND (lc.branch_id IS NULL OR lc.branch_id=$2) AND (lc.starts_at IS NULL OR lc.starts_at<=now()) AND (lc.ends_at IS NULL OR lc.ends_at>=now()) AND (cardinality(lc.product_ids)=0 OR lc.product_ids && $3::uuid[]) AND (cardinality(lc.category_ids)=0 OR lc.category_ids && $4::uuid[]) ORDER BY lc.created_at DESC LIMIT 1`,
-          [
-            context.tenantId,
-            input.branchId,
-            productIds,
-            products.rows
-              .map((product) => product.category_id)
-              .filter((value): value is string => Boolean(value)),
-          ],
-        );
-        const pointsPerReal = Number(campaign.rows[0]?.rule?.pointsPerReal ?? 0);
-        const points =
-          totalAmount >= Number(campaign.rows[0]?.minimum_sale_amount ?? 0)
-            ? Math.floor(totalAmount * pointsPerReal)
-            : 0;
-        if (points > 0) {
-          const wallet = await client.query<{ id: string }>(
-            `INSERT INTO loyalty_wallets (tenant_id,customer_id,points_balance) VALUES ($1,$2,0) ON CONFLICT (tenant_id,customer_id) DO UPDATE SET updated_at=now() RETURNING id`,
-            [context.tenantId, input.customerId],
-          );
-          await client.query(
-            "UPDATE loyalty_wallets SET points_balance=points_balance+$2,updated_at=now() WHERE id=$1",
-            [wallet.rows[0]!.id, points],
-          );
-          const ledger = await client.query<{ id: string }>(
-            "INSERT INTO loyalty_ledger (tenant_id,wallet_id,movement_type,points,expires_at,metadata) VALUES ($1,$2,'sale_paid',$3,CASE WHEN $4::int IS NULL THEN NULL ELSE now() + ($4::text || ' days')::interval END,$5::jsonb) RETURNING id",
-            [
-              context.tenantId,
-              wallet.rows[0]!.id,
-              points,
-              campaign.rows[0]?.expires_in_days ?? null,
-              JSON.stringify({ saleId, totalAmount }),
-            ],
-          );
-          await client.query(
-            "INSERT INTO loyalty_point_lots (tenant_id,wallet_id,source_ledger_id,original_points,remaining_points,expires_at) VALUES ($1,$2,$3,$4,$4,CASE WHEN $5::int IS NULL THEN NULL ELSE now() + ($5::text || ' days')::interval END)",
-            [
-              context.tenantId,
-              wallet.rows[0]!.id,
-              ledger.rows[0]!.id,
-              points,
-              campaign.rows[0]?.expires_in_days ?? null,
-            ],
-          );
-        }
-        const firstPurchase = await client.query<{ id: string; automation_points: number }>(
-          `SELECT id,automation_points FROM loyalty_campaigns WHERE tenant_id=$1 AND is_active=true AND automation_type='first_purchase' AND (branch_id IS NULL OR branch_id=$2) AND (starts_at IS NULL OR starts_at<=now()) AND (ends_at IS NULL OR ends_at>=now()) AND (cardinality(product_ids)=0 OR product_ids && $3::uuid[]) AND (cardinality(category_ids)=0 OR category_ids && $4::uuid[]) ORDER BY created_at DESC LIMIT 1`,
-          [
-            context.tenantId,
-            input.branchId,
-            productIds,
-            products.rows
-              .map((product) => product.category_id)
-              .filter((value): value is string => Boolean(value)),
-          ],
-        );
-        const priorSales = await client.query<{ count: string }>(
-          "SELECT count(*)::text FROM sales WHERE tenant_id=$1 AND customer_id=$2 AND status='sold'",
-          [context.tenantId, input.customerId],
-        );
-        if (firstPurchase.rows[0] && Number(priorSales.rows[0]?.count) === 1) {
-          const run = await client.query<{ id: string }>(
-            "INSERT INTO loyalty_automation_runs (tenant_id,campaign_id,customer_id,automation_type,period_key) VALUES ($1,$2,$3,'first_purchase',$4) ON CONFLICT DO NOTHING RETURNING id",
-            [context.tenantId, firstPurchase.rows[0].id, input.customerId, saleId],
-          );
-          if (run.rowCount) {
-            const wallet = await client.query<{ id: string }>(
-              "INSERT INTO loyalty_wallets (tenant_id,customer_id,points_balance) VALUES ($1,$2,0) ON CONFLICT (tenant_id,customer_id) DO UPDATE SET updated_at=now() RETURNING id",
-              [context.tenantId, input.customerId],
-            );
-            await client.query(
-              "UPDATE loyalty_wallets SET points_balance=points_balance+$2,updated_at=now() WHERE id=$1",
-              [wallet.rows[0]!.id, firstPurchase.rows[0].automation_points],
-            );
-            await client.query(
-              "INSERT INTO loyalty_ledger (tenant_id,wallet_id,movement_type,points,metadata) VALUES ($1,$2,'automation',$3,$4::jsonb)",
-              [
-                context.tenantId,
-                wallet.rows[0]!.id,
-                firstPurchase.rows[0].automation_points,
-                JSON.stringify({
-                  saleId,
-                  campaignId: firstPurchase.rows[0].id,
-                  automationType: "first_purchase",
-                }),
-              ],
-            );
-          }
-        }
-      }
-
-      // A comissão é provisionada na venda e permanece rastreável até a liquidação.
-      // Cancelamentos e devoluções ajustam esse saldo no mesmo fluxo transacional.
-      if (context.userId) {
-        const commissionRule = await client.query<{ rate_percent: string }>(
-          `SELECT rate_percent::text
-           FROM seller_commission_rules
-           WHERE tenant_id=$1 AND user_id=$2 AND is_active=true
-             AND (branch_id IS NULL OR branch_id=$3)
-           ORDER BY branch_id NULLS LAST
-           LIMIT 1`,
-          [context.tenantId, context.userId, input.branchId],
-        );
-        const ratePercent = Number(commissionRule.rows[0]?.rate_percent ?? 0);
-        if (ratePercent > 0) {
-          const commissionAmount = Number(((totalAmount * ratePercent) / 100).toFixed(2));
-          await client.query(
-            `INSERT INTO seller_commissions(tenant_id,sale_id,user_id,amount,base_amount,status)
-             VALUES($1,$2,$3,$4,$4,'pending')
-             ON CONFLICT(tenant_id,sale_id,user_id) DO NOTHING`,
-            [context.tenantId, saleId, context.userId, commissionAmount],
-          );
-        }
-      }
-
-      await insertAuditLog(client, {
-        tenantId: context.tenantId,
-        actorUserId: context.userId,
-        action: "sale.created",
-        entityType: "sale",
-        entityId: saleId,
-        metadata: {
-          branchId: input.branchId,
-          totalAmount,
-          itemCount: input.items.length,
-          discountAmount: input.items.reduce((sum, item) => sum + item.discountAmount, 0),
-          customerDocument: normalizeDocument(input.customerDocument),
-          loyaltyPointsRedeemed: loyaltyPointsToRedeem,
-          loyaltyDiscountAmount,
-        },
+    if (input.customerId && openAmount <= 0) {
+      const categories = await client.query<{ id: string; category_id: string | null }>(
+        `SELECT id,category_id FROM products
+         WHERE tenant_id=$1 AND id=ANY($2::uuid[]) AND deleted_at IS NULL
+           AND (branch_id IS NULL OR branch_id=$3)`,
+        [context.tenantId, [...new Set(productIds)], input.branchId],
+      );
+      await this.loyalty.awardSalePoints(client, context, {
+        saleId,
+        branchId: input.branchId,
+        customerId: input.customerId,
+        paidTotalCents: prepared.totals.netCents,
+        productIds: [...new Set(productIds)],
+        categoryIds: categories.rows
+          .map((product) => product.category_id)
+          .filter((value): value is string => Boolean(value)),
       });
+    }
 
-      if (input.fiscalRequested) {
-        await enqueueFiscalDocument(client, context, {
-          saleId,
-          branchId: input.branchId,
-          customerDocument: normalizeDocument(input.customerDocument),
-          source: "sale.create",
-        });
-      }
-
-      const response = {
-        id: saleId,
-        totalAmount,
-        paidAmount,
-        openAmount,
-        loyalty: loyaltyReward
-          ? {
-              type: loyaltyReward.reward_type,
-              rewardName: loyaltyReward.name,
-              couponCode:
-                loyaltyReward.reward_type === "coupon"
-                  ? `${loyaltyReward.coupon_code?.trim().toUpperCase() || "LOY"}-${saleId.slice(0, 8).toUpperCase()}`
-                  : undefined,
-            }
-          : undefined,
-      };
-      if (idempotencyKey)
-        await client.query(
-          "UPDATE idempotency_keys SET response=$3::jsonb,completed_at=now() WHERE tenant_id=$1 AND scope='sales.create' AND key=$2",
-          [context.tenantId, idempotencyKey, JSON.stringify(response)],
-        );
-      return response;
+    await this.commissions.provisionInTransaction(client, context, {
+      saleId,
+      branchId: input.branchId,
+      baseAmount: totalAmount,
     });
+
+    await insertAuditLog(client, {
+      tenantId: context.tenantId,
+      actorUserId: context.userId,
+      action: "sale.created",
+      entityType: "sale",
+      entityId: saleId,
+      metadata: {
+        branchId: input.branchId,
+        totalAmount,
+        itemCount: prepared.items.length,
+        discountAmount: centsToMoney(prepared.totals.discountCents),
+        customerDocument: normalizeDocument(input.customerDocument),
+        loyaltyPointsRedeemed: prepared.loyaltyBenefits.pointsToRedeem,
+        loyaltyDiscountAmount: centsToMoney(loyaltyApplication.immediateDiscountCents),
+        compositionFingerprint: prepared.fingerprint,
+        commercialOrigin: commercialOrigin ?? null,
+      },
+    });
+
+    if (input.fiscalRequested) {
+      await enqueueFiscalDocument(client, context, {
+        saleId,
+        branchId: input.branchId,
+        customerDocument: normalizeDocument(input.customerDocument),
+        source: "sale.create",
+      });
+    }
+
+    const loyaltyReward = prepared.loyaltyBenefits.reward;
+    const response = {
+      id: saleId,
+      totalAmount,
+      paidAmount,
+      openAmount,
+      compositionFingerprint: prepared.fingerprint,
+      loyalty: loyaltyReward
+        ? {
+            type: loyaltyReward.rewardType,
+            rewardName: loyaltyReward.name,
+            couponCode: loyaltyApplication.issuedCouponCode ?? undefined,
+          }
+        : undefined,
+      pricingWarnings: prepared.alerts
+        .filter((alert) => alert.code === "margin_warning")
+        .map((alert) => ({
+          productId: alert.productId,
+          projectedMarginPercent:
+            prepared.items.find((item) => item.id === alert.itemId)?.marginBasisPoints == null
+              ? null
+              : Number(
+                  (
+                    (prepared.items.find((item) => item.id === alert.itemId)?.marginBasisPoints ??
+                      0) / 100
+                  ).toFixed(2),
+                ),
+        })),
+    };
+    if (idempotencyKey)
+      await client.query(
+        `UPDATE idempotency_keys SET response=$3::jsonb,completed_at=now()
+         WHERE tenant_id=$1 AND scope='sales.create' AND key=$2 AND request_hash=$4`,
+        [context.tenantId, idempotencyKey, JSON.stringify(response), requestHash],
+      );
+    return response;
   }
 
   async cancel(context: TenantContext, saleId: string, input: SaleCancelInput) {
@@ -713,12 +743,7 @@ export class SalesService {
         [context.tenantId, saleId],
       );
 
-      await client.query(
-        `UPDATE seller_commissions
-         SET amount=0,status='cancelled',adjusted_at=now(),adjustment_reason='Venda cancelada'
-         WHERE tenant_id=$1 AND sale_id=$2 AND status<>'paid'`,
-        [context.tenantId, saleId],
-      );
+      await this.commissions.cancelInTransaction(client, context, saleId, input.reason);
 
       await insertAuditLog(client, {
         tenantId: context.tenantId,
@@ -1024,42 +1049,25 @@ export class SalesService {
   }
 }
 
-async function consumeLoyaltyLots(
-  client: Pick<PoolClient, "query">,
-  tenantId: string,
-  walletId: string,
-  points: number,
-) {
-  const lots = await client.query<{ id: string; remaining_points: number }>(
-    `SELECT id, remaining_points
-     FROM loyalty_point_lots
-     WHERE tenant_id=$1 AND wallet_id=$2 AND remaining_points>0 AND (expires_at IS NULL OR expires_at>=now())
-     ORDER BY expires_at NULLS LAST, created_at, id
-     FOR UPDATE`,
-    [tenantId, walletId],
-  );
-  let remaining = points;
-  for (const lot of lots.rows) {
-    if (remaining <= 0) break;
-    const consumed = Math.min(remaining, lot.remaining_points);
-    await client.query(
-      "UPDATE loyalty_point_lots SET remaining_points=remaining_points-$2 WHERE id=$1",
-      [lot.id, consumed],
-    );
-    remaining -= consumed;
+function centsToMoney(cents: number) {
+  if (!Number.isSafeInteger(cents) || cents < 0) {
+    throw new BadRequestException("Valor monetário inválido na composição da venda.");
   }
-  if (remaining > 0)
-    throw new BadRequestException(
-      "O saldo disponível de pontos foi alterado. Atualize e tente novamente.",
-    );
+  return cents / 100;
 }
 
-async function assertBranch(client: PoolClient, tenantId: string, branchId: string) {
-  const branch = await client.query(
-    "SELECT id FROM branches WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL",
-    [tenantId, branchId],
-  );
-  ensureFound(branch.rows[0], "Filial");
+function moneyToCents(amount: number) {
+  const cents = Math.round(amount * 100);
+  if (!Number.isSafeInteger(cents) || cents < 0 || Math.abs(cents / 100 - amount) > 1e-8) {
+    throw new BadRequestException("Valor monetário inválido no pagamento da venda.");
+  }
+  return cents;
+}
+
+function adjustmentSourceType(type: string) {
+  if (type === "item_discount") return "sale_item";
+  if (type.startsWith("loyalty_") || type === "bonus_product") return "loyalty";
+  return type;
 }
 
 function receiptCopyHtml(input: {
@@ -1121,14 +1129,6 @@ function escapeHtml(value: string) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
-}
-
-async function assertCustomer(client: PoolClient, tenantId: string, customerId: string) {
-  const customer = await client.query(
-    "SELECT id FROM customers WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL",
-    [tenantId, customerId],
-  );
-  ensureFound(customer.rows[0], "Cliente");
 }
 
 function normalizeDocument(value?: string | null) {

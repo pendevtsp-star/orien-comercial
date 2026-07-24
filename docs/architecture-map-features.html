@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orien Comercial - Mapa de Features (Pos Implementacao)</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+    h1 {
+      text-align: center;
+      font-size: 2.5rem;
+      background: linear-gradient(90deg, #f59e0b, #34d399, #38bdf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 0.5rem;
+    }
+    .subtitle {
+      text-align: center;
+      color: #94a3b8;
+      font-size: 1.1rem;
+      margin-bottom: 0.5rem;
+    }
+    .version-badge {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+    .version-badge span {
+      background: rgba(245, 158, 11, 0.2);
+      color: #fbbf24;
+      padding: 0.5rem 1.5rem;
+      border-radius: 999px;
+      font-size: 0.9rem;
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 1.5rem;
+      max-width: 1600px;
+      margin: 0 auto;
+    }
+    .card {
+      background: rgba(30, 41, 59, 0.8);
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      border-radius: 16px;
+      padding: 1.5rem;
+      backdrop-filter: blur(10px);
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+    }
+    .icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+    }
+    .card-title { font-size: 1.1rem; font-weight: 600; }
+    .card-desc { font-size: 0.85rem; color: #94a3b8; }
+    .tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.75rem; }
+    .tag {
+      font-size: 0.7rem;
+      padding: 0.25rem 0.6rem;
+      border-radius: 999px;
+      background: rgba(56, 189, 248, 0.1);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.2);
+    }
+    .tag.green { background: rgba(52, 211, 153, 0.1); color: #34d399; border-color: rgba(52, 211, 153, 0.2); }
+    .tag.orange { background: rgba(245, 158, 11, 0.1); color: #fbbf24; border-color: rgba(245, 158, 11, 0.2); }
+    .tag.purple { background: rgba(192, 132, 252, 0.1); color: #c084fc; border-color: rgba(192, 132, 252, 0.2); }
+    .tag.pink { background: rgba(244, 114, 182, 0.1); color: #f472b6; border-color: rgba(244, 114, 182, 0.2); }
+    .tag.new { background: rgba(52, 211, 153, 0.2); color: #34d399; border-color: #34d399; font-weight: bold; }
+
+    .section-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin: 2rem 0 1rem;
+      padding-left: 0.5rem;
+      border-left: 4px solid #fbbf24;
+      max-width: 1600px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .full-width { grid-column: 1 / -1; }
+
+    .tree {
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 0.8rem;
+      line-height: 1.6;
+      background: rgba(15, 23, 42, 0.6);
+      padding: 1rem;
+      border-radius: 8px;
+      margin-top: 0.75rem;
+      overflow-x: auto;
+    }
+    .tree .folder { color: #38bdf8; }
+    .tree .file { color: #94a3b8; }
+    .tree .new { color: #34d399; font-weight: bold; }
+
+    .gap-card {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .gap-card h4 { color: #f87171; }
+
+    .feature-card {
+      background: rgba(52, 211, 153, 0.1);
+      border: 1px solid rgba(52, 211, 153, 0.3);
+    }
+    .feature-card h4 { color: #34d399; }
+
+    .flow-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      margin: 1rem 0;
+      flex-wrap: wrap;
+    }
+    .flow-box {
+      padding: 0.75rem 1.5rem;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      text-align: center;
+      min-width: 120px;
+    }
+    .flow-arrow {
+      font-size: 1.5rem;
+      color: #64748b;
+    }
+
+    .arch-flow {
+      max-width: 1600px;
+      margin: 2rem auto;
+      padding: 2rem;
+      background: rgba(30, 41, 59, 0.5);
+      border-radius: 16px;
+      border: 1px solid rgba(148, 163, 184, 0.1);
+    }
+
+    .comparison {
+      max-width: 1600px;
+      margin: 2rem auto;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+    }
+    .comparison-card {
+      padding: 1.5rem;
+      border-radius: 16px;
+      background: rgba(30, 41, 59, 0.5);
+      border: 1px solid rgba(148, 163, 184, 0.1);
+    }
+    .comparison-card h3 {
+      margin-bottom: 1rem;
+      font-size: 1.1rem;
+    }
+    .comparison-card.before h3 { color: #f87171; }
+    .comparison-card.after h3 { color: #34d399; }
+    .comparison-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.5rem 0;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+      font-size: 0.85rem;
+    }
+    .comparison-item:last-child { border-bottom: none; }
+
+    .priority-badge {
+      display: inline-block;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      font-weight: 600;
+    }
+    .priority-high { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+    .priority-medium { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+    .priority-low { background: rgba(52, 211, 153, 0.2); color: #34d399; }
+  </style>
+</head>
+<body>
+  <h1>Orien Comercial</h1>
+  <p class="subtitle">Mapa de Features - Analise Cliente Carro & Casa</p>
+  <div class="version-badge"><span>PLANO DE IMPLEMENTACAO - 5 FASES</span></div>
+
+  <!-- Client Pain Points -->
+  <div class="arch-flow">
+    <h2 style="text-align:center; margin-bottom:1rem; font-size:1.2rem; color:#fbbf24;">Dores da Cliente (Transcricao de Audio)</h2>
+    <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:1rem;">
+      <div style="background:rgba(239,68,68,0.1); padding:1rem; border-radius:8px; border:1px solid rgba(239,68,68,0.3);">
+        <h4 style="color:#f87171; margin-bottom:0.5rem;">Planilha Manual</h4>
+        <p style="font-size:0.8rem; color:#94a3b8;">Usa Excel para rastrear vendas e comissoes porque o sistema nao fornece o relatorio.</p>
+      </div>
+      <div style="background:rgba(239,68,68,0.1); padding:1rem; border-radius:8px; border:1px solid rgba(239,68,68,0.3);">
+        <h4 style="color:#f87171; margin-bottom:0.5rem;">Taxas de Cartao</h4>
+        <p style="font-size:0.8rem; color:#94a3b8;">Dificuldade em saber quanto de taxa esta deixando por mes. Divergencia entre vendas e faturamento.</p>
+      </div>
+      <div style="background:rgba(239,68,68,0.1); padding:1rem; border-radius:8px; border:1px solid rgba(239,68,68,0.3);">
+        <h4 style="color:#f87171; margin-bottom:0.5rem;">DAVs Invisiveis</h4>
+        <p style="font-size:0.8rem; color:#94a3b8;">Documentos Auxiliares de Venda nao aparecem nos relatorios. Muito faturamento em DAVs.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Comparison -->
+  <div class="comparison">
+    <div class="comparison-card before">
+      <h3>ANTES (Situacao Atual)</h3>
+      <div class="comparison-item"><span>Preco produto</span><span>Apenas preco de venda</span></div>
+      <div class="comparison-item"><span>Tipos de venda</span><span>Apenas "sold" ou "cancelled"</span></div>
+      <div class="comparison-item"><span>DAVs</span><span>Nao existe</span></div>
+      <div class="comparison-item"><span>Taxas cartao</span><span>Nao rastreadas</span></div>
+      <div class="comparison-item"><span>Relatorios</span><span>Basico (vendas, financeiro)</span></div>
+      <div class="comparison-item"><span>Cliente</span><span>Usa planilha manual</span></div>
+    </div>
+    <div class="comparison-card after">
+      <h3>DEPOIS (Pos Implementacao)</h3>
+      <div class="comparison-item"><span>Preco produto</span><span style="color:#34d399">Min, Max, Venda, Promo</span></div>
+      <div class="comparison-item"><span>Tipos de venda</span><span style="color:#34d399">NFC-e, NF-e, DAV, Contrato</span></div>
+      <div class="comparison-item"><span>DAVs</span><span style="color:#34d399">Modulo completo</span></div>
+      <div class="comparison-item"><span>Taxas cartao</span><span style="color:#34d399">Rastreadas por venda</span></div>
+      <div class="comparison-item"><span>Relatorios</span><span style="color:#34d399">Detalhados + DAVs + Taxas</span></div>
+      <div class="comparison-item"><span>Cliente</span><span style="color:#34d399">Sistema completo</span></div>
+    </div>
+  </div>
+
+  <h2 class="section-title">Fase 1: Preco Minimo/Maximo</h2>
+  <div class="grid">
+    <div class="card feature-card">
+      <div class="card-header">
+        <div class="icon" style="background:linear-gradient(135deg, #f59e0b, #fbbf24);">$</div>
+        <div>
+          <div class="card-title">products (ATUALIZADO)</div>
+          <div class="card-desc">Novos campos de preco</div>
+        </div>
+      </div>
+      <div class="tree">
+<span class="folder">products</span>
+  <span class="file">id, tenant_id, branch_id</span>
+  <span class="file">name, sku, barcode</span>
+  <span class="file">cost_price</span>
+  <span class="file">sale_price</span>
+  <span class="file">promotional_price</span>
+  <span class="new">min_price (NOVO)</span>
+  <span class="new">max_price (NOVO)</span>
+  <span class="file">min_stock, is_active</span>
+      </div>
+      <div class="tags">
+        <span class="tag new">1 dia</span>
+        <span class="tag orange">Schema</span>
+        <span class="tag orange">API</span>
+        <span class="tag orange">Frontend</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="icon" style="background:linear-gradient(135deg, #38bdf8, #0ea5e9);">PROD</div>
+        <div>
+          <div class="card-title">Impacto no Cadastro</div>
+          <div class="card-desc">Formulario de produtos atualizado</div>
+        </div>
+      </div>
+      <div style="margin-top:1rem;">
+        <p style="font-size:0.85rem; color:#94a3b8; margin-bottom:0.5rem;">Campos novos no formulario:</p>
+        <ul style="font-size:0.8rem; color:#94a3b8; padding-left:1.5rem;">
+          <li>Preco Minimo de Venda</li>
+          <li>Preco Maximo de Venda</li>
+          <li>Validacao: min <= venda <= max</li>
+        </ul>
+      </div>
+      <div class="tags">
+        <span class="tag">UX</span>
+        <span class="tag">Validacao</span>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="section-title">Fase 2: Tipos de Documento</h2>
+  <div class="grid">
+    <div class="card feature-card">
+      <div class="card-header">
+        <div class="icon" style="background:linear-gradient(135deg, #8b5cf6, #a78bfa);">DOC</div>
+        <div>
+          <div class="card-title">sales (ATUALIZADO)</div>
+          <div class="card-desc">Novo campo document_type</div>
+        </div>
+      </div>
+      <div class="tree">
+<span class="folder">Enum: sale_document_type</span>
+  <span class="new">nfce (NFC-e)</span>
+  <span class="new">nfe (NF-e)</span>
+  <span class="new">dav (DAV)</span>
+  <span class="new">contract (Contrato)</span>
+  <span class="new">consumption (Consumo)</span>
+  <span class="new">internal (Uso interno)</span>
+
+<span class="folder">sales (ATUALIZADO)</span>
+  <span class="new">document_type (NOVO)</span>
+  <span class="new">document_number (NOVO)</span>
+      </div>
+      <div class="tags">
+        <span class="tag new">2 dias</span>
+        <span class="tag purple">Enum</span>
+        <span class="tag purple">Migration</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="icon" style="background:linear-gradient(135deg, #34d399, #10b981);">FILT</div>
+        <div>
+          <div class="card-title">Filtros por Tipo</div>
+          <div class="card-desc">Listagem de vendas filtravel</div>
+        </div>
+      </div>
+      <div style="margin-top:1rem;">
+        <p style="font-size:0.85rem; color:#94a3b8; margin-bottom:0.5rem;">Novos filtros na listagem:</p>
+        <ul style="font-size:0.8rem; color:#94a3b8; padding-left:1.5rem;">
+          <li>Por tipo de documento</li>
+          <li>Por numero do documento</li>
+          <li>Separar "nota grande" de "contrato"</li>
+        </ul>
+      </div>
+      <div class="tags">
+        <span class="tag">Filtros</span>
+        <span class="tag">Relatorio</span>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="section-title">Fase 3: DAV - Documento Auxiliar de Venda</h2>
+  <div class="grid">
+    <div class="card feature-card full-width">
+      <div class="card-header">
+        <div class="icon" style="background:linear-gradient(135deg, #34d399, #059669);">DAV</div>
+        <div>
+          <div class="card-title">Modulo DAV (NOVO)</div>
+          <div class="card-desc">Reserva de venda que vira NF</div>
+        </div>
+      </div>
+      <div class="tree">
+<span class="folder">apps/api/src/modules/davs/ (NOVO)</span>
+  <span class="new">davs.module.ts</span>
+  <span class="new">davs.controller.ts</span>
+  <span class="new">davs.service.ts</span>
+
+<span class="folder">packages/db/src/schema.ts (NOVO)</span>
+  <span class="new">davs table</span>
+  <span class="new">dav_items table</span>
+
+<span class="folder">apps/web/src/app/(app)/davs/ (NOVO)</span>
+  <span class="new">page.tsx (listagem)</span>
+  <span class="new">[id]/page.tsx (detalhes)</span>
+  <span class="new">novo/page.tsx (criar)</span>
+      </div>
+      <div class="tags">
+        <span class="tag new">3 dias</span>
+        <span class="tag green">Modulo Completo</span>
+        <span class="tag green">CRUD</span>
+        <span class="tag green">Conversao</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="icon" style="background:linear-gradient(135deg, #f59e0b, #d97706);">FLUXO</div>
+        <div>
+          <div class="card-title">Fluxo DAV</div>
+          <div class="card-desc">Da reserva ate a venda final</div>
+        </div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:0.5rem; margin-top:1rem;">
+        <div style="background:rgba(52,211,153,0.2); padding:0.75rem; border-radius:8px; text-align:center;">
+          1. Criar DAV (reserva de itens)
+        </div>
+        <div style="text-align:center; color:#64748b;">↓</div>
+        <div style="background:rgba(56,189,248,0.2); padding:0.75rem; border-radius:8px; text-align:center;">
+          2. Estoque reservado (nao disponivel)
+        </div>
+        <div style="text-align:center; color:#64748b;">↓</div>
+        <div style="background:rgba(192,132,252,0.2); padding:0.75rem; border-radius:8px; text-align:center;">
+          3. Faturar (converte em venda + NF)
+        </div>
+        <div style="text-align:center; color:#64748b;">↓</div>
+        <div style="background:rgba(245,158,11,0.2); padding:0.75rem; border-radius:8px; text-align:center;">
+          4. Aparece no relatorio do mes
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="icon" style="background:linear-gradient(135deg, #ec4899, #f472b6);">BENEF</div>
+        <div>
+          <div class="card-title">Beneficios</div>
+          <div class="card-desc">Por que DAV e importante</div>
+        </div>
+      </div>
+      <div style="margin-top:1rem;">
+        <ul style="font-size:0.85rem; color:#94a3b8; padding-left:1.5rem; line-height:1.8;">
+          <li>Cliente compra o mes todo, paga no proximo</li>
+          <li>DAV registra a venda no mes correto</li>
+          <li>Relatorios consolidam DAVs + vendas faturadas</li>
+          <li>Estoque fica reservado corretamente</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="section-title">Fase 4: Taxas de Cartao</h2>
+  <div class="grid">
+    <div class="card feature-card">
+      <div class="card-header">
+        <div class="icon" style="background:linear-gradient(135deg, #f59e0b, #fbbf24);">TAX</div>
+        <div>
+          <div class="card-title">sale_payments (ATUALIZADO)</div>
+          <div class="card-desc">Rastreamento de taxas</div>
+        </div>
+      </div>
+      <div class="tree">
+<span class="folder">sale_payments (ATUALIZADO)</span>
+  <span class="file">id, sale_id, method</span>
+  <span class="file">amount, status, paid_at</span>
+  <span class="new">card_fee (NOVO)</span>
+  <span class="new">net_amount (NOVO)</span>
+
+<span class="folder">accounts_receivable (ATUALIZADO)</span>
+  <span class="file">id, tenant_id, customer_id</span>
+  <span class="file">amount, due_date, status</span>
+  <span class="new">card_fee (NOVO)</span>
+  <span class="new">net_amount (NOVO)</span>
+      </div>
+      <div class="tags">
+        <span class="tag new">2 dias</span>
+        <span class="tag orange">Schema</span>
+        <span class="tag orange">Baixa</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="icon" style="background:linear-gradient(135deg, #38bdf8, #0284c7);">REL</div>
+        <div>
+          <div class="card-title">Relatorio de Taxas</div>
+          <div class="card-desc">Quanto esta deixando em taxas</div>
+        </div>
+      </div>
+      <div style="margin-top:1rem;">
+        <p style="font-size:0.85rem; color:#94a3b8; margin-bottom:0.5rem;">Novo relatorio:</p>
+        <ul style="font-size:0.8rem; color:#94a3b8; padding-left:1.5rem;">
+          <li>Total de taxas por mes</li>
+          <li>Taxas por operadora</li>
+          <li>Taxas por metodo de pagamento</li>
+          <li>Comparativo: valor bruto vs liquido</li>
+        </ul>
+      </div>
+      <div class="tags">
+        <span class="tag">Dashboard</span>
+        <span class="tag">Exportavel</span>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="section-title">Fase 5: Relatorios Melhorados</h2>
+  <div class="grid">
+    <div class="card feature-card">
+      <div class="card-header">
+        <div class="icon" style="background:linear-gradient(135deg, #34d399, #059669);">REP</div>
+        <div>
+          <div class="card-title">Novos Relatorios</div>
+          <div class="card-desc">Consolidacao de dados</div>
+        </div>
+      </div>
+      <div style="margin-top:1rem;">
+        <div style="display:flex; flex-direction:column; gap:0.5rem;">
+          <div style="background:rgba(15,23,42,0.6); padding:0.75rem; border-radius:8px; border:1px solid rgba(52,211,153,0.2);">
+            <strong style="color:#34d399;">Vendas por Tipo de Documento</strong>
+            <p style="font-size:0.75rem; color:#94a3b8;">Separa NFC-e, NF-e, DAV, Contrato</p>
+          </div>
+          <div style="background:rgba(15,23,42,0.6); padding:0.75rem; border-radius:8px; border:1px solid rgba(56,189,248,0.2);">
+            <strong style="color:#38bdf8;">Taxas de Cartao</strong>
+            <p style="font-size:0.75rem; color:#94a3b8;">Total de taxas por mes/operadora</p>
+          </div>
+          <div style="background:rgba(15,23,42,0.6); padding:0.75rem; border-radius:8px; border:1px solid rgba(192,132,252,0.2);">
+            <strong style="color:#c084fc;">Vendas vs Faturamento</strong>
+            <p style="font-size:0.75rem; color:#94a3b8;">Vendas do mes vs notas emitidas</p>
+          </div>
+          <div style="background:rgba(15,23,42,0.6); padding:0.75rem; border-radius:8px; border:1px solid rgba(245,158,11,0.2);">
+            <strong style="color:#fbbf24;">Comissoes Detalhadas</strong>
+            <p style="font-size:0.75rem; color:#94a3b8;">Itens, valores, metodos de pagamento</p>
+          </div>
+        </div>
+      </div>
+      <div class="tags">
+        <span class="tag new">2 dias</span>
+        <span class="tag green">4 relatorios</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="icon" style="background:linear-gradient(135deg, #8b5cf6, #7c3aed);">API</div>
+        <div>
+          <div class="card-title">Endpoints Novos</div>
+          <div class="card-desc">APIs para relatorios</div>
+        </div>
+      </div>
+      <div class="tree">
+<span class="folder">GET /reports/sales-by-document</span>
+  <span class="file">?startDate=&endDate=</span>
+  <span class="file">Filtra por document_type</span>
+
+<span class="folder">GET /reports/card-fees</span>
+  <span class="file">?startDate=&endDate=</span>
+  <span class="file">Total taxas por mes</span>
+
+<span class="folder">GET /reports/sales-vs-invoicing</span>
+  <span class="file">?startDate=&endDate=</span>
+  <span class="file">Vendas vs faturamento</span>
+
+<span class="folder">GET /reports/commissions-detail</span>
+  <span class="file">?sellerId=&startDate=</span>
+  <span class="file">Comissao por item</span>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="section-title">Cronograma de Implementacao</h2>
+  <div class="arch-flow">
+    <div style="display:grid; grid-template-columns: repeat(5, 1fr); gap:1rem; text-align:center;">
+      <div style="padding:1rem; background:rgba(245,158,11,0.2); border-radius:12px; border:1px solid #fbbf24;">
+        <div style="font-size:1.5rem; margin-bottom:0.5rem;">1</div>
+        <div style="font-weight:600; margin-bottom:0.25rem;">Preco Min/Max</div>
+        <div style="font-size:0.75rem; color:#94a3b8;">1 dia</div>
+        <span class="priority-badge priority-high">ALTA</span>
+      </div>
+      <div style="padding:1rem; background:rgba(139,92,246,0.2); border-radius:12px; border:1px solid #a78bfa;">
+        <div style="font-size:1.5rem; margin-bottom:0.5rem;">2</div>
+        <div style="font-weight:600; margin-bottom:0.25rem;">Tipos Documento</div>
+        <div style="font-size:0.75rem; color:#94a3b8;">2 dias</div>
+        <span class="priority-badge priority-high">ALTA</span>
+      </div>
+      <div style="padding:1rem; background:rgba(52,211,153,0.2); border-radius:12px; border:1px solid #34d399;">
+        <div style="font-size:1.5rem; margin-bottom:0.5rem;">3</div>
+        <div style="font-weight:600; margin-bottom:0.25rem;">Modulo DAV</div>
+        <div style="font-size:0.75rem; color:#94a3b8;">3 dias</div>
+        <span class="priority-badge priority-high">ALTA</span>
+      </div>
+      <div style="padding:1rem; background:rgba(56,189,248,0.2); border-radius:12px; border:1px solid #38bdf8;">
+        <div style="font-size:1.5rem; margin-bottom:0.5rem;">4</div>
+        <div style="font-weight:600; margin-bottom:0.25rem;">Taxas Cartao</div>
+        <div style="font-size:0.75rem; color:#94a3b8;">2 dias</div>
+        <span class="priority-badge priority-high">ALTA</span>
+      </div>
+      <div style="padding:1rem; background:rgba(244,114,182,0.2); border-radius:12px; border:1px solid #f472b6;">
+        <div style="font-size:1.5rem; margin-bottom:0.5rem;">5</div>
+        <div style="font-weight:600; margin-bottom:0.25rem;">Relatorios</div>
+        <div style="font-size:0.75rem; color:#94a3b8;">2 dias</div>
+        <span class="priority-badge priority-medium">MEDIA</span>
+      </div>
+    </div>
+    <div style="text-align:center; margin-top:1rem; color:#94a3b8; font-size:0.9rem;">
+      <strong>Total: 10 dias de desenvolvimento</strong>
+    </div>
+  </div>
+
+  <div style="text-align:center; margin-top:3rem; color:#64748b; font-size:0.85rem;">
+    Gerado por MiMoCode - Analise Cliente Carro & Casa<br>
+    <span style="color:#fbbf24;">Baseado em transcricoes de audio e imagens do Hiper</span>
+  </div>
+</body>
+</html>

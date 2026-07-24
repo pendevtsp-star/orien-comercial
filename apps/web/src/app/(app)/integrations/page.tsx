@@ -11,6 +11,12 @@ import {
 } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../../../lib/api";
+import {
+  applySmtpPreset,
+  smtpPresetById,
+  smtpPresets,
+  type SmtpPreset,
+} from "../../../lib/smtp-presets";
 
 type Provider = "asaas_business" | "smtp" | "whatsapp_meta" | "fiscal";
 type Integration = {
@@ -91,6 +97,11 @@ export default function IntegrationsPage() {
   const [overrideEnabled, setOverrideEnabled] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
   const [secret, setSecret] = useState<Record<string, string>>({});
+  const [smtpDraft, setSmtpDraft] = useState<Record<string, string>>({});
+  const [smtpUsername, setSmtpUsername] = useState("");
+  const [smtpPassword, setSmtpPassword] = useState("");
+  const [smtpInitialized, setSmtpInitialized] = useState(false);
+  const [pendingPresetId, setPendingPresetId] = useState<SmtpPreset["id"] | null>(null);
   async function load() {
     try {
       const [integrations, branchResult, overridesResult] = await Promise.all([
@@ -127,6 +138,23 @@ export default function IntegrationsPage() {
   useEffect(() => {
     void load();
   }, []);
+  const smtp = items.find((item) => item.provider === "smtp");
+  useEffect(() => {
+    if (!smtp || smtpInitialized) return;
+    const draft = {
+      providerName: smtp.settings.providerName ?? "locaweb",
+      from: smtp.settings.from ?? "",
+      testRecipient: smtp.settings.testRecipient ?? "",
+      host: smtp.settings.host ?? "",
+      port: smtp.settings.port ?? "",
+      security: smtp.settings.security ?? "starttls",
+    };
+    const presetId = smtpPresets.some((preset) => preset.id === draft.providerName)
+      ? (draft.providerName as SmtpPreset["id"])
+      : "locaweb";
+    setSmtpDraft(draft.host || draft.port ? draft : applySmtpPreset(presetId, draft));
+    setSmtpInitialized(true);
+  }, [smtp, smtpInitialized]);
   async function save(provider: Provider, form: HTMLFormElement) {
     const entries = Object.fromEntries(new FormData(form).entries()) as Record<string, string>;
     const { username, password, secret: rawSecret, ...settings } = entries;
@@ -171,7 +199,54 @@ export default function IntegrationsPage() {
       setNotice(error instanceof Error ? error.message : "Teste não concluído.");
     }
   }
-  const smtp = items.find((item) => item.provider === "smtp");
+  function updateSmtpDraft(field: string, value: string) {
+    setSmtpDraft((current) => ({ ...current, [field]: value }));
+  }
+  function chooseSmtpPreset(presetId: SmtpPreset["id"]) {
+    if (presetId === smtpDraft.providerName) return;
+    if (smtpDraft.host || smtpDraft.port) {
+      setPendingPresetId(presetId);
+      return;
+    }
+    setSmtpDraft((current) => applySmtpPreset(presetId, current));
+  }
+  function applyPendingSmtpPreset() {
+    if (!pendingPresetId) return;
+    setSmtpDraft((current) => applySmtpPreset(pendingPresetId, current));
+    setPendingPresetId(null);
+  }
+  async function saveSmtp(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if ((smtpUsername || smtpPassword) && (!smtpUsername || !smtpPassword)) {
+      setNotice("Informe o usuário e a senha juntos ou deixe os dois campos vazios para manter os atuais.");
+      return;
+    }
+    try {
+      await apiFetch("/integrations/smtp", {
+        method: "PUT",
+        body: JSON.stringify({
+          provider: "smtp",
+          mode: "production",
+          status: "configured",
+          settings: smtpDraft,
+        }),
+      });
+      if (smtpUsername && smtpPassword) {
+        await apiFetch("/integrations/smtp/credential", {
+          method: "PUT",
+          body: JSON.stringify({ secret: JSON.stringify({ username: smtpUsername, password: smtpPassword }) }),
+        });
+        setSmtpUsername("");
+        setSmtpPassword("");
+      }
+      setNotice("E-mail da empresa salvo com segurança. Envie um teste para confirmar.");
+      await load();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Não foi possível salvar o e-mail da empresa.");
+    }
+  }
+  const selectedSmtpPreset =
+    smtpPresets.find((preset) => preset.id === smtpDraft.providerName) ?? smtpPresetById.locaweb;
   return (
     <div className="grid gap-6">
       <PageHeader
@@ -213,33 +288,46 @@ export default function IntegrationsPage() {
           </div>
           <form
             className="mt-5 grid gap-3"
-            onSubmit={(event: FormEvent<HTMLFormElement>) => {
-              event.preventDefault();
-              void save("smtp", event.currentTarget);
-            }}
+            onSubmit={(event: FormEvent<HTMLFormElement>) => void saveSmtp(event)}
           >
             <label className="grid gap-1 text-sm font-medium">
-              Seu provedor de e-mail
+              Como você envia e-mails
               <select
-                name="providerName"
-                defaultValue={smtp?.settings.providerName ?? "locaweb"}
+                value={smtpDraft.providerName ?? "locaweb"}
+                onChange={(event) => chooseSmtpPreset(event.target.value as SmtpPreset["id"])}
                 className="h-10 rounded-md border border-[var(--brand-border)] px-3"
               >
-                <option value="locaweb">Locaweb</option>
-                <option value="google">Google Workspace</option>
-                <option value="zoho">Zoho Mail</option>
-                <option value="hostinger">Hostinger</option>
-                <option value="other">Outro provedor</option>
+                {smtpPresets.map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.label}
+                  </option>
+                ))}
               </select>
             </label>
+            <p className="text-sm text-slate-500">{selectedSmtpPreset.description}</p>
+            {pendingPresetId ? (
+              <div className="flex flex-col gap-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between">
+                <p>
+                  Aplicar a configuração de {smtpPresetById[pendingPresetId].label} vai substituir somente o servidor, a porta e a segurança atuais.
+                </p>
+                <span className="flex shrink-0 gap-2">
+                  <Button type="button" variant="secondary" onClick={() => setPendingPresetId(null)}>
+                    Manter dados
+                  </Button>
+                  <Button type="button" onClick={applyPendingSmtpPreset}>
+                    Aplicar
+                  </Button>
+                </span>
+              </div>
+            ) : null}
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="grid gap-1 text-sm font-medium">
                 E-mail que envia mensagens
                 <input
-                  name="from"
                   type="email"
                   required
-                  defaultValue={smtp?.settings.from ?? ""}
+                  value={smtpDraft.from ?? ""}
+                  onChange={(event) => updateSmtpDraft("from", event.target.value)}
                   placeholder="contato@suaempresa.com.br"
                   className="h-10 rounded-md border border-[var(--brand-border)] px-3"
                 />
@@ -247,10 +335,10 @@ export default function IntegrationsPage() {
               <label className="grid gap-1 text-sm font-medium">
                 E-mail para receber o teste
                 <input
-                  name="testRecipient"
                   type="email"
                   required
-                  defaultValue={smtp?.settings.testRecipient ?? ""}
+                  value={smtpDraft.testRecipient ?? ""}
+                  onChange={(event) => updateSmtpDraft("testRecipient", event.target.value)}
                   placeholder="voce@suaempresa.com.br"
                   className="h-10 rounded-md border border-[var(--brand-border)] px-3"
                 />
@@ -260,8 +348,9 @@ export default function IntegrationsPage() {
               <label className="grid gap-1 text-sm font-medium">
                 Usuário do e-mail
                 <input
-                  name="username"
                   autoComplete="username"
+                  value={smtpUsername}
+                  onChange={(event) => setSmtpUsername(event.target.value)}
                   placeholder={
                     smtp?.hasCredential ? "Deixe vazio para manter o atual" : "Seu e-mail de acesso"
                   }
@@ -271,9 +360,10 @@ export default function IntegrationsPage() {
               <label className="grid gap-1 text-sm font-medium">
                 Senha do e-mail
                 <input
-                  name="password"
                   type="password"
                   autoComplete="new-password"
+                  value={smtpPassword}
+                  onChange={(event) => setSmtpPassword(event.target.value)}
                   placeholder={
                     smtp?.hasCredential
                       ? "Deixe vazio para manter a atual"
@@ -288,15 +378,15 @@ export default function IntegrationsPage() {
                 Configuração avançada
               </summary>
               <p className="mt-2 text-sm text-slate-500">
-                Use os dados fornecidos pelo seu provedor de e-mail.
+                Os dados abaixo já são preenchidos quando você escolhe um provedor. Use a opção manual somente se o seu provedor indicar outra configuração.
               </p>
               <div className="mt-3 grid gap-3 sm:grid-cols-3">
                 <label className="grid gap-1 text-sm font-medium">
                   Servidor
                   <input
-                    name="host"
                     required
-                    defaultValue={smtp?.settings.host ?? ""}
+                    value={smtpDraft.host ?? ""}
+                    onChange={(event) => updateSmtpDraft("host", event.target.value)}
                     placeholder="smtp.seudominio.com"
                     className="h-10 rounded-md border border-[var(--brand-border)] px-3"
                   />
@@ -304,18 +394,18 @@ export default function IntegrationsPage() {
                 <label className="grid gap-1 text-sm font-medium">
                   Porta
                   <input
-                    name="port"
                     type="number"
                     required
-                    defaultValue={smtp?.settings.port ?? "587"}
+                    value={smtpDraft.port ?? ""}
+                    onChange={(event) => updateSmtpDraft("port", event.target.value)}
                     className="h-10 rounded-md border border-[var(--brand-border)] px-3"
                   />
                 </label>
                 <label className="grid gap-1 text-sm font-medium">
                   Segurança
                   <select
-                    name="security"
-                    defaultValue={smtp?.settings.security ?? "starttls"}
+                    value={smtpDraft.security ?? "starttls"}
+                    onChange={(event) => updateSmtpDraft("security", event.target.value)}
                     className="h-10 rounded-md border border-[var(--brand-border)] px-3"
                   >
                     <option value="starttls">Conexão segura</option>

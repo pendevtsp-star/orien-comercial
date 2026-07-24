@@ -1,5 +1,6 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from "@nestjs/common";
 import type { Request, Response } from "express";
+import { captureApiException } from "./sentry";
 
 export interface ApiErrorEvent {
   requestId: string;
@@ -33,6 +34,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
     }
 
     if (status >= 500) {
+      captureApiException(exception, {
+        requestId,
+        method: request.method,
+        path: requestPath(request),
+        statusCode: status,
+      });
       void this.recordError?.({
         requestId,
         method: request.method,

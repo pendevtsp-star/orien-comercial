@@ -39,7 +39,7 @@ export function DataTable<T extends { id: string }>({
         </thead>
         <tbody className="divide-y divide-[var(--brand-border)]">
           {rows.map((row) => (
-            <tr key={row.id} className={cn("text-slate-700 transition hover:bg-[rgba(241,243,246,0.65)]")}>
+            <tr key={row.id} className={cn("text-slate-700 transition motion-reduce:transition-none hover:bg-[rgba(241,243,246,0.65)]")}>
               {columns.map((column) => (
                 <td key={column.key} className="max-w-[20rem] break-words px-3 py-3 align-top sm:px-4">
                   {column.render(row)}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertTenantScopedQuery, hasEveryPermission, permissions } from "../src";
+import { assertTenantScopedQuery, defaultRolePermissions, hasEveryPermission, permissions } from "../src";
 
 describe("RBAC helpers", () => {
   it("requires every declared permission", () => {
@@ -21,5 +21,15 @@ describe("RBAC helpers", () => {
   it("rejects resource access without a tenant scope", () => {
     expect(() => assertTenantScopedQuery({ tenantId: "tenant-1", resourceId: "product-1" })).not.toThrow();
     expect(() => assertTenantScopedQuery({ tenantId: null, resourceId: "product-1" })).toThrow(/tenant/i);
+  });
+
+  it("grants pricing administration and exception approval to operational leaders", () => {
+    const pricing = Reflect.get(permissions, "pricing") as { manage: string; authorizeException: string };
+
+    for (const role of ["owner", "admin", "manager"] as const) {
+      expect(defaultRolePermissions[role]).toContain(pricing.manage);
+      expect(defaultRolePermissions[role]).toContain(pricing.authorizeException);
+      expect(defaultRolePermissions[role]).toContain(permissions.sales.create);
+    }
   });
 });

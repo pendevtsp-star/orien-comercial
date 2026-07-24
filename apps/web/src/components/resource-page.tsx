@@ -2,6 +2,8 @@
 
 import {
   Badge,
+  BulkActionBar,
+  type BulkStatusAction,
   Button,
   Card,
   CardContent,
@@ -9,6 +11,7 @@ import {
   DataTable,
   EmptyState,
   Input,
+  LoadingState,
   PageHeader,
   Select,
 } from "@sgc/ui";
@@ -22,7 +25,7 @@ import {
   Trash2,
   type LucideIcon,
 } from "lucide-react";
-import { FormEvent, Fragment, useEffect, useMemo, useState } from "react";
+import { FormEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { apiFetch } from "../lib/api";
 
@@ -60,6 +63,7 @@ interface ResourcePageProps<T extends { id: string; isActive?: boolean | null }>
   sortOptions?: Array<{ label: string; value: string }>;
   rowActions?: (row: T) => React.ReactNode;
   formExtras?: React.ReactNode;
+  bulkStatus?: { itemLabel: string; endpoint?: string };
 }
 
 export function ResourcePage<T extends { id: string; isActive?: boolean | null }>({
@@ -77,6 +81,7 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
   sortOptions,
   rowActions,
   formExtras,
+  bulkStatus,
 }: ResourcePageProps<T>) {
   const searchParams = useSearchParams();
   const [rows, setRows] = useState<T[]>([]);
@@ -91,6 +96,11 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [pagination, setPagination] = useState({ total: 0, page: 1, pageSize: 20 });
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [pendingBulkAction, setPendingBulkAction] = useState<BulkStatusAction | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkFeedback, setBulkFeedback] = useState<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const query = useMemo(() => {
     const params = new URLSearchParams({
@@ -121,6 +131,12 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
   useEffect(() => {
     void load();
   }, [endpoint, query]);
+
+  useEffect(() => {
+    setSelectedIds([]);
+    setPendingBulkAction(null);
+    setBulkFeedback(null);
+  }, [query]);
 
   useEffect(() => {
     const focus = searchParams.get("focus");
@@ -187,6 +203,34 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
       setError(err instanceof Error ? err.message : "Falha ao remover registro.");
     }
   }
+
+  async function applyBulkStatus() {
+    if (!bulkStatus || !pendingBulkAction || !selectedIds.length) return;
+    setBulkBusy(true);
+    setError(null);
+    const selectedCount = selectedIds.length;
+    const isActive = pendingBulkAction === "activate";
+    try {
+      await apiFetch(bulkStatus.endpoint ?? `${endpoint}/bulk/status`, {
+        method: "POST",
+        body: JSON.stringify({ ids: selectedIds, isActive }),
+      });
+      setBulkFeedback(
+        `${selectedCount} ${selectedCount === 1 && bulkStatus.itemLabel.endsWith("s") ? bulkStatus.itemLabel.slice(0, -1) : bulkStatus.itemLabel} ${selectedCount === 1 ? "foi" : "foram"} ${isActive ? "ativado" : "desativado"}${selectedCount === 1 ? "" : "s"}.`,
+      );
+      setSelectedIds([]);
+      setPendingBulkAction(null);
+      await load();
+      searchInputRef.current?.focus();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível aplicar a ação em lote.");
+      setPendingBulkAction(null);
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  const allVisibleSelected = rows.length > 0 && rows.every((row) => selectedIds.includes(row.id));
 
   const totalPages = Math.max(1, Math.ceil((pagination.total || 0) / pagination.pageSize));
   const showingFrom = pagination.total ? (pagination.page - 1) * pagination.pageSize + 1 : 0;
@@ -318,7 +362,7 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
             <CardContent className="grid gap-4 p-6">
               <div>
                 <Badge className="border-white/10 bg-white/10 text-white">
-                  {heroBadge ?? "Visao operacional"}
+                  {heroBadge ?? "Visão operacional"}
                 </Badge>
                 <h2 data-brand-display="true" className="mt-4 text-3xl font-semibold text-white">
                   {heroTitle ?? title}
@@ -330,6 +374,7 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
             </CardContent>
           </Card>
           <Input
+            ref={searchInputRef}
             aria-label="Buscar"
             placeholder={searchPlaceholder ?? "Buscar por nome, codigo, documento ou SKU"}
             value={search}
@@ -362,7 +407,7 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
               }}
             />
             <Select
-              aria-label="Direcao"
+              aria-label="Direção"
               options={[
                 { label: "Crescente", value: "asc" },
                 { label: "Decrescente", value: "desc" },
@@ -374,11 +419,11 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
               }}
             />
             <Select
-              aria-label="Itens por pagina"
+              aria-label="Itens por página"
               options={[
-                { label: "10 por pagina", value: "10" },
-                { label: "20 por pagina", value: "20" },
-                { label: "50 por pagina", value: "50" },
+                { label: "10 por página", value: "10" },
+                { label: "20 por página", value: "20" },
+                { label: "50 por página", value: "50" },
               ]}
               value={pageSize}
               onChange={(event) => {
@@ -387,8 +432,66 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
               }}
             />
           </div>
+          {bulkStatus ? (
+            <BulkActionBar
+              selectedCount={selectedIds.length}
+              itemLabel={bulkStatus.itemLabel}
+              pendingAction={pendingBulkAction}
+              busy={bulkBusy}
+              feedback={bulkFeedback}
+              onRequestAction={setPendingBulkAction}
+              onClear={() => {
+                setSelectedIds([]);
+                setPendingBulkAction(null);
+              }}
+              onCancel={() => setPendingBulkAction(null)}
+              onConfirm={() => void applyBulkStatus()}
+            />
+          ) : null}
+          {loading && !rows.length ? (
+            <LoadingState
+              label={`Carregando ${title.toLowerCase()}`}
+              description="Aguarde enquanto atualizamos a listagem."
+              minHeight="18rem"
+            />
+          ) : (
           <DataTable
             columns={[
+              ...(bulkStatus
+                ? [{
+                    key: "resource-selection",
+                    header: (
+                      <input
+                        type="checkbox"
+                        aria-label={`Selecionar todos os ${bulkStatus.itemLabel} desta página`}
+                        checked={allVisibleSelected}
+                        onChange={(event) => {
+                          setSelectedIds((current) => {
+                            const visible = new Set(rows.map((row) => row.id));
+                            if (event.target.checked) return Array.from(new Set([...current, ...visible]));
+                            return current.filter((id) => !visible.has(id));
+                          });
+                          setBulkFeedback(null);
+                        }}
+                      />
+                    ),
+                    render: (row: T) => (
+                      <input
+                        type="checkbox"
+                        aria-label={`Selecionar ${fieldValue(row, "name") ?? "registro"}`}
+                        checked={selectedIds.includes(row.id)}
+                        onChange={(event) => {
+                          setSelectedIds((current) =>
+                            event.target.checked
+                              ? Array.from(new Set([...current, row.id]))
+                              : current.filter((id) => id !== row.id),
+                          );
+                          setBulkFeedback(null);
+                        }}
+                      />
+                    ),
+                  }]
+                : []),
               ...columns,
               {
                 key: "resource-status",
@@ -427,9 +530,7 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
             ]}
             rows={rows}
             empty={
-              loading ? (
-                "Carregando..."
-              ) : search ? (
+              search ? (
                 <EmptyState
                   eyebrow="Busca sem retorno"
                   title="Nenhum resultado com esse filtro."
@@ -444,13 +545,14 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
               ) : (
                 <EmptyState
                   eyebrow="Base inicial"
-                  title={`Ainda nao ha registros em ${title.toLowerCase()}.`}
+                  title={`Ainda não há registros em ${title.toLowerCase()}.`}
                   description="Use o formulário ao lado para criar o primeiro item deste módulo e iniciar a operação."
                   icon={<FolderSearch size={20} />}
                 />
               )
             }
           />
+          )}
           <div className="flex flex-col gap-3 rounded-xl border border-[var(--brand-border)] bg-white px-4 py-3 text-sm text-slate-600 shadow-[0_10px_24px_rgba(11,29,61,0.04)] md:flex-row md:items-center md:justify-between">
             <p>
               Mostrando{" "}

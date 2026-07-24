@@ -51,7 +51,7 @@ export class AccountantPortalController {
   overview(@Query(new ZodValidationPipe(accountantPortalTokenSchema)) query: never, @Req() request: Request) {
     const input = query as { token?: string; sessionToken?: string; period?: string };
     return this.portal.portalOverview(
-      { token: input.token, sessionToken: input.sessionToken },
+      { sessionToken: input.sessionToken },
       input.period,
       requestMeta(request),
     );
@@ -80,7 +80,7 @@ export class AccountantPortalController {
     @Req() request: Request,
   ) {
     const input = query as { token?: string; sessionToken?: string; period?: string; format: "csv" | "pdf" | "xml" };
-    const auth = { token: input.token, sessionToken: input.sessionToken };
+    const auth = { sessionToken: input.sessionToken };
     const filename = `orien-contador-${input.period ?? "competencia"}`;
     if (input.format === "pdf") {
       response.setHeader("Content-Type", "application/pdf");

@@ -12,9 +12,11 @@ import { AppModule } from "./modules/app.module";
 import { CacheService } from "./modules/cache/cache.service";
 import { DatabaseService } from "./modules/database/database.service";
 import { HttpExceptionFilter } from "./shared/http-exception.filter";
+import { initializeSentry } from "./shared/sentry";
 
 async function bootstrap() {
   const config = loadConfig();
+  initializeSentry(config);
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
 
   app.setGlobalPrefix("api/v1");

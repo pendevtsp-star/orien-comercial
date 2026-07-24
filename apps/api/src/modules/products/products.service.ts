@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import type { AppConfig } from "@sgc/config";
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -7,6 +7,7 @@ import type {
   ProductCreateInput,
   ProductFiscalInput,
   ProductUpdateInput,
+  BulkStatusUpdateInput,
   ResourceListQuery,
 } from "@sgc/types";
 import {
@@ -588,6 +589,53 @@ export class ProductsService {
     const filename = `${randomUUID()}.${extension}`;
     await writeFile(join(folder, filename), content);
     return `/uploads/products/${tenantId}/${filename}`;
+  }
+
+  async bulkUpdateStatus(context: TenantContext, input: BulkStatusUpdateInput) {
+    return this.database.tenantTransaction(context.tenantId, async (client) => {
+      const current = await client.query<{
+        id: string;
+        branch_id: string | null;
+        is_active: boolean;
+      }>(
+        `SELECT id, branch_id, is_active
+         FROM products
+         WHERE tenant_id=$1 AND id=ANY($2::uuid[]) AND deleted_at IS NULL
+         ORDER BY id FOR UPDATE`,
+        [context.tenantId, input.ids],
+      );
+      if (current.rows.length !== input.ids.length) {
+        throw new BadRequestException("Um ou mais produtos não estão disponíveis no seu escopo.");
+      }
+      current.rows.forEach((row) => ensureBranchAccess(context, row.branch_id));
+
+      const updated = await client.query<{ id: string }>(
+        `UPDATE products SET is_active=$3, updated_at=now()
+         WHERE tenant_id=$1 AND id=ANY($2::uuid[]) AND deleted_at IS NULL
+         RETURNING id`,
+        [context.tenantId, input.ids, input.isActive],
+      );
+      const batchId = randomUUID();
+      for (const row of current.rows) {
+        await client.query(
+          `INSERT INTO audit_logs (tenant_id,actor_user_id,action,entity_type,entity_id,metadata)
+           VALUES ($1,$2,'product.bulk_status_updated','product',$3,$4::jsonb)`,
+          [
+            context.tenantId,
+            context.userId ?? null,
+            row.id,
+            JSON.stringify({
+              batchId,
+              previousIsActive: row.is_active,
+              isActive: input.isActive,
+              reason: input.reason ?? null,
+              batchSize: input.ids.length,
+            }),
+          ],
+        );
+      }
+      return { ok: true, updatedCount: updated.rows.length, ids: input.ids, isActive: input.isActive };
+    });
   }
 
   async remove(context: TenantContext, id: string) {

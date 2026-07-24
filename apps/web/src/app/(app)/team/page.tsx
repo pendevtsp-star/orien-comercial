@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, Card, CardContent, DataTable, EmptyState, Input, PageHeader, Select, Tabs } from "@sgc/ui";
+import { Badge, BulkActionBar, type BulkStatusAction, Button, Card, CardContent, DataTable, EmptyState, Input, LoadingState, PageHeader, Select, Tabs } from "@sgc/ui";
 import { DollarSign, LockKeyhole, MailPlus, Plus, RefreshCw, ShieldCheck, Target, UsersRound, type LucideIcon } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../../lib/api";
@@ -148,6 +148,10 @@ export default function TeamPage() {
   const [memberPage, setMemberPage] = useState(1);
   const [memberPagination, setMemberPagination] = useState({ total: 0, page: 1, pageSize: 10 });
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
+  const [memberLoading, setMemberLoading] = useState(false);
+  const [memberBulkBusy, setMemberBulkBusy] = useState(false);
+  const [memberBulkAction, setMemberBulkAction] = useState<BulkStatusAction | null>(null);
+  const [memberBulkFeedback, setMemberBulkFeedback] = useState<string | null>(null);
   const [inviteSearch, setInviteSearch] = useState("");
   const [invitePage, setInvitePage] = useState(1);
   const [invitePagination, setInvitePagination] = useState({ total: 0, page: 1, pageSize: 10 });
@@ -223,6 +227,7 @@ export default function TeamPage() {
 
   async function loadMembers() {
     setError(null);
+    setMemberLoading(true);
     try {
       const query = new URLSearchParams({ page: String(memberPage), pageSize: "10" });
       if (memberSearch) query.set("search", memberSearch);
@@ -233,6 +238,8 @@ export default function TeamPage() {
       setSelectedMembers([]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao carregar membros.");
+    } finally {
+      setMemberLoading(false);
     }
   }
 
@@ -287,25 +294,24 @@ export default function TeamPage() {
     }
   }
 
-  async function bulkUpdateMembers(status: "active" | "disabled") {
-    const targets = members.filter((member) => selectedMembers.includes(member.membershipId));
-    if (!targets.length) return;
+  async function bulkUpdateMembers() {
+    if (!selectedMembers.length || !memberBulkAction) return;
+    setMemberBulkBusy(true);
+    const selectedCount = selectedMembers.length;
+    const status = memberBulkAction === "activate" ? "active" : "disabled";
     try {
-      await Promise.all(
-        targets.map((member) =>
-          apiFetch(`/memberships/${member.membershipId}`, {
-            method: "PATCH",
-            body: JSON.stringify({
-              roleId: member.roleId,
-              branchId: member.branchId ?? undefined,
-              status
-            })
-          })
-        )
-      );
+      await apiFetch("/memberships/bulk/status", {
+        method: "POST",
+        body: JSON.stringify({ membershipIds: selectedMembers, status }),
+      });
+      setMemberBulkFeedback(`${selectedCount} ${selectedCount === 1 ? "acesso foi atualizado" : "acessos foram atualizados"}.`);
+      setMemberBulkAction(null);
       await loadMembers();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao atualizar membros selecionados.");
+      setMemberBulkAction(null);
+    } finally {
+      setMemberBulkBusy(false);
     }
   }
 
@@ -406,7 +412,7 @@ export default function TeamPage() {
         <TeamMetric title="Membros" value={members.length} detail="Pessoas com acesso ao tenant" icon={UsersRound} />
         <TeamMetric title="Convites pendentes" value={invites.length} detail="Entradas aguardando aceite" icon={MailPlus} />
         <TeamMetric title="Perfis ativos" value={members.filter((member) => member.status === "active").length} detail="Acessos operacionais habilitados" icon={ShieldCheck} />
-        <TeamMetric title="Auditoria recente" value={audit.length} detail="Eventos carregados para conferencia" icon={LockKeyhole} accent />
+        <TeamMetric title="Auditoria recente" value={audit.length} detail="Eventos carregados para conferência" icon={LockKeyhole} accent />
       </section>
 
       <Tabs
@@ -422,12 +428,12 @@ export default function TeamPage() {
                 <Card variant="brand" className="overflow-hidden shadow-[0_28px_64px_rgba(11,29,61,0.18)]">
                   <CardContent className="grid gap-4 p-6 lg:grid-cols-[1.1fr_0.9fr]">
                     <div>
-                      <Badge className="border-white/10 bg-white/10 text-white">Governanca de acesso</Badge>
+                      <Badge className="border-white/10 bg-white/10 text-white">Governança de acesso</Badge>
                       <h2 data-brand-display="true" className="mt-4 text-3xl font-semibold text-white">
                         Equipe, perfis e escopo por filial com leitura imediata.
                       </h2>
                       <p className="mt-3 max-w-2xl text-sm leading-6 text-white/72">
-                        A operacao consegue enxergar quem acessa o tenant, em qual contexto e com qual nivel de permissao.
+                        A operação mostra quem acessa a empresa, em qual contexto e com qual nível de permissão.
                       </p>
                     </div>
                     <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/6 p-4">
@@ -437,7 +443,7 @@ export default function TeamPage() {
                     </div>
                   </CardContent>
                 </Card>
-                <div className="grid gap-3 md:grid-cols-[1.4fr_repeat(3,minmax(0,1fr))]">
+                <div className="grid gap-3 md:grid-cols-[1.4fr_minmax(0,1fr)]">
                   <Input
                     aria-label="Buscar membros"
                     placeholder="Buscar por nome ou e-mail"
@@ -460,30 +466,55 @@ export default function TeamPage() {
                       setMemberPage(1);
                     }}
                   />
-                  <Button variant="secondary" disabled={!selectedMembers.length} onClick={() => void bulkUpdateMembers("active")}>
-                    Reativar selecionados
-                  </Button>
-                  <Button variant="secondary" disabled={!selectedMembers.length} onClick={() => void bulkUpdateMembers("disabled")}>
-                    Desativar selecionados
-                  </Button>
                 </div>
+                <BulkActionBar
+                  selectedCount={selectedMembers.length}
+                  itemLabel="acessos"
+                  pendingAction={memberBulkAction}
+                  busy={memberBulkBusy}
+                  feedback={memberBulkFeedback}
+                  onRequestAction={(action) => {
+                    setMemberBulkAction(action);
+                    setMemberBulkFeedback(null);
+                  }}
+                  onClear={() => {
+                    setSelectedMembers([]);
+                    setMemberBulkAction(null);
+                  }}
+                  onCancel={() => setMemberBulkAction(null)}
+                  onConfirm={() => void bulkUpdateMembers()}
+                />
+                {memberLoading && !members.length ? (
+                  <LoadingState label="Carregando equipe" description="Consultando acessos, perfis e escopos autorizados." minHeight="18rem" />
+                ) : (
                 <DataTable
                   rows={members.map((member) => ({ ...member, id: member.membershipId }))}
                   empty={
                     <EmptyState
                       eyebrow="Acesso ao tenant"
                       title="Nenhum membro encontrado."
-                      description="Assim que usuarios forem vinculados ao tenant, eles aparecerao aqui com perfil, escopo e status."
+                      description="Assim que usuários forem vinculados à empresa, eles aparecerão aqui com perfil, escopo e status."
                       icon={<UsersRound size={20} />}
                     />
                   }
                   columns={[
                     {
                       key: "select",
-                      header: "Selecionar",
+                      header: (
+                        <input
+                          type="checkbox"
+                          aria-label="Selecionar todos os acessos desta página"
+                          checked={members.length > 0 && members.every((member) => selectedMembers.includes(member.membershipId))}
+                          onChange={(event) => {
+                            setSelectedMembers(event.target.checked ? members.map((member) => member.membershipId) : []);
+                            setMemberBulkFeedback(null);
+                          }}
+                        />
+                      ),
                       render: (row) => (
                         <input
                           type="checkbox"
+                          aria-label={`Selecionar acesso de ${row.userName}`}
                           checked={selectedMembers.includes(row.membershipId)}
                           onChange={(event) => {
                             setSelectedMembers((current) =>
@@ -498,11 +529,11 @@ export default function TeamPage() {
                     { key: "name", header: "Pessoa", render: (row) => `${row.userName} · ${row.userEmail}` },
                     { key: "role", header: "Perfil", render: (row) => row.roleName ?? row.roleSlug },
                     { key: "branch", header: "Escopo", render: (row) => row.branchName ?? "Global" },
-                    { key: "status", header: "Status", render: (row) => <Badge>{row.status}</Badge> },
-                    { key: "permissions", header: "Permissoes", render: (row) => `${row.permissions.length} regras` },
+                    { key: "status", header: "Status", render: (row) => <Badge>{row.status === "active" ? "Ativo" : "Desativado"}</Badge> },
+                    { key: "permissions", header: "Permissões", render: (row) => `${row.permissions.length} regras` },
                     {
                       key: "actions",
-                      header: "Acoes",
+                      header: "Ações",
                       render: (row) => (
                         <Button variant="secondary" onClick={() => void updateMember(row)}>
                           {row.status === "active" ? "Desativar" : "Reativar"}
@@ -511,6 +542,7 @@ export default function TeamPage() {
                     }
                   ]}
                 />
+                )}
                 <PaginationFooter
                   page={memberPagination.page}
                   pageSize={memberPagination.pageSize}
@@ -792,7 +824,7 @@ export default function TeamPage() {
                     <EmptyState
                       eyebrow="Rastreabilidade"
                       title="Sem eventos de auditoria."
-                      description="Acoes criticas de acesso e governanca ficarao registradas aqui assim que forem executadas."
+                      description="Ações críticas de acesso e governança ficarão registradas aqui assim que forem executadas."
                       icon={<LockKeyhole size={20} />}
                     />
                   }

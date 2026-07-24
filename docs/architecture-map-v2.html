@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orien Comercial - Mapa de Arquitetura V2 (Proposta)</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+    h1 {
+      text-align: center;
+      font-size: 2.5rem;
+      background: linear-gradient(90deg, #34d399, #38bdf8, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 0.5rem;
+    }
+    .subtitle {
+      text-align: center;
+      color: #94a3b8;
+      font-size: 1.1rem;
+      margin-bottom: 0.5rem;
+    }
+    .version-badge {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+    .version-badge span {
+      background: rgba(52, 211, 153, 0.2);
+      color: #34d399;
+      padding: 0.5rem 1.5rem;
+      border-radius: 999px;
+      font-size: 0.9rem;
+      border: 1px solid rgba(52, 211, 153, 0.3);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 1.5rem;
+      max-width: 1600px;
+      margin: 0 auto;
+    }
+    .card {
+      background: rgba(30, 41, 59, 0.8);
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      border-radius: 16px;
+      padding: 1.5rem;
+      backdrop-filter: blur(10px);
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+    }
+    .icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+    }
+    .card-title { font-size: 1.1rem; font-weight: 600; }
+    .card-desc { font-size: 0.85rem; color: #94a3b8; }
+    .tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.75rem; }
+    .tag {
+      font-size: 0.7rem;
+      padding: 0.25rem 0.6rem;
+      border-radius: 999px;
+      background: rgba(56, 189, 248, 0.1);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.2);
+    }
+    .tag.green { background: rgba(52, 211, 153, 0.1); color: #34d399; border-color: rgba(52, 211, 153, 0.2); }
+    .tag.purple { background: rgba(192, 132, 252, 0.1); color: #c084fc; border-color: rgba(192, 132, 252, 0.2); }
+    .tag.orange { background: rgba(251, 146, 60, 0.1); color: #fb923c; border-color: rgba(251, 146, 60, 0.2); }
+    .tag.pink { background: rgba(244, 114, 182, 0.1); color: #f472b6; border-color: rgba(244, 114, 182, 0.2); }
+    .tag.new { background: rgba(52, 211, 153, 0.2); color: #34d399; border-color: #34d399; }
+
+    .api-bg { background: linear-gradient(135deg, #1e40af, #3b82f6); }
+    .web-bg { background: linear-gradient(135deg, #059669, #10b981); }
+    .marketing-bg { background: linear-gradient(135deg, #7c3aed, #a78bfa); }
+    .admin-bg { background: linear-gradient(135deg, #dc2626, #f87171); }
+    .db-bg { background: linear-gradient(135deg, #d97706, #fbbf24); }
+    .auth-bg { background: linear-gradient(135deg, #0891b2, #22d3ee); }
+    .config-bg { background: linear-gradient(135deg, #6366f1, #818cf8); }
+    .ui-bg { background: linear-gradient(135deg, #ec4899, #f472b6); }
+    .docs-bg { background: linear-gradient(135deg, #14b8a6, #5eead4); }
+    .repo-bg { background: linear-gradient(135deg, #059669, #34d399); }
+
+    .section-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin: 2rem 0 1rem;
+      padding-left: 0.5rem;
+      border-left: 4px solid #34d399;
+      max-width: 1600px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .module-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+    }
+    .module-item {
+      font-size: 0.75rem;
+      padding: 0.4rem 0.6rem;
+      background: rgba(15, 23, 42, 0.6);
+      border-radius: 8px;
+      border: 1px solid rgba(148, 163, 184, 0.1);
+      text-align: center;
+      transition: background 0.2s;
+    }
+    .module-item:hover {
+      background: rgba(52, 211, 153, 0.1);
+      border-color: rgba(52, 211, 153, 0.3);
+    }
+    .module-item.new {
+      background: rgba(52, 211, 153, 0.15);
+      border-color: rgba(52, 211, 153, 0.3);
+      color: #34d399;
+    }
+
+    .arch-flow {
+      max-width: 1600px;
+      margin: 2rem auto;
+      padding: 2rem;
+      background: rgba(30, 41, 59, 0.5);
+      border-radius: 16px;
+      border: 1px solid rgba(148, 163, 184, 0.1);
+    }
+    .flow-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      margin: 1rem 0;
+      flex-wrap: wrap;
+    }
+    .flow-box {
+      padding: 0.75rem 1.5rem;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      text-align: center;
+      min-width: 120px;
+    }
+    .flow-arrow {
+      font-size: 1.5rem;
+      color: #64748b;
+    }
+
+    .stats {
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      margin: 1.5rem 0;
+      flex-wrap: wrap;
+    }
+    .stat { text-align: center; }
+    .stat-num {
+      font-size: 2rem;
+      font-weight: 700;
+      background: linear-gradient(90deg, #34d399, #38bdf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .stat-label { font-size: 0.85rem; color: #94a3b8; }
+
+    .comparison {
+      max-width: 1600px;
+      margin: 2rem auto;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+    }
+    .comparison-card {
+      padding: 1.5rem;
+      border-radius: 16px;
+      background: rgba(30, 41, 59, 0.5);
+      border: 1px solid rgba(148, 163, 184, 0.1);
+    }
+    .comparison-card h3 {
+      margin-bottom: 1rem;
+      font-size: 1.1rem;
+    }
+    .comparison-card.before h3 { color: #f87171; }
+    .comparison-card.after h3 { color: #34d399; }
+    .comparison-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.5rem 0;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+      font-size: 0.85rem;
+    }
+    .comparison-item:last-child { border-bottom: none; }
+
+    .full-width { grid-column: 1 / -1; }
+
+    .tree {
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 0.8rem;
+      line-height: 1.6;
+      background: rgba(15, 23, 42, 0.6);
+      padding: 1rem;
+      border-radius: 8px;
+      margin-top: 0.75rem;
+      overflow-x: auto;
+    }
+    .tree .folder { color: #38bdf8; }
+    .tree .file { color: #94a3b8; }
+    .tree .new { color: #34d399; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>Orien Comercial</h1>
+  <p class="subtitle">Mapa de Arquitetura - Versao Proposta (V2)</p>
+  <div class="version-badge"><span>REFATORACAO PROPOSTA</span></div>
+
+  <div class="stats">
+    <div class="stat"><div class="stat-num">4</div><div class="stat-label">Aplicacoes</div></div>
+    <div class="stat"><div class="stat-num">6</div><div class="stat-label">Pacotes</div></div>
+    <div class="stat"><div class="stat-num">34</div><div class="stat-label">Modulos API</div></div>
+    <div class="stat"><div class="stat-num">13</div><div class="stat-label">Rotas Web</div></div>
+  </div>
+
+  <!-- Architecture Flow -->
+  <div class="arch-flow">
+    <h2 style="text-align:center; margin-bottom:1rem; font-size:1.2rem; color:#94a3b8;">Fluxo da Arquitetura V2</h2>
+    <div class="flow-row">
+      <div class="flow-box" style="background:rgba(124,58,237,0.3); border:1px solid #a78bfa;">Marketing<br><small>Landing Page</small></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-box" style="background:rgba(5,150,105,0.3); border:1px solid #10b981;">Web<br><small>Painel (13 rotas)</small></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-box" style="background:rgba(30,64,175,0.3); border:1px solid #3b82f6;">API<br><small>NestJS + Repository</small></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-box" style="background:rgba(217,119,6,0.3); border:1px solid #fbbf24;">PostgreSQL<br><small>+ Redis</small></div>
+    </div>
+    <div class="flow-row">
+      <div class="flow-box" style="background:rgba(220,38,38,0.3); border:1px solid #f87171;">Admin<br><small>Painel Admin</small></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-box" style="background:rgba(30,64,175,0.3); border:1px solid #3b82f6;">API<br><small>NestJS</small></div>
+    </div>
+  </div>
+
+  <!-- Comparison -->
+  <div class="comparison">
+    <div class="comparison-card before">
+      <h3>ANTES (V1)</h3>
+      <div class="comparison-item"><span>Rotas Web</span><span>31 rotas</span></div>
+      <div class="comparison-item"><span>Services</span><span>God Methods (500+ linhas)</span></div>
+      <div class="comparison-item"><span>Data Access</span><span>SQL inline</span></div>
+      <div class="comparison-item"><span>Validacao</span><span>Manual misturada</span></div>
+      <div class="comparison-item"><span>Fidelidade</span><span>Dentro de sales</span></div>
+      <div class="comparison-item"><span>Comissao</span><span>Dentro de sales</span></div>
+    </div>
+    <div class="comparison-card after">
+      <h3>DEPOIS (V2)</h3>
+      <div class="comparison-item"><span>Rotas Web</span><span style="color:#34d399">13 rotas (-58%)</span></div>
+      <div class="comparison-item"><span>Services</span><span style="color:#34d399">Fino (&lt;100 linhas)</span></div>
+      <div class="comparison-item"><span>Data Access</span><span style="color:#34d399">Repository Layer</span></div>
+      <div class="comparison-item"><span>Validacao</span><span style="color:#34d399">Zod padronizado</span></div>
+      <div class="comparison-item"><span>Fidelidade</span><span style="color:#34d399">Modulo dedicado</span></div>
+      <div class="comparison-item"><span>Comissao</span><span style="color:#34d399">Modulo dedicado</span></div>
+    </div>
+  </div>
+
+  <h2 class="section-title">Backend (API) - Nova Estrutura</h2>
+  <div class="grid">
+    <!-- API Main -->
+    <div class="card">
+      <div class="card-header">
+        <div class="icon api-bg">API</div>
+        <div>
+          <div class="card-title">apps/api/src</div>
+          <div class="card-desc">Backend - NestJS com Repository Layer</div>
+        </div>
+      </div>
+      <div class="tree">
+<span class="folder">modules/</span>
+  <span class="folder">sales/</span>
+    <span class="file">sales.controller.ts</span>
+    <span class="file">sales.service.ts</span> <span class="new">[FINO]</span>
+    <span class="new">sales.repository.ts</span>
+    <span class="new">sales.validators.ts</span>
+    <span class="file">sales.module.ts</span>
+  <span class="folder">loyalty/</span> <span class="new">[NOVO]</span>
+    <span class="new">loyalty.service.ts</span>
+    <span class="new">loyalty.repository.ts</span>
+    <span class="new">loyalty.module.ts</span>
+  <span class="folder">commission/</span> <span class="new">[NOVO]</span>
+    <span class="new">commission.service.ts</span>
+    <span class="new">commission.module.ts</span>
+  <span class="folder">credit/</span> <span class="new">[NOVO]</span>
+    <span class="new">credit.service.ts</span>
+    <span class="new">credit.module.ts</span>
+  <span class="folder">financial/</span>
+    <span class="file">financial.controller.ts</span>
+    <span class="file">financial.service.ts</span>
+    <span class="new">financial.repository.ts</span>
+  <span class="folder">stock/</span>
+    <span class="file">stock.service.ts</span>
+    <span class="new">stock.repository.ts</span>
+  <span class="folder">...</span> <span class="file">(outros 28 modulos)</span>
+<span class="folder">shared/</span>
+  <span class="folder">guards/</span>
+  <span class="folder">decorators/</span>
+  <span class="folder">filters/</span>
+  <span class="folder">pipes/</span>
+  <span class="new">interceptors/</span>
+      </div>
+    </div>
+
+    <!-- Modules List -->
+    <div class="card">
+      <div class="card-header">
+        <div class="icon" style="background:linear-gradient(135deg, #34d399, #10b981);">MOD</div>
+        <div>
+          <div class="card-title">Modulos API (34 total)</div>
+          <div class="card-desc">Modulos existentes + 3 novos extraidos</div>
+        </div>
+      </div>
+      <div class="module-list">
+        <div class="module-item">auth</div>
+        <div class="module-item">branches</div>
+        <div class="module-item">cash-registers</div>
+        <div class="module-item">customers</div>
+        <div class="module-item">dashboard</div>
+        <div class="module-item">fiscal</div>
+        <div class="module-item">integrations</div>
+        <div class="module-item">products</div>
+        <div class="module-item">purchases</div>
+        <div class="module-item">reports</div>
+        <div class="module-item">sales</div>
+        <div class="module-item">stock</div>
+        <div class="module-item">suppliers</div>
+        <div class="module-item">tasks</div>
+        <div class="module-item">support</div>
+        <div class="module-item">updates</div>
+        <div class="module-item new">loyalty</div>
+        <div class="module-item new">commission</div>
+        <div class="module-item new">credit</div>
+      </div>
+      <div class="tags" style="margin-top:1rem;">
+        <span class="tag new">+3 modulos novos</span>
+        <span class="tag">Repository Layer</span>
+        <span class="tag">Zod Validators</span>
+      </div>
+    </div>
+
+    <!-- Repository Pattern -->
+    <div class="card full-width">
+      <div class="card-header">
+        <div class="icon repo-bg">REP</div>
+        <div>
+          <div class="card-title">Padrao Repository (NOVO)</div>
+          <div class="card-desc">Separacao entre logica de negocio e acesso a dados</div>
+        </div>
+      </div>
+      <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:1rem; margin-top:1rem;">
+        <div style="background:rgba(15,23,42,0.6); padding:1rem; border-radius:8px; border:1px solid rgba(52,211,153,0.2);">
+          <h4 style="color:#34d399; margin-bottom:0.5rem;">Controller</h4>
+          <p style="font-size:0.8rem; color:#94a3b8;">Handlers HTTP, valida entrada, chama service</p>
+          <code style="font-size:0.75rem; color:#38bdf8;">~30-50 linhas</code>
+        </div>
+        <div style="background:rgba(15,23,42,0.6); padding:1rem; border-radius:8px; border:1px solid rgba(56,189,248,0.2);">
+          <h4 style="color:#38bdf8; margin-bottom:0.5rem;">Service</h4>
+          <p style="font-size:0.8rem; color:#94a3b8;">Orquestracao, regras de negocio, transacoes</p>
+          <code style="font-size:0.75rem; color:#38bdf8;">~50-100 linhas</code>
+        </div>
+        <div style="background:rgba(15,23,42,0.6); padding:1rem; border-radius:8px; border:1px solid rgba(192,132,252,0.2);">
+          <h4 style="color:#c084fc; margin-bottom:0.5rem;">Repository</h4>
+          <p style="font-size:0.8rem; color:#94a3b8;">SQL queries, mapeamento, acesso a banco</p>
+          <code style="font-size:0.75rem; color:#38bdf8;">~80-150 linhas</code>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="section-title">Frontend (Web) - Rotas Consolidadas</h2>
+  <div class="grid">
+    <!-- Web Routes -->
+    <div class="card">
+      <div class="card-header">
+        <div class="icon web-bg">WEB</div>
+        <div>
+          <div class="card-title">apps/web/src/app/(app)</div>
+          <div class="card-desc">31 rotas → 13 rotas principais</div>
+        </div>
+      </div>
+      <div class="tree">
+<span class="folder">(app)/</span>
+  <span class="folder">dashboard/</span>
+  <span class="folder">comercial/</span> <span class="new">[CONSOLIDADO]</span>
+    <span class="new">vendas/</span> <span class="file">&larr; sales/</span>
+    <span class="new">pdv/</span> <span class="file">&larr; pos/</span>
+    <span class="new">clientes/</span> <span class="file">&larr; customers/</span>
+    <span class="new">fidelidade/</span> <span class="file">&larr; loyalty/</span>
+  <span class="folder">catalogo/</span> <span class="new">[CONSOLIDADO]</span>
+    <span class="new">produtos/</span> <span class="file">&larr; products/</span>
+    <span class="new">fornecedores/</span> <span class="file">&larr; suppliers/</span>
+    <span class="new">categorias/</span> <span class="file">&larr; catalog-tools/</span>
+  <span class="folder">financeiro/</span> <span class="new">[CONSOLIDADO]</span>
+    <span class="new">contas-a-receber/</span>
+    <span class="new">contas-a-pagar/</span>
+    <span class="new">conciliacao/</span>
+    <span class="new">relatorios/</span> <span class="file">&larr; reports/</span>
+  <span class="folder">operacoes/</span> <span class="new">[CONSOLIDADO]</span>
+    <span class="new">estoque/</span> <span class="file">&larr; stock/</span>
+    <span class="new">compras/</span> <span class="file">&larr; purchases/</span>
+    <span class="new">caixa/</span> <span class="file">&larr; cash-registers</span>
+  <span class="folder">fiscal/</span>
+  <span class="folder">equipe/</span> <span class="new">[CONSOLIDADO]</span>
+    <span class="new">usuarios/</span> <span class="file">&larr; team/</span>
+    <span class="new">sessoes/</span> <span class="file">&larr; sessions/</span>
+    <span class="new">permissoes/</span> <span class="file">&larr; preferences/</span>
+  <span class="folder">configuracoes/</span> <span class="new">[CONSOLIDADO]</span>
+    <span class="new">impressoras/</span> <span class="file">&larr; printers/</span>
+    <span class="new">integracoes/</span> <span class="file">&larr; integrations/</span>
+    <span class="new">filiais/</span> <span class="file">&larr; branches/</span>
+  <span class="folder">plataforma/</span>
+  <span class="folder">suporte/</span>
+  <span class="folder">alertas/</span>
+  <span class="folder">tarefas/</span>
+      </div>
+    </div>
+
+    <!-- Frontend Components -->
+    <div class="card">
+      <div class="card-header">
+        <div class="icon" style="background:linear-gradient(135deg, #ec4899, #f472b6);">UI</div>
+        <div>
+          <div class="card-title">Componentes Compartilhados</div>
+          <div class="card-desc">Novos modulos de UI reutilizaveis</div>
+        </div>
+      </div>
+      <div class="tree">
+<span class="folder">components/</span>
+  <span class="folder">ui/</span> <span class="file">&larr; de packages/ui</span>
+  <span class="new">forms/</span>
+    <span class="new">FormInput.tsx</span>
+    <span class="new">FormSelect.tsx</span>
+    <span class="new">FormDatePicker.tsx</span>
+    <span class="new">FormModal.tsx</span>
+  <span class="new">tables/</span>
+    <span class="new">DataTable.tsx</span>
+    <span class="new">Pagination.tsx</span>
+    <span class="new">ColumnConfig.tsx</span>
+  <span class="new">layout/</span>
+    <span class="new">Sidebar.tsx</span>
+    <span class="new">Header.tsx</span>
+    <span class="new">Breadcrumb.tsx</span>
+    <span class="new">PageWrapper.tsx</span>
+<span class="folder">lib/</span>
+  <span class="folder">hooks/</span>
+    <span class="new">use-auth.ts</span>
+    <span class="new">use-tenant.ts</span>
+    <span class="new">use-pagination.ts</span>
+    <span class="new">use-debounce.ts</span>
+  <span class="folder">utils/</span>
+  <span class="file">api.ts</span>
+      </div>
+      <div class="tags">
+        <span class="tag new">+12 componentes novos</span>
+        <span class="tag">Reutilizaveis</span>
+        <span class="tag">Tipados</span>
+      </div>
+    </div>
+
+    <!-- Web Stats -->
+    <div class="card">
+      <div class="card-header">
+        <div class="icon web-bg">STATS</div>
+        <div>
+          <div class="card-title">Impacto na Navegacao</div>
+          <div class="card-desc">Melhoria na organizacao do menu</div>
+        </div>
+      </div>
+      <div style="margin-top:1rem;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:0.5rem;">
+          <span style="font-size:0.85rem;">Menu Principal</span>
+          <span style="color:#34d399; font-weight:600;">13 itens</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:0.5rem;">
+          <span style="font-size:0.85rem;">Submenus</span>
+          <span style="color:#34d399; font-weight:600;">3-4 por modulo</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:0.5rem;">
+          <span style="font-size:0.85rem;">Profundidade Max</span>
+          <span style="color:#34d399; font-weight:600;">3 niveis</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:0.5rem;">
+          <span style="font-size:0.85rem;">Breadcrumbs</span>
+          <span style="color:#34d399; font-weight:600;">Automaticos</span>
+        </div>
+      </div>
+      <div class="tags" style="margin-top:1rem;">
+        <span class="tag green">UX Melhorada</span>
+        <span class="tag green">Navegacao Clara</span>
+        <span class="tag green">Menus Organizados</span>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="section-title">Pacotes Compartilhados</h2>
+  <div class="grid">
+    <!-- DB -->
+    <div class="card">
+      <div class="card-header">
+        <div class="icon db-bg">DB</div>
+        <div>
+          <div class="card-title">packages/db</div>
+          <div class="card-desc">Schema + Repository Base</div>
+        </div>
+      </div>
+      <div class="tags">
+        <span class="tag orange">Drizzle ORM</span>
+        <span class="tag orange">PostgreSQL</span>
+        <span class="tag new">BaseRepository</span>
+      </div>
+    </div>
+
+    <!-- Auth -->
+    <div class="card">
+      <div class="card-header">
+        <div class="icon auth-bg">AUTH</div>
+        <div>
+          <div class="card-title">packages/auth</div>
+          <div class="card-desc">JWT + RBAC + Guards</div>
+        </div>
+      </div>
+      <div class="tags">
+        <span class="tag">JWT</span>
+        <span class="tag">RBAC</span>
+        <span class="tag">Guards</span>
+      </div>
+    </div>
+
+    <!-- UI -->
+    <div class="card">
+      <div class="card-header">
+        <div class="icon ui-bg">UI</div>
+        <div>
+          <div class="card-title">packages/ui</div>
+          <div class="card-desc">Componentes React Base</div>
+        </div>
+      </div>
+      <div class="tags">
+        <span class="tag pink">React</span>
+        <span class="tag pink">Tailwind</span>
+        <span class="tag pink">Storybook</span>
+      </div>
+    </div>
+
+    <!-- Documents -->
+    <div class="card">
+      <div class="card-header">
+        <div class="icon docs-bg">DOC</div>
+        <div>
+          <div class="card-title">packages/documents</div>
+          <div class="card-desc">Templates + Receipts + Emails</div>
+        </div>
+      </div>
+      <div class="tags">
+        <span class="tag">PDF</span>
+        <span class="tag">HTML</span>
+        <span class="tag new">Emails</span>
+        <span class="tag new">WhatsApp</span>
+      </div>
+    </div>
+
+    <!-- Types -->
+    <div class="card">
+      <div class="card-header">
+        <div class="icon" style="background:linear-gradient(135deg, #8b5cf6, #a78bfa);">TS</div>
+        <div>
+          <div class="card-title">packages/types</div>
+          <div class="card-desc">Types + Zod Schemas</div>
+        </div>
+      </div>
+      <div class="tags">
+        <span class="tag purple">TypeScript</span>
+        <span class="tag new">Zod Schemas</span>
+        <span class="tag new">Validators</span>
+      </div>
+    </div>
+
+    <!-- Config -->
+    <div class="card">
+      <div class="card-header">
+        <div class="icon config-bg">CFG</div>
+        <div>
+          <div class="card-title">packages/config</div>
+          <div class="card-desc">Env + Constants</div>
+        </div>
+      </div>
+      <div class="tags">
+        <span class="tag purple">Env</span>
+        <span class="tag purple">Constants</span>
+        <span class="tag purple">Features</span>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="section-title">Mudancas no .gitignore</h2>
+  <div class="grid">
+    <div class="card full-width">
+      <div class="card-header">
+        <div class="icon" style="background:linear-gradient(135deg, #f59e0b, #fbbf24);">SEC</div>
+        <div>
+          <div class="card-title">Protecoes Adicionadas</div>
+          <div class="card-desc">Itens ausentes que serao incluidos</div>
+        </div>
+      </div>
+      <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:1rem; margin-top:1rem;">
+        <div style="background:rgba(15,23,42,0.6); padding:1rem; border-radius:8px; border:1px solid rgba(245,158,11,0.2);">
+          <h4 style="color:#fbbf24; margin-bottom:0.5rem;">Seguranca</h4>
+          <p style="font-size:0.8rem; color:#94a3b8;">*.pem, *.key, *.cert, *.p12</p>
+          <p style="font-size:0.8rem; color:#94a3b8;">*.credentials.json</p>
+          <p style="font-size:0.8rem; color:#94a3b8;">service-account*.json</p>
+        </div>
+        <div style="background:rgba(15,23,42,0.6); padding:1rem; border-radius:8px; border:1px solid rgba(56,189,248,0.2);">
+          <h4 style="color:#38bdf8; margin-bottom:0.5rem;">IDE/Editor</h4>
+          <p style="font-size:0.8rem; color:#94a3b8;">.vscode/settings.json</p>
+          <p style="font-size:0.8rem; color:#94a3b8;">.idea/</p>
+          <p style="font-size:0.8rem; color:#94a3b8;">*.swp, *.swo</p>
+        </div>
+        <div style="background:rgba(15,23,42,0.6); padding:1rem; border-radius:8px; border:1px solid rgba(192,132,252,0.2);">
+          <h4 style="color:#c084fc; margin-bottom:0.5rem;">Build/Temp</h4>
+          <p style="font-size:0.8rem; color:#94a3b8;">build/, *.js.map</p>
+          <p style="font-size:0.8rem; color:#94a3b8;">*.tmp, *.temp, *.bak</p>
+          <p style="font-size:0.8rem; color:#94a3b8;">.pnpm-store/</p>
+        </div>
+      </div>
+      <div class="tags" style="margin-top:1rem;">
+        <span class="tag">Correcao: \ → /</span>
+        <span class="tag">+20 itens novos</span>
+        <span class="tag">.dockerignore atualizado</span>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="section-title">Fluxo de Implementacao</h2>
+  <div class="arch-flow">
+    <div style="display:grid; grid-template-columns: repeat(5, 1fr); gap:1rem; text-align:center;">
+      <div style="padding:1rem; background:rgba(52,211,153,0.2); border-radius:12px; border:1px solid #34d399;">
+        <div style="font-size:1.5rem; margin-bottom:0.5rem;">1</div>
+        <div style="font-weight:600; margin-bottom:0.25rem;">Preparacao</div>
+        <div style="font-size:0.75rem; color:#94a3b8;">.gitignore<br>.dockerignore</div>
+      </div>
+      <div style="padding:1rem; background:rgba(56,189,248,0.2); border-radius:12px; border:1px solid #38bdf8;">
+        <div style="font-size:1.5rem; margin-bottom:0.5rem;">2</div>
+        <div style="font-weight:600; margin-bottom:0.25rem;">Repository</div>
+        <div style="font-size:0.75rem; color:#94a3b8;">sales.repo<br>financial.repo<br>stock.repo</div>
+      </div>
+      <div style="padding:1rem; background:rgba(192,132,252,0.2); border-radius:12px; border:1px solid #c084fc;">
+        <div style="font-size:1.5rem; margin-bottom:0.5rem;">3</div>
+        <div style="font-weight:600; margin-bottom:0.25rem;">Services</div>
+        <div style="font-size:0.75rem; color:#94a3b8;">loyalty<br>commission<br>credit</div>
+      </div>
+      <div style="padding:1rem; background:rgba(251,146,60,0.2); border-radius:12px; border:1px solid #fb923c;">
+        <div style="font-size:1.5rem; margin-bottom:0.5rem;">4</div>
+        <div style="font-weight:600; margin-bottom:0.25rem;">Frontend</div>
+        <div style="font-size:0.75rem; color:#94a3b8;">Consolidar<br>31 → 13 rotas</div>
+      </div>
+      <div style="padding:1rem; background:rgba(244,114,182,0.2); border-radius:12px; border:1px solid #f472b6;">
+        <div style="font-size:1.5rem; margin-bottom:0.5rem;">5</div>
+        <div style="font-weight:600; margin-bottom:0.25rem;">Componentes</div>
+        <div style="font-size:0.75rem; color:#94a3b8;">forms<br>tables<br>layout</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="text-align:center; margin-top:3rem; color:#64748b; font-size:0.85rem;">
+    Gerado por MiMoCode - Mapa de Arquitetura V2 Orien Comercial<br>
+    <span style="color:#34d399;">Proposta de Refatoracao</span> - Nao executada ainda
+  </div>
+</body>
+</html>

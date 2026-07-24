@@ -13,6 +13,7 @@ interface CustomerRow {
   email?: string;
   whatsapp?: string;
   communicationOptIn: boolean;
+  isActive: boolean;
 }
 
 export default function CustomersPage() {
@@ -30,6 +31,7 @@ export default function CustomersPage() {
       title="Clientes"
       description="Base de consumidores e empresas com consentimento de comunicacao."
       endpoint="/customers"
+      bulkStatus={{ itemLabel: "clientes" }}
       searchPlaceholder="Buscar por nome, documento, e-mail ou WhatsApp"
       heroBadge="Relacionamento comercial"
       heroTitle="Clientes organizados para venda, recorrencia e contato responsavel."
@@ -75,7 +77,7 @@ export default function CustomersPage() {
         { key: "whatsapp", header: "WhatsApp", render: (row) => row.whatsapp ?? "-" },
         {
           key: "optin",
-          header: "Comunicacao",
+          header: "Comunicação",
           render: (row) => <Badge>{row.communicationOptIn ? "Opt-in" : "Sem opt-in"}</Badge>
         }
       ]}

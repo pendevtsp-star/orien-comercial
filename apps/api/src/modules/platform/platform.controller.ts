@@ -15,6 +15,7 @@ import { JwtAuthGuard } from "../../shared/auth.guard";
 import { CurrentUser } from "../../shared/current-user.decorator";
 import type { AuthUser } from "../../shared/request-context";
 import { PlatformService } from "./platform.service";
+import { captureSentryTest } from "../../shared/sentry";
 @UseGuards(JwtAuthGuard)
 @Controller("platform")
 export class PlatformController {
@@ -93,6 +94,10 @@ export class PlatformController {
   @Get("errors") async errors(@CurrentUser() u: AuthUser) {
     await this.ok(u);
     return this.p.errors();
+  }
+  @Post("observability/test") async observabilityTest(@CurrentUser() u: AuthUser) {
+    await this.ok(u);
+    return { sent: captureSentryTest() };
   }
   @Get("webhooks") async webhooks(@CurrentUser() u: AuthUser, @Query("status") status?: string) {
     await this.ok(u);

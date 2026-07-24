@@ -52,6 +52,7 @@ import {
   setTenantId,
 } from "../lib/api";
 import { applyPreferences, defaultPreferences, type UserPreferences } from "../lib/preferences";
+import { ConnectionStatus } from "./connection-status";
 
 type NavigationItem = {
   href: string;
@@ -705,6 +706,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-[var(--brand-surface)]">
+      <a className="orien-skip-link" href="#main-content">
+        Pular para o conteúdo principal
+      </a>
+      <ConnectionStatus />
       {!posProductionMode && mobileNavigationOpen ? (
         <div className="fixed inset-0 z-40 lg:hidden">
           <button
@@ -1102,7 +1107,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         ) : null}
-        <main className={posProductionMode ? "w-full min-w-0 overflow-hidden" : "mx-auto w-full min-w-0 max-w-[1600px] overflow-x-clip px-3 py-5 sm:px-4 lg:px-6 xl:px-8"}>
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className={`orien-app-main ${
+            posProductionMode
+              ? "w-full min-w-0 overflow-hidden"
+              : "mx-auto w-full min-w-0 max-w-[1600px] overflow-x-clip px-3 py-5 sm:px-4 lg:px-6 xl:px-8"
+          }`}
+        >
           {!me ? (
             <div className="py-16 text-center text-sm text-slate-500">Carregando acesso...</div>
           ) : routeAllowed ? (

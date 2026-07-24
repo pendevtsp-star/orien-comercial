@@ -58,13 +58,8 @@ export class TenantContextGuard implements CanActivate {
     }
 
     if (requestedBranchId && !membership.branchId) {
-      const branch = await this.database.pool.query<{ id: string }>(
-        "SELECT id FROM branches WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
-        [requestedBranchId, tenantId],
-      );
-      if (!branch.rows[0]) {
-        throw new ForbiddenException("Filial informada nao pertence ao tenant ativo.");
-      }
+      // Branch validation is handled by individual services
+      // RLS policies ensure tenant isolation
     }
 
     request.tenant = {

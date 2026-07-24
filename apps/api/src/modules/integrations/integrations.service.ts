@@ -347,13 +347,26 @@ export class IntegrationsService {
   }
 
   private validateSmtpSettings(settings: Settings) {
-    if (!settings.from?.trim() || !settings.host?.trim())
+    const from = settings.from?.trim();
+    if (!from || !settings.host?.trim())
       throw new BadRequestException(
         "Informe o e-mail que envia mensagens e o servidor do provedor.",
       );
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from)) {
+      throw new BadRequestException("Informe um e-mail válido para enviar mensagens.");
+    }
     const port = Number(settings.port ?? 587);
     if (!Number.isInteger(port) || port < 1 || port > 65535)
       throw new BadRequestException("Informe uma porta válida.");
+    const security = settings.security ?? "starttls";
+    const securePort =
+      (security === "ssl" && port === 465) ||
+      (security === "starttls" && (port === 587 || port === 2525));
+    if (!securePort) {
+      throw new BadRequestException(
+        "Use uma porta SMTP segura compatível com a conexão escolhida.",
+      );
+    }
   }
 
   private parseSmtpCredentials(secret: string): SmtpCredentials {

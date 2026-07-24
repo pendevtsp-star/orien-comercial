@@ -58,6 +58,7 @@ export default function ProductsPage() {
       title="Produtos"
       description="Cadastro comercial e fiscal com validação de prontidão para emissão de documentos."
       endpoint="/products"
+      bulkStatus={{ itemLabel: "produtos" }}
       searchPlaceholder="Buscar por produto, SKU ou código de barras"
       heroBadge="Catálogo comercial e fiscal"
       heroTitle="Produtos preparados para vender e emitir corretamente."
@@ -66,7 +67,7 @@ export default function ProductsPage() {
         {
           label: "Produtos cadastrados",
           value: (rows) => rows.length,
-          detail: "Itens no catalogo comercial",
+          detail: "Itens no catálogo comercial",
           icon: Boxes,
         },
         {

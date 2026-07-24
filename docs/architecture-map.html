@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orien Comercial - Mapa de Arquitetura</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+    h1 {
+      text-align: center;
+      font-size: 2.5rem;
+      background: linear-gradient(90deg, #38bdf8, #818cf8, #c084fc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 0.5rem;
+    }
+    .subtitle {
+      text-align: center;
+      color: #94a3b8;
+      font-size: 1.1rem;
+      margin-bottom: 2rem;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.5rem;
+      max-width: 1600px;
+      margin: 0 auto;
+    }
+    .card {
+      background: rgba(30, 41, 59, 0.8);
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      border-radius: 16px;
+      padding: 1.5rem;
+      backdrop-filter: blur(10px);
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+    }
+    .icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+    }
+    .card-title { font-size: 1.1rem; font-weight: 600; }
+    .card-desc { font-size: 0.85rem; color: #94a3b8; }
+    .tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.75rem; }
+    .tag {
+      font-size: 0.7rem;
+      padding: 0.25rem 0.6rem;
+      border-radius: 999px;
+      background: rgba(56, 189, 248, 0.1);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.2);
+    }
+    .tag.green { background: rgba(52, 211, 153, 0.1); color: #34d399; border-color: rgba(52, 211, 153, 0.2); }
+    .tag.purple { background: rgba(192, 132, 252, 0.1); color: #c084fc; border-color: rgba(192, 132, 252, 0.2); }
+    .tag.orange { background: rgba(251, 146, 60, 0.1); color: #fb923c; border-color: rgba(251, 146, 60, 0.2); }
+    .tag.pink { background: rgba(244, 114, 182, 0.1); color: #f472b6; border-color: rgba(244, 114, 182, 0.2); }
+
+    .api-bg { background: linear-gradient(135deg, #1e40af, #3b82f6); }
+    .web-bg { background: linear-gradient(135deg, #059669, #10b981); }
+    .marketing-bg { background: linear-gradient(135deg, #7c3aed, #a78bfa); }
+    .admin-bg { background: linear-gradient(135deg, #dc2626, #f87171); }
+    .db-bg { background: linear-gradient(135deg, #d97706, #fbbf24); }
+    .auth-bg { background: linear-gradient(135deg, #0891b2, #22d3ee); }
+    .config-bg { background: linear-gradient(135deg, #6366f1, #818cf8); }
+    .ui-bg { background: linear-gradient(135deg, #ec4899, #f472b6); }
+    .docs-bg { background: linear-gradient(135deg, #14b8a6, #5eead4); }
+    .types-bg { background: linear-gradient(135deg, #8b5cf6, #a78bfa); }
+
+    .section-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin: 2rem 0 1rem;
+      padding-left: 0.5rem;
+      border-left: 4px solid #38bdf8;
+      max-width: 1600px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .module-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+    }
+    .module-item {
+      font-size: 0.75rem;
+      padding: 0.4rem 0.6rem;
+      background: rgba(15, 23, 42, 0.6);
+      border-radius: 8px;
+      border: 1px solid rgba(148, 163, 184, 0.1);
+      text-align: center;
+      transition: background 0.2s;
+    }
+    .module-item:hover {
+      background: rgba(56, 189, 248, 0.1);
+      border-color: rgba(56, 189, 248, 0.3);
+    }
+
+    .arch-flow {
+      max-width: 1600px;
+      margin: 2rem auto;
+      padding: 2rem;
+      background: rgba(30, 41, 59, 0.5);
+      border-radius: 16px;
+      border: 1px solid rgba(148, 163, 184, 0.1);
+    }
+    .flow-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      margin: 1rem 0;
+      flex-wrap: wrap;
+    }
+    .flow-box {
+      padding: 0.75rem 1.5rem;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      text-align: center;
+      min-width: 120px;
+    }
+    .flow-arrow {
+      font-size: 1.5rem;
+      color: #64748b;
+    }
+
+    .stats {
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      margin: 1.5rem 0;
+      flex-wrap: wrap;
+    }
+    .stat {
+      text-align: center;
+    }
+    .stat-num {
+      font-size: 2rem;
+      font-weight: 700;
+      background: linear-gradient(90deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .stat-label { font-size: 0.85rem; color: #94a3b8; }
+
+    .full-width { grid-column: 1 / -1; }
+  </style>
+</head>
+<body>
+  <h1>Orien Comercial</h1>
+  <p class="subtitle">Plataforma Multitenant de Gestao Comercial, Estoque, Financeiro e Relacionamento</p>
+
+  <div class="stats">
+    <div class="stat"><div class="stat-num">4</div><div class="stat-label">Aplicacoes</div></div>
+    <div class="stat"><div class="stat-num">6</div><div class="stat-label">Pacotes</div></div>
+    <div class="stat"><div class="stat-num">31</div><div class="stat-label">Modulos API</div></div>
+    <div class="stat"><div class="stat-num">31</div><div class="stat-label">Rotas Web</div></div>
+  </div>
+
+  <!-- Architecture Flow -->
+  <div class="arch-flow">
+    <h2 style="text-align:center; margin-bottom:1rem; font-size:1.2rem; color:#94a3b8;">Fluxo da Arquitetura</h2>
+    <div class="flow-row">
+      <div class="flow-box" style="background:rgba(124,58,237,0.3); border:1px solid #a78bfa;">Marketing<br><small>Landing Page</small></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-box" style="background:rgba(5,150,105,0.3); border:1px solid #10b981;">Web<br><small>Painel (Next.js)</small></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-box" style="background:rgba(30,64,175,0.3); border:1px solid #3b82f6;">API<br><small>NestJS</small></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-box" style="background:rgba(217,119,6,0.3); border:1px solid #fbbf24;">PostgreSQL<br><small>+ Redis</small></div>
+    </div>
+    <div class="flow-row">
+      <div class="flow-box" style="background:rgba(220,38,38,0.3); border:1px solid #f87171;">Admin<br><small>Painel Admin</small></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-box" style="background:rgba(30,64,175,0.3); border:1px solid #3b82f6;">API<br><small>NestJS</small></div>
+    </div>
+  </div>
+
+  <h2 class="section-title">Aplicacoes (Apps)</h2>
+  <div class="grid">
+    <!-- API -->
+    <div class="card">
+      <div class="card-header">
+        <div class="icon api-bg">API</div>
+        <div>
+          <div class="card-title">apps/api</div>
+          <div class="card-desc">Backend - NestJS + PostgreSQL + Drizzle</div>
+        </div>
+      </div>
+      <p style="font-size:0.85rem; color:#94a3b8; margin-bottom:0.5rem;">
+        API REST principal com RBAC, RLS, cookies HttpOnly, validacao Zod e integracoes.
+      </p>
+      <div class="tags">
+        <span class="tag">NestJS</span>
+        <span class="tag">Drizzle ORM</span>
+        <span class="tag">Zod</span>
+        <span class="tag">RBAC</span>
+        <span class="tag">RLS</span>
+        <span class="tag">Redis</span>
+      </div>
+      <div class="module-list">
+        <div class="module-item">auth</div>
+        <div class="module-item">sales</div>
+        <div class="module-item">stock</div>
+        <div class="module-item">financial</div>
+        <div class="module-item">customers</div>
+        <div class="module-item">products</div>
+        <div class="module-item">branches</div>
+        <div class="module-item">fiscal</div>
+        <div class="module-item">loyalty</div>
+        <div class="module-item">reports</div>
+        <div class="module-item">purchases</div>
+        <div class="module-item">suppliers</div>
+        <div class="module-item">cash-registers</div>
+        <div class="module-item">dashboard</div>
+        <div class="module-item">alerts</div>
+        <div class="module-item">tasks</div>
+        <div class="module-item">support</div>
+        <div class="module-item">integrations</div>
+        <div class="module-item">platform</div>
+        <div class="module-item">tenants</div>
+        <div class="module-item">subscriptions</div>
+        <div class="module-item">trials</div>
+        <div class="module-item">preferences</div>
+        <div class="module-item">operations</div>
+        <div class="module-item">updates</div>
+        <div class="module-item">imports</div>
+        <div class="module-item">cache</div>
+        <div class="module-item">database</div>
+        <div class="module-item">config</div>
+      </div>
+    </div>
+
+    <!-- Web -->
+    <div class="card">
+      <div class="card-header">
+        <div class="icon web-bg">WEB</div>
+        <div>
+          <div class="card-title">apps/web</div>
+          <div class="card-desc">Painel Autenticado - Next.js 16</div>
+        </div>
+      </div>
+      <p style="font-size:0.85rem; color:#94a3b8; margin-bottom:0.5rem;">
+        Frontend do painel de gestao com dashboard, CRUDs e rotas autenticadas.
+      </p>
+      <div class="tags">
+        <span class="tag green">Next.js 16</span>
+        <span class="tag green">React</span>
+        <span class="tag green">Tailwind</span>
+        <span class="tag green">TypeScript</span>
+      </div>
+      <div class="module-list">
+        <div class="module-item">dashboard</div>
+        <div class="module-item">sales</div>
+        <div class="module-item">stock</div>
+        <div class="module-item">financial</div>
+        <div class="module-item">customers</div>
+        <div class="module-item">products</div>
+        <div class="module-item">branches</div>
+        <div class="module-item">fiscal</div>
+        <div class="module-item">loyalty</div>
+        <div class="module-item">reports</div>
+        <div class="module-item">purchases</div>
+        <div class="module-item">suppliers</div>
+        <div class="module-item">pos</div>
+        <div class="module-item">alerts</div>
+        <div class="module-item">tasks</div>
+        <div class="module-item">support</div>
+        <div class="module-item">integrations</div>
+        <div class="module-item">platform</div>
+        <div class="module-item">settings</div>
+        <div class="module-item">team</div>
+        <div class="module-item">audit</div>
+        <div class="module-item">sessions</div>
+        <div class="module-item">printers</div>
+        <div class="module-item">accounting</div>
+        <div class="module-item">catalog-tools</div>
+        <div class="module-item">store-central</div>
+        <div class="module-item">subscription</div>
+        <div class="module-item">updates</div>
+        <div class="module-item">preferences</div>
+      </div>
+    </div>
+
+    <!-- Marketing -->
+    <div class="card">
+      <div class="card-header">
+        <div class="icon marketing-bg">MKT</div>
+        <div>
+          <div class="card-title">apps/marketing</div>
+          <div class="card-desc">Landing Comercial - Next.js 16</div>
+        </div>
+      </div>
+      <p style="font-size:0.85rem; color:#94a3b8; margin-bottom:0.5rem;">
+        Landing page comercial separada do painel, para captação de leads.
+      </p>
+      <div class="tags">
+        <span class="tag purple">Next.js 16</span>
+        <span class="tag purple">Landing Page</span>
+        <span class="tag purple">SEO</span>
+      </div>
+    </div>
+
+    <!-- Admin -->
+    <div class="card">
+      <div class="card-header">
+        <div class="icon admin-bg">ADM</div>
+        <div>
+          <div class="card-title">apps/admin</div>
+          <div class="card-desc">Painel Administrativo - Next.js</div>
+        </div>
+      </div>
+      <p style="font-size:0.85rem; color:#94a3b8; margin-bottom:0.5rem;">
+        Painel de administracao da plataforma para gerenciamento de tenants e configuracoes globais.
+      </p>
+      <div class="tags">
+        <span class="tag orange">Next.js</span>
+        <span class="tag orange">Admin</span>
+        <span class="tag orange">Multi-tenant</span>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="section-title">Pacotes Compartilhados (Packages)</h2>
+  <div class="grid">
+    <!-- DB -->
+    <div class="card">
+      <div class="card-header">
+        <div class="icon db-bg">DB</div>
+        <div>
+          <div class="card-title">packages/db</div>
+          <div class="card-desc">Schema, Migrations e Seed</div>
+        </div>
+      </div>
+      <p style="font-size:0.85rem; color:#94a3b8;">
+        Drizzle ORM com schema compartilhado, migrations automaticas e seeds para dev/homologacao.
+      </p>
+      <div class="tags">
+        <span class="tag orange">Drizzle</span>
+        <span class="tag orange">PostgreSQL</span>
+        <span class="tag orange">Migrations</span>
+      </div>
+    </div>
+
+    <!-- Auth -->
+    <div class="card">
+      <div class="card-header">
+        <div class="icon auth-bg">AUTH</div>
+        <div>
+          <div class="card-title">packages/auth</div>
+          <div class="card-desc">Autenticacao e RBAC</div>
+        </div>
+      </div>
+      <p style="font-size:0.85rem; color:#94a3b8;">
+        Modulo de autenticacao com cookies HttpOnly, JWT, refresh tokens e controle de acesso.
+      </p>
+      <div class="tags">
+        <span class="tag">JWT</span>
+        <span class="tag">RBAC</span>
+        <span class="tag">Cookies</span>
+      </div>
+    </div>
+
+    <!-- Config -->
+    <div class="card">
+      <div class="card-header">
+        <div class="icon config-bg">CFG</div>
+        <div>
+          <div class="card-title">packages/config</div>
+          <div class="card-desc">Configuracoes Compartilhadas</div>
+        </div>
+      </div>
+      <p style="font-size:0.85rem; color:#94a3b8;">
+        Variaveis de ambiente, constantes e configuracoes usadas por todas as apps.
+      </p>
+      <div class="tags">
+        <span class="tag purple">Env</span>
+        <span class="tag purple">Constants</span>
+      </div>
+    </div>
+
+    <!-- UI -->
+    <div class="card">
+      <div class="card-header">
+        <div class="icon ui-bg">UI</div>
+        <div>
+          <div class="card-title">packages/ui</div>
+          <div class="card-desc">Componentes React Compartilhados</div>
+        </div>
+      </div>
+      <p style="font-size:0.85rem; color:#94a3b8;">
+        Biblioteca de componentes UI reutilizaveis entre web e admin.
+      </p>
+      <div class="tags">
+        <span class="tag pink">React</span>
+        <span class="tag pink">Components</span>
+        <span class="tag pink">Tailwind</span>
+      </div>
+    </div>
+
+    <!-- Documents -->
+    <div class="card">
+      <div class="card-header">
+        <div class="icon docs-bg">DOC</div>
+        <div>
+          <div class="card-title">packages/documents</div>
+          <div class="card-desc">Geracao de Documentos</div>
+        </div>
+      </div>
+      <p style="font-size:0.85rem; color:#94a3b8;">
+        Base compartilhada para relatorios, comprovantes e e-mails com branding por tenant.
+      </p>
+      <div class="tags">
+        <span class="tag">PDF</span>
+        <span class="tag">Templates</span>
+        <span class="tag">Branding</span>
+      </div>
+    </div>
+
+    <!-- Types -->
+    <div class="card">
+      <div class="card-header">
+        <div class="icon types-bg">TS</div>
+        <div>
+          <div class="card-title">packages/types</div>
+          <div class="card-desc">Tipos TypeScript Compartilhados</div>
+        </div>
+      </div>
+      <p style="font-size:0.85rem; color:#94a3b8;">
+        Definicoes de tipos compartilhadas entre frontend e backend.
+      </p>
+      <div class="tags">
+        <span class="tag purple">TypeScript</span>
+        <span class="tag purple">Types</span>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="section-title">Stack Tecnologica</h2>
+  <div class="grid">
+    <div class="card full-width" style="text-align:center;">
+      <div class="tags" style="justify-content:center; gap:0.75rem;">
+        <span class="tag" style="font-size:0.85rem; padding:0.5rem 1rem;">TypeScript</span>
+        <span class="tag green" style="font-size:0.85rem; padding:0.5rem 1rem;">Node.js 24+</span>
+        <span class="tag purple" style="font-size:0.85rem; padding:0.5rem 1rem;">pnpm 11</span>
+        <span class="tag orange" style="font-size:0.85rem; padding:0.5rem 1rem;">NestJS</span>
+        <span class="tag" style="font-size:0.85rem; padding:0.5rem 1rem;">Next.js 16</span>
+        <span class="tag green" style="font-size:0.85rem; padding:0.5rem 1rem;">PostgreSQL</span>
+        <span class="tag purple" style="font-size:0.85rem; padding:0.5rem 1rem;">Redis</span>
+        <span class="tag orange" style="font-size:0.85rem; padding:0.5rem 1rem;">Drizzle ORM</span>
+        <span class="tag pink" style="font-size:0.85rem; padding:0.5rem 1rem;">Docker</span>
+        <span class="tag" style="font-size:0.85rem; padding:0.5rem 1rem;">Vitest</span>
+        <span class="tag green" style="font-size:0.85rem; padding:0.5rem 1rem;">ESLint</span>
+        <span class="tag purple" style="font-size:0.85rem; padding:0.5rem 1rem;">Prettier</span>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="section-title">Infraestrutura</h2>
+  <div class="grid">
+    <div class="card">
+      <div class="card-header">
+        <div class="icon" style="background:linear-gradient(135deg, #0ea5e9, #38bdf8);">🐳</div>
+        <div>
+          <div class="card-title">Docker Compose</div>
+          <div class="card-desc">Ambientes de Deploy</div>
+        </div>
+      </div>
+      <div class="tags">
+        <span class="tag">docker-compose.yml</span>
+        <span class="tag">docker-compose.prod.yml</span>
+        <span class="tag">docker-compose.ghcr.yml</span>
+      </div>
+      <p style="font-size:0.85rem; color:#94a3b8; margin-top:0.75rem;">
+        Postgres, Redis e apps containerizadas. Producao via GHCR.
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="icon" style="background:linear-gradient(135deg, #6366f1, #818cf8);">🔧</div>
+        <div>
+          <div class="card-title">DevOps & CI/CD</div>
+          <div class="card-desc">Automacoes e Deploy</div>
+        </div>
+      </div>
+      <div class="tags">
+        <span class="tag purple">GitHub Actions</span>
+        <span class="tag purple">GHCR</span>
+        <span class="tag purple">.github/</span>
+      </div>
+      <p style="font-size:0.85rem; color:#94a3b8; margin-top:0.75rem;">
+        CI/CD com GitHub Actions, images no GitHub Container Registry.
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="icon" style="background:linear-gradient(135deg, #14b8a6, #5eead4);">📊</div>
+        <div>
+          <div class="card-title">Qualidade & Seguranca</div>
+          <div class="card-desc">Lint, Testes e Scans</div>
+        </div>
+      </div>
+      <div class="tags">
+        <span class="tag">Vitest</span>
+        <span class="tag">ESLint</span>
+        <span class="tag">Prettier</span>
+        <span class="tag">cspell</span>
+        <span class="tag">Codecov</span>
+      </div>
+      <p style="font-size:0.85rem; color:#94a3b8; margin-top:0.75rem;">
+        Testes unitarios, E2E, coverage, lint, formatacao e spell check.
+      </p>
+    </div>
+  </div>
+
+  <div style="text-align:center; margin-top:3rem; color:#64748b; font-size:0.85rem;">
+    Gerado por MiMoCode - Mapa de Arquitetura Orien Comercial v1.22.1
+  </div>
+</body>
+</html>

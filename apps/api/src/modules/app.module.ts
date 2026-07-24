@@ -30,6 +30,10 @@ import { SupportModule } from "../modules/support/support.module";
 import { UpdatesModule } from "../modules/updates/updates.module";
 import { FiscalModule } from "../modules/fiscal/fiscal.module";
 import { OperationsFoundationModule } from "../modules/operations-foundation/operations-foundation.module";
+import { PricingModule } from "../modules/pricing/pricing.module";
+import { SecurityModule } from "../modules/security/security.module";
+import { AnalyticsModule } from "../modules/analytics/analytics.module";
+import { AiAssistantModule } from "../modules/ai-assistant/ai-assistant.module";
 
 @Module({
   imports: [
@@ -69,6 +73,10 @@ import { OperationsFoundationModule } from "../modules/operations-foundation/ope
     UpdatesModule,
     FiscalModule,
     OperationsFoundationModule,
+    PricingModule,
+    SecurityModule,
+    AnalyticsModule,
+    AiAssistantModule,
   ],
 })
 export class AppModule {}

@@ -5,6 +5,7 @@ import {
   auditLogListQuerySchema,
   inviteListQuerySchema,
   membershipListQuerySchema,
+  membershipBulkStatusUpdateSchema,
   membershipUpdateSchema,
   printerProfileSchema,
   printingSettingsSchema,
@@ -107,6 +108,16 @@ export class TenantsController {
     @Body(new ZodValidationPipe(membershipUpdateSchema)) body: never
   ) {
     return this.tenantsService.updateMembership(tenant, id, body);
+  }
+
+  @UseGuards(JwtAuthGuard, TenantContextGuard, PermissionsGuard)
+  @RequirePermissions(permissions.users.manageMemberships)
+  @Post("memberships/bulk/status")
+  bulkMembershipStatus(
+    @CurrentTenant() tenant: TenantContext,
+    @Body(new ZodValidationPipe(membershipBulkStatusUpdateSchema)) body: never,
+  ) {
+    return this.tenantsService.bulkUpdateMembershipStatus(tenant, body);
   }
 
   @UseGuards(JwtAuthGuard, TenantContextGuard, PermissionsGuard)

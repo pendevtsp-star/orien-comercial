@@ -37,6 +37,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r --filter "./packages/*" --sort build
+      - run: pnpm security:artifacts
       - run: pnpm lint
       - run: pnpm lint:copy
       - run: pnpm test

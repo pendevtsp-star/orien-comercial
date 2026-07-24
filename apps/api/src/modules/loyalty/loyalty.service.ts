@@ -1,10 +1,12 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   OnModuleDestroy,
   OnModuleInit,
 } from "@nestjs/common";
+import { permissions } from "@sgc/auth";
 import type { PoolClient } from "pg";
 import { DatabaseService } from "../database/database.service";
 import type { TenantContext } from "../../shared/request-context";
@@ -36,6 +38,60 @@ type RewardInput = {
   endsAt?: string;
 };
 
+export type SaleBenefitsInput = {
+  branchId: string;
+  customerId?: string | null;
+  grossAmountCents: number;
+  loyaltyPointsToRedeem?: number;
+  loyaltyCouponCode?: string;
+  loyaltyRewardId?: string;
+};
+
+export type SaleBenefitAdjustment = {
+  id: string;
+  type: "loyalty_points" | "loyalty_coupon" | "loyalty_reward";
+  sourceId: string | null;
+  amountCents: number;
+};
+
+export type SaleBenefits = {
+  customerId: string | null;
+  walletId: string | null;
+  pointsToRedeem: number;
+  coupon: {
+    id: string;
+    code: string;
+    valueAmountCents: number;
+  } | null;
+  reward: {
+    id: string;
+    name: string;
+    rewardType: "discount" | "coupon" | "cashback" | "bonus_product";
+    pointsRequired: number;
+    valueAmountCents: number;
+    productId: string | null;
+    couponCode: string | null;
+  } | null;
+  adjustments: SaleBenefitAdjustment[];
+  gift: { productId: string; rewardId: string; name: string } | null;
+  futureBenefit: {
+    type: "cashback" | "coupon";
+    amountCents: number;
+    couponPrefix: string | null;
+  } | null;
+  lockedLotIds: string[];
+};
+
+type SaleBenefitRewardRow = {
+  id: string;
+  name: string;
+  reward_type: "discount" | "coupon" | "cashback" | "bonus_product";
+  points_required: number;
+  value_amount: string | null;
+  product_id: string | null;
+  coupon_code: string | null;
+};
+
 @Injectable()
 export class LoyaltyService implements OnModuleInit, OnModuleDestroy {
   private timer?: NodeJS.Timeout;
@@ -50,6 +106,488 @@ export class LoyaltyService implements OnModuleInit, OnModuleDestroy {
 
   onModuleDestroy() {
     if (this.timer) clearInterval(this.timer);
+  }
+
+  inspectSaleBenefits(
+    client: PoolClient,
+    tenant: TenantContext,
+    input: SaleBenefitsInput,
+  ) {
+    return this.readSaleBenefits(client, tenant, input, false);
+  }
+
+  lockSaleBenefits(
+    client: PoolClient,
+    tenant: TenantContext,
+    input: SaleBenefitsInput,
+  ) {
+    return this.readSaleBenefits(client, tenant, input, true);
+  }
+
+  async applySaleBenefits(
+    client: PoolClient,
+    tenant: TenantContext,
+    input: { saleId: string; branchId: string; benefits: SaleBenefits },
+  ) {
+    const { benefits } = input;
+    const immediateDiscountCents = benefits.adjustments.reduce(
+      (total, adjustment) => total + adjustment.amountCents,
+      0,
+    );
+    if (benefits.pointsToRedeem > 0) {
+      if (!benefits.walletId || !benefits.customerId)
+        throw new BadRequestException("A carteira de fidelidade precisa ser validada novamente.");
+      await consumeLots(
+        client,
+        tenant.tenantId,
+        benefits.walletId,
+        benefits.pointsToRedeem,
+      );
+      const walletUpdate = await client.query(
+        `UPDATE loyalty_wallets
+         SET points_balance=points_balance-$3,updated_at=now()
+         WHERE tenant_id=$1 AND id=$2 AND points_balance >= $3`,
+        [tenant.tenantId, benefits.walletId, benefits.pointsToRedeem],
+      );
+      if (walletUpdate.rowCount !== 1)
+        throw new BadRequestException(
+          "O saldo disponível de pontos foi alterado. Atualize e tente novamente.",
+        );
+      await client.query(
+        `INSERT INTO loyalty_ledger
+           (tenant_id,wallet_id,movement_type,points,metadata)
+         VALUES ($1,$2,'sale_redemption',$3,$4::jsonb)`,
+        [
+          tenant.tenantId,
+          benefits.walletId,
+          -benefits.pointsToRedeem,
+          JSON.stringify({
+            saleId: input.saleId,
+            discountAmountCents: immediateDiscountCents,
+            rewardId: benefits.reward?.id ?? null,
+            rewardType: benefits.reward?.rewardType ?? null,
+          }),
+        ],
+      );
+      await client.query(
+        `INSERT INTO loyalty_redemptions
+           (tenant_id,wallet_id,sale_id,reward_id,amount,status,metadata)
+         VALUES ($1,$2,$3,$4,$5,'confirmed',$6::jsonb)`,
+        [
+          tenant.tenantId,
+          benefits.walletId,
+          input.saleId,
+          benefits.reward?.id ?? null,
+          centsToMoney(immediateDiscountCents),
+          JSON.stringify({
+            rewardType: benefits.reward?.rewardType ?? "points",
+            points: benefits.pointsToRedeem,
+          }),
+        ],
+      );
+    }
+
+    if (benefits.coupon) {
+      const consumed = await client.query(
+        `UPDATE loyalty_customer_coupons
+         SET status='redeemed',redeemed_sale_id=$3,redeemed_at=now()
+         WHERE tenant_id=$1 AND id=$2 AND status='available'`,
+        [tenant.tenantId, benefits.coupon.id, input.saleId],
+      );
+      if (consumed.rowCount !== 1)
+        throw new BadRequestException("O cupom foi alterado ou já foi utilizado.");
+    }
+
+    let futureCreditAmountCents = 0;
+    let issuedCouponCode: string | null = null;
+    if (benefits.futureBenefit?.type === "cashback") {
+      if (!benefits.customerId)
+        throw new BadRequestException("Informe o cliente para conceder o crédito futuro.");
+      futureCreditAmountCents = benefits.futureBenefit.amountCents;
+      await client.query(
+        `INSERT INTO customer_credits
+           (tenant_id,customer_id,branch_id,amount,balance)
+         VALUES ($1,$2,$3,$4,$4)`,
+        [
+          tenant.tenantId,
+          benefits.customerId,
+          input.branchId,
+          centsToMoney(futureCreditAmountCents),
+        ],
+      );
+    }
+    if (benefits.futureBenefit?.type === "coupon") {
+      if (!benefits.customerId || !benefits.reward)
+        throw new BadRequestException("Informe o cliente e a recompensa para emitir o cupom.");
+      const prefix = normalizeCouponPrefix(benefits.futureBenefit.couponPrefix);
+      issuedCouponCode = `${prefix}-${input.saleId.slice(0, 8).toUpperCase()}`;
+      await client.query(
+        `INSERT INTO loyalty_customer_coupons
+           (tenant_id,customer_id,reward_id,code,value_amount,expires_at,issued_sale_id)
+         VALUES ($1,$2,$3,$4,$5,
+           (SELECT ends_at FROM loyalty_rewards WHERE tenant_id=$1 AND id=$3),$6)`,
+        [
+          tenant.tenantId,
+          benefits.customerId,
+          benefits.reward.id,
+          issuedCouponCode,
+          centsToMoney(benefits.futureBenefit.amountCents),
+          input.saleId,
+        ],
+      );
+    }
+
+    if (benefits.pointsToRedeem > 0 || benefits.coupon) {
+      await this.auditSaleBenefit(client, tenant, input.saleId, benefits, {
+        immediateDiscountCents,
+        futureCreditAmountCents,
+        issuedCoupon: Boolean(issuedCouponCode),
+        giftProductId: benefits.gift?.productId ?? null,
+      });
+    }
+
+    return {
+      immediateDiscountCents,
+      futureCreditAmountCents,
+      issuedCouponCode,
+      gift: benefits.gift,
+    };
+  }
+
+  async awardSalePoints(
+    client: PoolClient,
+    tenant: TenantContext,
+    input: {
+      saleId: string;
+      branchId: string;
+      customerId: string;
+      paidTotalCents: number;
+      productIds: string[];
+      categoryIds: string[];
+    },
+  ) {
+    assertNonNegativeCents(input.paidTotalCents);
+    const campaign = await client.query<{
+      id: string;
+      rule: { pointsPerReal?: number };
+      expires_in_days: number | null;
+      minimum_sale_amount: string;
+    }>(
+      `SELECT lc.id,lr.rule,lc.expires_in_days,lc.minimum_sale_amount::text
+       FROM loyalty_campaigns lc
+       JOIN loyalty_rules lr ON lr.tenant_id=lc.tenant_id AND lr.campaign_id=lc.id
+       WHERE lc.tenant_id=$1 AND lc.is_active=true AND lc.automation_type IS NULL
+         AND (lc.branch_id IS NULL OR lc.branch_id=$2)
+         AND (lc.starts_at IS NULL OR lc.starts_at<=now())
+         AND (lc.ends_at IS NULL OR lc.ends_at>=now())
+         AND (cardinality(lc.product_ids)=0 OR lc.product_ids && $3::uuid[])
+         AND (cardinality(lc.category_ids)=0 OR lc.category_ids && $4::uuid[])
+       ORDER BY lc.created_at DESC LIMIT 1`,
+      [tenant.tenantId, input.branchId, input.productIds, input.categoryIds],
+    );
+    const paidTotal = input.paidTotalCents / 100;
+    const pointsPerReal = Number(campaign.rows[0]?.rule?.pointsPerReal ?? 0);
+    const pointsAwarded =
+      paidTotal >= Number(campaign.rows[0]?.minimum_sale_amount ?? 0)
+        ? Math.floor(paidTotal * pointsPerReal)
+        : 0;
+    let walletId: string | null = null;
+    if (pointsAwarded > 0) {
+      walletId = await this.creditSalePoints(client, tenant.tenantId, {
+        customerId: input.customerId,
+        saleId: input.saleId,
+        points: pointsAwarded,
+        movementType: "sale_paid",
+        campaignId: campaign.rows[0]?.id ?? null,
+        expiresInDays: campaign.rows[0]?.expires_in_days ?? null,
+      });
+    }
+
+    let automationPointsAwarded = 0;
+    const firstPurchase = await client.query<{ id: string; automation_points: number }>(
+      `SELECT id,automation_points
+       FROM loyalty_campaigns
+       WHERE tenant_id=$1 AND is_active=true AND automation_type='first_purchase'
+         AND (branch_id IS NULL OR branch_id=$2)
+         AND (starts_at IS NULL OR starts_at<=now())
+         AND (ends_at IS NULL OR ends_at>=now())
+         AND (cardinality(product_ids)=0 OR product_ids && $3::uuid[])
+         AND (cardinality(category_ids)=0 OR category_ids && $4::uuid[])
+       ORDER BY created_at DESC LIMIT 1`,
+      [tenant.tenantId, input.branchId, input.productIds, input.categoryIds],
+    );
+    const priorSales = await client.query<{ count: string }>(
+      "SELECT count(*)::text FROM sales WHERE tenant_id=$1 AND customer_id=$2 AND status='sold'",
+      [tenant.tenantId, input.customerId],
+    );
+    if (firstPurchase.rows[0] && Number(priorSales.rows[0]?.count) === 1) {
+      const run = await client.query<{ id: string }>(
+        `INSERT INTO loyalty_automation_runs
+           (tenant_id,campaign_id,customer_id,automation_type,period_key)
+         VALUES ($1,$2,$3,'first_purchase',$4)
+         ON CONFLICT DO NOTHING RETURNING id`,
+        [tenant.tenantId, firstPurchase.rows[0].id, input.customerId, input.saleId],
+      );
+      if (run.rowCount) {
+        automationPointsAwarded = firstPurchase.rows[0].automation_points;
+        walletId = await this.creditSalePoints(client, tenant.tenantId, {
+          customerId: input.customerId,
+          saleId: input.saleId,
+          points: automationPointsAwarded,
+          movementType: "automation",
+          campaignId: firstPurchase.rows[0].id,
+          expiresInDays: null,
+        });
+      }
+    }
+    if (walletId && (pointsAwarded > 0 || automationPointsAwarded > 0)) {
+      await this.audit(
+        client,
+        tenant.tenantId,
+        tenant.userId ?? null,
+        "loyalty.sale.points_awarded",
+        walletId,
+        { saleId: input.saleId, pointsAwarded, automationPointsAwarded },
+      );
+    }
+    return { pointsAwarded, automationPointsAwarded };
+  }
+
+  private async readSaleBenefits(
+    client: PoolClient,
+    tenant: TenantContext,
+    input: SaleBenefitsInput,
+    lock: boolean,
+  ): Promise<SaleBenefits> {
+    assertNonNegativeCents(input.grossAmountCents);
+    const customerId = input.customerId ?? null;
+    const lockClause = lock ? " FOR UPDATE" : "";
+    let coupon: SaleBenefits["coupon"] = null;
+    let reward: SaleBenefits["reward"] = null;
+    let pointsToRedeem = normalizePoints(input.loyaltyPointsToRedeem);
+
+    if (input.loyaltyCouponCode) {
+      if (!customerId)
+        throw new BadRequestException("Informe o cliente para utilizar um cupom de fidelidade.");
+      const code = input.loyaltyCouponCode.trim().toUpperCase();
+      const result = await client.query<{ id: string; code: string; value_amount: string }>(
+        `SELECT id,code,value_amount::text
+         FROM loyalty_customer_coupons
+         WHERE tenant_id=$1 AND customer_id=$2 AND code=$3 AND status='available'
+           AND (expires_at IS NULL OR expires_at>=now())${lockClause}`,
+        [tenant.tenantId, customerId, code],
+      );
+      const row = result.rows[0];
+      if (!row) throw new BadRequestException("Cupom inválido, expirado ou já utilizado.");
+      coupon = { id: row.id, code: row.code, valueAmountCents: moneyToCents(row.value_amount) };
+    }
+
+    if (input.loyaltyRewardId) {
+      if (!customerId)
+        throw new BadRequestException("Informe um cliente para resgatar uma recompensa.");
+      if (coupon)
+        throw new BadRequestException("Use um cupom ou uma recompensa por venda, não os dois juntos.");
+      const result = await client.query<SaleBenefitRewardRow>(
+        `SELECT id,name,reward_type,points_required,value_amount::text,product_id,coupon_code
+         FROM loyalty_rewards
+         WHERE tenant_id=$1 AND id=$2 AND is_active=true
+           AND (starts_at IS NULL OR starts_at<=now())
+           AND (ends_at IS NULL OR ends_at>=now())${lockClause}`,
+        [tenant.tenantId, input.loyaltyRewardId],
+      );
+      const row = result.rows[0];
+      if (!row) throw new BadRequestException("A recompensa selecionada não está disponível.");
+      reward = {
+        id: row.id,
+        name: row.name,
+        rewardType: row.reward_type,
+        pointsRequired: row.points_required,
+        valueAmountCents: moneyToCents(row.value_amount ?? "0"),
+        productId: row.product_id,
+        couponCode: row.coupon_code,
+      };
+      pointsToRedeem = reward.pointsRequired;
+      if (reward.rewardType === "cashback" && reward.valueAmountCents <= 0)
+        throw new BadRequestException("Configure o valor do crédito para esta recompensa.");
+      if (reward.rewardType === "coupon" && reward.valueAmountCents <= 0)
+        throw new BadRequestException("Configure o valor do cupom para esta recompensa.");
+      if (reward.rewardType === "bonus_product" && !reward.productId)
+        throw new BadRequestException("Configure o produto brinde para esta recompensa.");
+    }
+
+    let walletId: string | null = null;
+    let lockedLotIds: string[] = [];
+    if (pointsToRedeem > 0) {
+      if (!customerId)
+        throw new BadRequestException("Informe um cliente para resgatar pontos.");
+      const policy = await client.query<{
+        max_redemption_points: number | null;
+        approval_threshold_points: number | null;
+      }>(
+        `SELECT max_redemption_points,approval_threshold_points
+         FROM loyalty_campaigns
+         WHERE tenant_id=$1 AND is_active=true AND (branch_id IS NULL OR branch_id=$2)
+           AND (starts_at IS NULL OR starts_at<=now()) AND (ends_at IS NULL OR ends_at>=now())
+         ORDER BY created_at DESC LIMIT 1`,
+        [tenant.tenantId, input.branchId],
+      );
+      const maxPoints = policy.rows[0]?.max_redemption_points;
+      if (maxPoints && pointsToRedeem > maxPoints)
+        throw new BadRequestException(`O limite desta campanha é ${maxPoints} pontos por venda.`);
+      const approvalThreshold = policy.rows[0]?.approval_threshold_points;
+      if (
+        approvalThreshold &&
+        pointsToRedeem >= approvalThreshold &&
+        !tenant.permissions.includes(permissions.sales.cancel)
+      )
+        throw new ForbiddenException("Este resgate exige aprovação de gerente ou administrador.");
+      const wallet = await client.query<{ id: string; points_balance: number }>(
+        `SELECT id,points_balance FROM loyalty_wallets
+         WHERE tenant_id=$1 AND customer_id=$2${lockClause}`,
+        [tenant.tenantId, customerId],
+      );
+      if (!wallet.rows[0] || wallet.rows[0].points_balance < pointsToRedeem)
+        throw new BadRequestException("Saldo de pontos insuficiente para o resgate.");
+      walletId = wallet.rows[0].id;
+      if (lock) {
+        const lots = await client.query<{ id: string; remaining_points: number }>(
+          `SELECT id,remaining_points FROM loyalty_point_lots
+           WHERE tenant_id=$1 AND wallet_id=$2 AND remaining_points>0
+             AND (expires_at IS NULL OR expires_at>=now())
+           ORDER BY expires_at NULLS LAST,created_at,id FOR UPDATE`,
+          [tenant.tenantId, walletId],
+        );
+        if (lots.rows.reduce((sum, lot) => sum + lot.remaining_points, 0) < pointsToRedeem)
+          throw new BadRequestException(
+            "O saldo disponível de pontos foi alterado. Atualize e tente novamente.",
+          );
+        lockedLotIds = lots.rows.map((lot) => lot.id);
+      }
+    }
+
+    const adjustments: SaleBenefitAdjustment[] = [];
+    if (coupon) {
+      adjustments.push({
+        id: `loyalty-coupon:${coupon.id}`,
+        type: "loyalty_coupon",
+        sourceId: coupon.id,
+        amountCents: Math.min(input.grossAmountCents, coupon.valueAmountCents),
+      });
+    } else if (reward?.rewardType === "discount") {
+      const configuredAmount = reward.valueAmountCents > 0 ? reward.valueAmountCents : pointsToRedeem;
+      adjustments.push({
+        id: `loyalty-reward:${reward.id}`,
+        type: "loyalty_reward",
+        sourceId: reward.id,
+        amountCents: Math.min(input.grossAmountCents, configuredAmount),
+      });
+    } else if (!reward && pointsToRedeem > 0) {
+      adjustments.push({
+        id: "loyalty-points",
+        type: "loyalty_points",
+        sourceId: walletId,
+        amountCents: Math.min(input.grossAmountCents, pointsToRedeem),
+      });
+    }
+
+    return {
+      customerId,
+      walletId,
+      pointsToRedeem,
+      coupon,
+      reward,
+      adjustments,
+      gift:
+        reward?.rewardType === "bonus_product" && reward.productId
+          ? { productId: reward.productId, rewardId: reward.id, name: reward.name }
+          : null,
+      futureBenefit:
+        reward?.rewardType === "cashback" || reward?.rewardType === "coupon"
+          ? {
+              type: reward.rewardType,
+              amountCents: reward.valueAmountCents,
+              couponPrefix: reward.rewardType === "coupon" ? reward.couponCode : null,
+            }
+          : null,
+      lockedLotIds,
+    };
+  }
+
+  private async creditSalePoints(
+    client: PoolClient,
+    tenantId: string,
+    input: {
+      customerId: string;
+      saleId: string;
+      points: number;
+      movementType: "sale_paid" | "automation";
+      campaignId: string | null;
+      expiresInDays: number | null;
+    },
+  ) {
+    const wallet = await client.query<{ id: string }>(
+      `INSERT INTO loyalty_wallets (tenant_id,customer_id,points_balance)
+       VALUES ($1,$2,0)
+       ON CONFLICT (tenant_id,customer_id) DO UPDATE SET updated_at=now()
+       RETURNING id`,
+      [tenantId, input.customerId],
+    );
+    const walletId = wallet.rows[0]!.id;
+    await client.query(
+      `UPDATE loyalty_wallets SET points_balance=points_balance+$3,updated_at=now()
+       WHERE tenant_id=$1 AND id=$2`,
+      [tenantId, walletId, input.points],
+    );
+    const ledger = await client.query<{ id: string }>(
+      `INSERT INTO loyalty_ledger
+         (tenant_id,wallet_id,movement_type,points,expires_at,metadata)
+       VALUES ($1,$2,$3,$4,
+         CASE WHEN $5::int IS NULL THEN NULL ELSE now()+($5::text || ' days')::interval END,
+         $6::jsonb)
+       RETURNING id`,
+      [
+        tenantId,
+        walletId,
+        input.movementType,
+        input.points,
+        input.expiresInDays,
+        JSON.stringify({ saleId: input.saleId, campaignId: input.campaignId }),
+      ],
+    );
+    await client.query(
+      `INSERT INTO loyalty_point_lots
+         (tenant_id,wallet_id,source_ledger_id,original_points,remaining_points,expires_at)
+       VALUES ($1,$2,$3,$4,$4,
+         CASE WHEN $5::int IS NULL THEN NULL ELSE now()+($5::text || ' days')::interval END)`,
+      [tenantId, walletId, ledger.rows[0]!.id, input.points, input.expiresInDays],
+    );
+    return walletId;
+  }
+
+  private async auditSaleBenefit(
+    client: Pick<PoolClient, "query">,
+    tenant: TenantContext,
+    saleId: string,
+    benefits: SaleBenefits,
+    metadata: Record<string, unknown>,
+  ) {
+    await client.query(
+      `INSERT INTO audit_logs
+         (tenant_id,actor_user_id,action,entity_type,entity_id,metadata)
+       VALUES ($1,$2,'loyalty.sale.benefit_applied','sale',$3,$4::jsonb)`,
+      [
+        tenant.tenantId,
+        tenant.userId ?? null,
+        saleId,
+        JSON.stringify({
+          points: benefits.pointsToRedeem,
+          rewardId: benefits.reward?.id ?? null,
+          rewardType: benefits.reward?.rewardType ?? null,
+          couponId: benefits.coupon?.id ?? null,
+          ...metadata,
+        }),
+      ],
+    );
   }
 
   async overview(tenant: TenantContext) {
@@ -414,7 +952,7 @@ export class LoyaltyService implements OnModuleInit, OnModuleDestroy {
   private async audit(
     client: Pick<PoolClient, "query">,
     tenantId: string,
-    actor: string,
+    actor: string | null,
     action: string,
     entityId: string,
     metadata: Record<string, unknown>,
@@ -473,8 +1011,9 @@ async function consumeLots(
     if (pending <= 0) break;
     const used = Math.min(pending, lot.remaining_points);
     await client.query(
-      "UPDATE loyalty_point_lots SET remaining_points=remaining_points-$2 WHERE id=$1",
-      [lot.id, used],
+      `UPDATE loyalty_point_lots SET remaining_points=remaining_points-$3
+       WHERE tenant_id=$1 AND id=$2 AND remaining_points >= $3`,
+      [tenantId, lot.id, used],
     );
     pending -= used;
   }
@@ -482,4 +1021,34 @@ async function consumeLots(
     throw new BadRequestException(
       "O saldo disponível de pontos foi alterado. Atualize e tente novamente.",
     );
+}
+
+function normalizePoints(value: unknown) {
+  const points = Math.floor(Number(value ?? 0));
+  if (!Number.isFinite(points) || points < 0)
+    throw new BadRequestException("A quantidade de pontos deve ser válida e não negativa.");
+  return points;
+}
+
+function assertNonNegativeCents(value: number) {
+  if (!Number.isSafeInteger(value) || value < 0)
+    throw new BadRequestException("O valor monetário da fidelidade é inválido.");
+}
+
+function moneyToCents(value: string | number) {
+  const amount = Number(value);
+  const cents = Math.round(amount * 100);
+  if (!Number.isFinite(amount) || !Number.isSafeInteger(cents) || cents < 0)
+    throw new BadRequestException("O valor configurado para a fidelidade é inválido.");
+  return cents;
+}
+
+function centsToMoney(cents: number) {
+  assertNonNegativeCents(cents);
+  return (cents / 100).toFixed(2);
+}
+
+function normalizeCouponPrefix(value: string | null) {
+  const normalized = value?.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "");
+  return normalized || "LOY";
 }

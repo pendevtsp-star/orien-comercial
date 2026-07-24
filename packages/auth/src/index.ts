@@ -45,6 +45,10 @@ export const permissions = {
     cancel: "sales.cancel",
     history: "sales.history",
   },
+  pricing: {
+    manage: "pricing.policies.manage",
+    authorizeException: "pricing.exceptions.authorize",
+  },
   financial: {
     read: "financial.read",
     receive: "financial.receive",
@@ -120,6 +124,8 @@ export const defaultRolePermissions: Record<RoleSlug, Permission[]> = {
     permissions.sales.create,
     permissions.sales.cancel,
     permissions.sales.history,
+    permissions.pricing.manage,
+    permissions.pricing.authorizeException,
     permissions.financial.read,
     permissions.financial.receive,
     permissions.financial.pay,
@@ -152,6 +158,8 @@ export const defaultRolePermissions: Record<RoleSlug, Permission[]> = {
     permissions.sales.create,
     permissions.sales.cancel,
     permissions.sales.history,
+    permissions.pricing.manage,
+    permissions.pricing.authorizeException,
     permissions.financial.read,
     permissions.financial.receive,
     permissions.financial.pay,

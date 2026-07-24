@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   Inject,
   Param,
   Patch,
@@ -12,6 +13,11 @@ import {
 } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { permissions } from "@sgc/auth";
+import {
+  commercialDocumentCreateSchema,
+  commercialDocumentListQuerySchema,
+  commercialDocumentTransitionSchema,
+} from "@sgc/types";
 import type { Response } from "express";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../shared/auth.guard";
@@ -21,6 +27,7 @@ import { RequirePermissions } from "../../shared/require-permissions.decorator";
 import type { TenantContext } from "../../shared/request-context";
 import { TenantContextGuard } from "../../shared/tenant-context.guard";
 import { ZodValidationPipe } from "../../shared/zod-validation.pipe";
+import { CommercialDocumentsService } from "./commercial-documents.service";
 import { OperationsService } from "./operations.service";
 
 const uuid = z.string().uuid();
@@ -41,23 +48,6 @@ const priceSchema = z.object({
   fixedPrice: z.coerce.number().nonnegative().optional(),
   discountPercent: z.coerce.number().min(0).max(100).optional(),
 });
-const quoteSchema = z.object({
-  branchId: uuid,
-  customerId: uuid.optional(),
-  validUntil: z.string(),
-  notes: z.string().max(500).optional(),
-  reserveStock: z.boolean().default(false),
-  items: z
-    .array(
-      z.object({
-        productId: uuid,
-        quantity: z.coerce.number().positive(),
-        unitPrice: z.coerce.number().nonnegative(),
-        discountAmount: z.coerce.number().nonnegative().default(0),
-      }),
-    )
-    .min(1),
-});
 const creditSchema = z.object({
   customerId: uuid,
   creditLimit: z.coerce.number().nonnegative(),
@@ -76,7 +66,11 @@ const renegotiateSchema = z.object({
 @UseGuards(JwtAuthGuard, TenantContextGuard, PermissionsGuard)
 @Controller("operations")
 export class OperationsController {
-  constructor(@Inject(OperationsService) private readonly service: OperationsService) {}
+  constructor(
+    @Inject(OperationsService) private readonly service: OperationsService,
+    @Inject(CommercialDocumentsService)
+    private readonly commercialDocuments: CommercialDocumentsService,
+  ) {}
   @Get("overview") @RequirePermissions(permissions.dashboard.read) overview(
     @CurrentTenant() c: TenantContext,
   ) {
@@ -121,27 +115,59 @@ export class OperationsController {
   }
   @Get("quotes") @RequirePermissions(permissions.sales.read) quotes(
     @CurrentTenant() c: TenantContext,
+    @Query(new ZodValidationPipe(commercialDocumentListQuerySchema)) query: never,
   ) {
-    return this.service.quotes(c);
+    return this.commercialDocuments.list(c, query).then((result) => result.data);
   }
   @Post("quotes") @RequirePermissions(permissions.sales.create) createQuote(
     @CurrentTenant() c: TenantContext,
-    @Body(new ZodValidationPipe(quoteSchema)) b: never,
+    @Body(new ZodValidationPipe(commercialDocumentCreateSchema)) b: never,
   ) {
-    return this.service.createQuote(c, b);
+    return this.commercialDocuments.create(c, b);
   }
   @Post("quotes/:id/convert") @RequirePermissions(permissions.sales.create) convert(
     @CurrentTenant() c: TenantContext,
     @Param("id") id: string,
+    @Headers("idempotency-key") idempotencyKey?: string,
   ) {
-    return this.service.convertQuote(c, id);
+    return this.commercialDocuments.convert(c, id, idempotencyKey);
   }
   @Get("quotes/:id/document") @RequirePermissions(permissions.sales.read) async document(
     @CurrentTenant() c: TenantContext,
     @Param("id") id: string,
     @Res() r: Response,
   ) {
-    r.type("html").send(await this.service.quoteDocument(c, id));
+    r.type("html").send(await this.commercialDocuments.document(c, id));
+  }
+  @Get("commercial-documents") @RequirePermissions(permissions.sales.read) commercialList(
+    @CurrentTenant() c: TenantContext,
+    @Query(new ZodValidationPipe(commercialDocumentListQuerySchema)) query: never,
+  ) {
+    return this.commercialDocuments.list(c, query);
+  }
+  @Post("commercial-documents") @RequirePermissions(permissions.sales.create) commercialCreate(
+    @CurrentTenant() c: TenantContext,
+    @Body(new ZodValidationPipe(commercialDocumentCreateSchema)) body: never,
+  ) {
+    return this.commercialDocuments.create(c, body);
+  }
+  @Patch("commercial-documents/:id/status")
+  @RequirePermissions(permissions.sales.create)
+  commercialTransition(
+    @CurrentTenant() c: TenantContext,
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(commercialDocumentTransitionSchema)) body: never,
+  ) {
+    return this.commercialDocuments.transition(c, id, body);
+  }
+  @Post("commercial-documents/:id/convert")
+  @RequirePermissions(permissions.sales.create)
+  commercialConvert(
+    @CurrentTenant() c: TenantContext,
+    @Param("id") id: string,
+    @Headers("idempotency-key") idempotencyKey?: string,
+  ) {
+    return this.commercialDocuments.convert(c, id, idempotencyKey);
   }
   @Get("credit") @RequirePermissions(permissions.financial.read) credit(
     @CurrentTenant() c: TenantContext,

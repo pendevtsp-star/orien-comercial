@@ -228,7 +228,7 @@ export class AccountantPortalService {
   }
 
   async portalOverview(auth: { token?: string; sessionToken?: string }, period?: string, meta: PortalEventMeta = {}) {
-    const access = await this.verify(auth);
+    const access = await this.verifyConfirmedSession(auth);
     const overview = await this.buildOverview(access, period);
     await this.logEvent(access.tenant_id, access.id, "overview_viewed", { ...meta, period: overview.period });
     return overview;
@@ -342,7 +342,7 @@ export class AccountantPortalService {
   }
 
   async portalXmlZip(auth: { token?: string; sessionToken?: string }, period?: string, meta: PortalEventMeta = {}) {
-    const access = await this.verify(auth);
+    const access = await this.verifyConfirmedSession(auth);
     const selectedPeriod = this.periodAllowed(access, period ?? new Date().toISOString().slice(0, 7));
     const params: unknown[] = [access.tenant_id, `${selectedPeriod}-01`];
     const branchFilter = access.branch_id ? "AND fd.branch_id=$3" : "";
@@ -445,9 +445,11 @@ export class AccountantPortalService {
     };
   }
 
-  private async verify(auth: { token?: string; sessionToken?: string }) {
+  private async verifyConfirmedSession(auth: { token?: string; sessionToken?: string }) {
     if (auth.sessionToken) return this.verifySession(auth.sessionToken);
-    if (auth.token) return this.verifyLinkToken(auth.token);
+    if (auth.token) {
+      throw new UnauthorizedException("Confirme o código enviado ao e-mail antes de acessar o portal do contador.");
+    }
     throw new UnauthorizedException("Sessão do contador não informada.");
   }
 

@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { permissions } from "@sgc/auth";
-import { customerCreateSchema, customerUpdateSchema, resourceListQuerySchema } from "@sgc/types";
+import { bulkStatusUpdateSchema, customerCreateSchema, customerUpdateSchema, resourceListQuerySchema } from "@sgc/types";
 import { JwtAuthGuard } from "../../shared/auth.guard";
 import { CurrentTenant } from "../../shared/current-user.decorator";
 import { PermissionsGuard } from "../../shared/permissions.guard";
@@ -39,6 +39,15 @@ export class CustomersController {
   @Post()
   create(@CurrentTenant() tenant: TenantContext, @Body(new ZodValidationPipe(customerCreateSchema)) body: never) {
     return this.customersService.create(tenant, body);
+  }
+
+  @RequirePermissions(permissions.customers.update)
+  @Post("bulk/status")
+  bulkStatus(
+    @CurrentTenant() tenant: TenantContext,
+    @Body(new ZodValidationPipe(bulkStatusUpdateSchema)) body: never,
+  ) {
+    return this.customersService.bulkUpdateStatus(tenant, body);
   }
 
   @RequirePermissions(permissions.customers.update)
