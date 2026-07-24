@@ -20,13 +20,15 @@ export function LandingHero({ hero }: LandingHeroProps) {
             <a
               href={hero.primaryCta.href}
               className="inline-flex items-center gap-2 rounded-lg bg-[#0b1d3d] px-5 py-3.5 font-semibold text-white shadow-[0_12px_30px_rgba(11,29,61,.18)] transition hover:bg-[#133a7c]"
+              aria-label={hero.primaryCta.label}
             >
-              {hero.primaryCta.label} <ArrowRight size={17} />
+              {hero.primaryCta.label} <ArrowRight size={17} aria-hidden="true" />
             </a>
             {hero.secondaryCta ? (
               <a
                 href={hero.secondaryCta.href}
                 className="rounded-lg border border-[#cbd7e9] bg-white px-5 py-3.5 font-semibold text-[#0b1d3d]"
+                aria-label={hero.secondaryCta.label}
               >
                 {hero.secondaryCta.label}
               </a>
@@ -34,15 +36,15 @@ export function LandingHero({ hero }: LandingHeroProps) {
           </div>
           <div className="mt-10 flex flex-wrap gap-x-6 gap-y-3 text-sm text-slate-600">
             <span className="flex items-center gap-2">
-              <Check size={17} className="text-[#d6a100]" />
+              <Check size={17} className="text-[#d6a100]" aria-hidden="true" />
               {hero.trialText}
             </span>
             <span className="flex items-center gap-2">
-              <Check size={17} className="text-[#d6a100]" />
+              <Check size={17} className="text-[#d6a100]" aria-hidden="true" />
               Pix e cartão no checkout
             </span>
             <span className="flex items-center gap-2">
-              <Check size={17} className="text-[#d6a100]" />
+              <Check size={17} className="text-[#d6a100]" aria-hidden="true" />
               Suporte humano
             </span>
           </div>

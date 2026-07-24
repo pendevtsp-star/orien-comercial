@@ -102,11 +102,14 @@ export default async function MarketingPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }}
       />
-      <main className="min-h-screen overflow-hidden bg-[#f7f8fb] text-[#0b1d3d]">
+      <a href="#main-content" className="skip-link">
+        Pular para o conteúdo principal
+      </a>
+      <main id="main-content" className="min-h-screen overflow-hidden bg-[#f7f8fb] text-[#0b1d3d]">
       <header className="sticky top-0 z-30 border-b border-[#d9e1ee] bg-white/95 backdrop-blur">
         <div className="mx-auto flex h-18 max-w-7xl items-center justify-between gap-4 px-5 py-3 lg:px-8">
           <BrandLogo size="sm" />
-          <nav className="hidden items-center gap-6 text-sm font-medium text-slate-600 lg:flex">
+          <nav aria-label="Navegação principal" className="hidden items-center gap-6 text-sm font-medium text-slate-600 lg:flex">
             {hasProductShowcase ? <a href="#produto">Produto</a> : null}
             {settings.visibility.showPlans ? <a href="#planos">Planos</a> : null}
             {settings.visibility.showSecurity ? <a href="#seguranca">Segurança</a> : null}
@@ -116,12 +119,14 @@ export default async function MarketingPage() {
             <a
               className="hidden text-sm font-semibold text-[#133a7c] sm:block"
               href="https://app.useorien.com.br/login"
+              aria-label="Entrar na plataforma Orien"
             >
               Entrar
             </a>
             <a
               href={settings.hero.primaryCta.href}
               className="bg-[#0b1d3d] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#133a7c]"
+              aria-label={settings.hero.primaryCta.label}
             >
               {settings.hero.primaryCta.label}
             </a>
@@ -260,7 +265,7 @@ export default async function MarketingPage() {
           </a>
         </div>
       </section>
-      <footer className="bg-[#081731] text-slate-300">
+      <footer aria-label="Rodapé" className="bg-[#081731] text-slate-300">
         <div className="mx-auto grid max-w-7xl gap-10 px-5 py-12 md:grid-cols-[1.5fr_1fr_1fr] lg:px-8">
           <div>
             <BrandLogo size="sm" theme="dark" />
@@ -270,7 +275,7 @@ export default async function MarketingPage() {
           </div>
           <div>
             <p className="font-semibold text-white">Institucional</p>
-            <div className="mt-4 grid gap-3 text-sm">
+            <nav aria-label="Links institucionais" className="mt-4 grid gap-3 text-sm">
               <a href="/termos">Termos de uso</a>
               <a href="/privacidade">Privacidade e LGPD</a>
               <a href="/cancelamento">Cancelamento e reembolso</a>
@@ -279,20 +284,20 @@ export default async function MarketingPage() {
                   {link.label}
                 </a>
               ))}
-            </div>
+            </nav>
           </div>
           <div>
             <p className="font-semibold text-white">Atendimento</p>
-            <div className="mt-4 grid gap-3 text-sm">
-              <a href={`mailto:${supportEmail}`}>{supportEmail}</a>
+            <nav aria-label="Links de atendimento" className="mt-4 grid gap-3 text-sm">
+              <a href={`mailto:${supportEmail}`} aria-label={`Enviar email para ${supportEmail}`}>{supportEmail}</a>
               {whatsappHref ? (
-                <a href={whatsappHref} target="_blank" rel="noreferrer">
+                <a href={whatsappHref} target="_blank" rel="noreferrer" aria-label="Falar com suporte no WhatsApp">
                   WhatsApp comercial
                 </a>
               ) : null}
-              <a href="/checkout/status">Acompanhar checkout</a>
-              <a href="https://app.useorien.com.br/login">Acessar plataforma</a>
-            </div>
+              <a href="/checkout/status" aria-label="Acompanhar status do checkout">Acompanhar checkout</a>
+              <a href="https://app.useorien.com.br/login" aria-label="Acessar a plataforma Orien">Acessar plataforma</a>
+            </nav>
           </div>
         </div>
         <div className="border-t border-white/10 py-5 text-center text-xs text-slate-500">
