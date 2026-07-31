@@ -41,8 +41,14 @@ export default function CatalogToolsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    void apiFetch<List<Product>>("/products?pageSize=100&isActive=true")
-      .then((response) => setProducts(response.data))
+    void Promise.all([
+      apiFetch<List<Product>>("/products?pageSize=100&isActive=true"),
+      apiFetch<{ labelSize: string }>("/printing-settings"),
+    ])
+      .then(([response, settings]) => {
+        setProducts(response.data);
+        setSize(settings.labelSize);
+      })
       .catch((err) => setError(err instanceof Error ? err.message : "Falha ao carregar produtos."));
   }, []);
   const allSelected = useMemo(
@@ -137,6 +143,7 @@ export default function CatalogToolsPage() {
                         { label: "40 × 25 mm", value: "40x25" },
                         { label: "50 × 30 mm", value: "50x30" },
                         { label: "60 × 40 mm", value: "60x40" },
+                        { label: "80 × 40 mm", value: "80x40" },
                       ]}
                     />
                     <Button
