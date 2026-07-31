@@ -40,7 +40,10 @@ export default function PrintersPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  const printUrl = useMemo(() => `/catalog-tools?labelSize=${size}&dpi=${dpi}`, [size, dpi]);
+  const printUrl = useMemo(
+    () => `/catalog-tools?branchId=${branchId}&labelSize=${size}&dpi=${dpi}`,
+    [branchId, size, dpi],
+  );
 
   useEffect(() => {
     void apiFetch<{ data: Array<{ id: string; name: string }> }>("/branches?pageSize=100&isActive=true")
