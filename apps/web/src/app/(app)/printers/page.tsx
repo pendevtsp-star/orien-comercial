@@ -1,7 +1,7 @@
 "use client";
 
 import { Badge, Button, Card, CardContent, Input, PageHeader, Select } from "@sgc/ui";
-import { CheckCircle2, Plus, Printer, ScanBarcode, Usb } from "lucide-react";
+import { ChevronDown, Plus, Printer, Tag } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../../lib/api";
 
@@ -183,331 +183,138 @@ export default function PrintersPage() {
   return (
     <div className="grid gap-6">
       <PageHeader
-        title="Impressoras térmicas"
-        description="Guia de instalação e configuração para etiquetas, comprovantes e operação de balcão."
-        actions={
-          <Button
-            variant="secondary"
-            icon={<Printer size={16} />}
-            onClick={() => window.print()}
-          >
-            Imprimir guia
-          </Button>
-        }
+        title="Impressoras"
+        description="Configure etiquetas e comprovantes separadamente para cada loja."
       />
 
-      <section className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-        <Card variant="brand">
-          <CardContent className="grid gap-5 p-6">
-            <Badge className="w-fit border-white/10 bg-white/10 text-white">Operação local</Badge>
-            <div>
-              <h2 data-brand-display="true" className="text-3xl font-semibold text-white">
-                Instale como impressora do sistema e imprima pelo navegador.
-              </h2>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-white/72">
-                Para o beta, o caminho mais estável é usar o driver oficial da impressora no
-                Windows, macOS ou Linux e selecionar a térmica na janela de impressão do navegador.
-              </p>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Step number="1" label="Instalar driver" />
-              <Step number="2" label="Configurar tamanho" />
-              <Step number="3" label="Imprimir sem escala" accent />
-            </div>
-          </CardContent>
-        </Card>
+      {message ? (
+        <p className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{message}</p>
+      ) : null}
+      {error ? (
+        <p className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</p>
+      ) : null}
 
-        <Card>
-          <CardContent className="grid gap-4">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">
-                Perfis de impressão por loja
-              </p>
-              <h2 className="mt-2 text-lg font-semibold text-[var(--brand-primary)]">
-                Configure mais de uma impressora sem misturar finalidades
-              </h2>
-            </div>
-            {message ? (
-              <p className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
-                {message}
-              </p>
-            ) : null}
-            {error ? (
-              <p className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
-                {error}
-              </p>
-            ) : null}
+      <Card>
+        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0 flex-1 sm:max-w-md">
             <Select
-              label="Loja"
+              label="Configurar loja"
               value={branchId}
               onChange={(event) => setBranchId(event.target.value)}
               options={branches.map((branch) => ({ label: branch.name, value: branch.id }))}
             />
-            <div className="grid gap-3 rounded-md border border-[var(--brand-border)] bg-[var(--brand-surface)] p-3 sm:grid-cols-[minmax(0,1fr)_180px_auto] sm:items-end">
-              <Input label="Nome do perfil" value={profileName} onChange={(event) => setProfileName(event.target.value)} placeholder="Ex.: Térmica do caixa" />
-              <Select
-                label="Finalidade"
-                value={profilePurpose}
-                onChange={(event) => setProfilePurpose(event.target.value)}
-                options={[
-                  { label: "Comprovante de venda", value: "sale_receipt" },
-                  { label: "Via do cliente", value: "customer_receipt" },
-                  { label: "Etiquetas", value: "labels" },
-                  { label: "Documentos A4", value: "documents" },
-                  { label: "Fiscal/NFC-e", value: "fiscal" },
-                ]}
-              />
-              <Button type="button" variant="secondary" icon={<Plus size={15} />} onClick={() => void saveProfile()} disabled={saving || !branchId}>Salvar perfil</Button>
-            </div>
-            {profiles.length ? (
-              <div className="grid gap-2 sm:grid-cols-2">
-                {profiles.map((profile) => (
-                  <div key={profile.id} className="rounded-md border border-[var(--brand-border)] bg-white p-3 text-sm">
-                    <div className="flex items-center justify-between gap-2"><strong className="truncate text-[var(--brand-primary)]">{profile.name}</strong>{profile.isDefault ? <Badge>Padrão</Badge> : null}</div>
-                    <p className="mt-1 text-xs text-slate-500">{purposeLabel(profile.purpose)} · {profile.width === "a4" ? "A4" : `${profile.width} mm`} · {profile.copies} via(s)</p>
-                    {profile.deviceHint ? <p className="mt-1 truncate text-xs text-slate-500">Dispositivo: {profile.deviceHint}</p> : null}
-                  </div>
-                ))}
-              </div>
-            ) : <p className="rounded-md border border-dashed border-[var(--brand-border)] p-3 text-xs text-slate-500">Nenhum perfil salvo ainda. Crie um para a térmica do caixa, outro para etiquetas ou documentos.</p>}
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Select
-                label="Etiqueta"
-                value={size}
-                onChange={(event) => setSize(event.target.value)}
-                options={sizes}
-              />
-              <Select
-                label="DPI"
-                value={dpi}
-                onChange={(event) => setDpi(event.target.value)}
-                options={[
-                  { label: "203 DPI", value: "203" },
-                  { label: "300 DPI", value: "300" },
-                ]}
-              />
-              <Select
-                label="Comprovante"
-                value={mode}
-                onChange={(event) => setMode(event.target.value)}
-                options={[
-                  { label: "Navegador", value: "browser" },
-                  { label: "Térmica", value: "thermal" },
-                  { label: "Não imprimir", value: "none" },
-                ]}
-              />
-            </div>
-            <div className="grid gap-3 rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface)] p-4">
+          </div>
+          <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-600">
+            <span><strong className="text-[var(--brand-primary)]">1.</strong> Instale o driver</span>
+            <span><strong className="text-[var(--brand-primary)]">2.</strong> Use o mesmo tamanho no driver</span>
+            <span><strong className="text-[var(--brand-primary)]">3.</strong> Imprima em escala 100%</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      <section className="grid gap-4 xl:grid-cols-2">
+        <Card>
+          <CardContent className="grid gap-5 p-5">
+            <div className="flex items-start gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-blue-50 text-[var(--brand-secondary)]"><Tag size={20} /></span>
               <div>
-                <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Conteúdo da etiqueta</p>
-                <p className="mt-1 text-sm text-slate-600">Personalização aplicada somente nesta loja. Logo usa identidade visual da empresa em preto e branco.</p>
+                <h2 className="font-semibold text-[var(--brand-primary)]">Etiqueta de produto</h2>
+                <p className="mt-1 text-sm text-slate-600">Defina tamanho e informações exibidas na etiqueta desta loja.</p>
               </div>
-              <div className="grid gap-2 sm:grid-cols-3">
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Select label="Tamanho" value={size} onChange={(event) => setSize(event.target.value)} options={sizes} />
+              <Select label="Resolução" value={dpi} onChange={(event) => setDpi(event.target.value)} options={[{ label: "203 DPI", value: "203" }, { label: "300 DPI", value: "300" }]} />
+            </div>
+            <fieldset className="grid gap-2">
+              <legend className="mb-1 text-sm font-medium text-[var(--brand-primary)]">Informações visíveis</legend>
+              <div className="grid gap-2 sm:grid-cols-2">
                 {[
-                  ["Logo", labelShowLogo, setLabelShowLogo],
+                  ["Logo em preto e branco", labelShowLogo, setLabelShowLogo],
                   ["Nome do produto", labelShowName, setLabelShowName],
                   ["Preço", labelShowPrice, setLabelShowPrice],
                   ["Número do código", labelShowBarcodeText, setLabelShowBarcodeText],
                   ["SKU", labelShowSku, setLabelShowSku],
                 ].map(([label, checked, setter]) => (
-                  <label key={String(label)} className="flex items-center gap-2 rounded-md border border-[var(--brand-border)] bg-white px-3 py-2 text-sm text-slate-600">
+                  <label key={String(label)} className="flex min-h-10 items-center gap-2 rounded-md border border-[var(--brand-border)] px-3 text-sm text-slate-700">
                     <input type="checkbox" checked={Boolean(checked)} onChange={(event) => (setter as (value: boolean) => void)(event.target.checked)} />
                     {String(label)}
                   </label>
                 ))}
               </div>
-              <Input label="Rodapé da etiqueta" placeholder="Ex.: Obrigado pela preferência." value={labelFooter} onChange={(event) => setLabelFooter(event.target.value)} maxLength={80} />
-            </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Select
-                label="Largura do comprovante"
-                value={receiptWidth}
-                onChange={(event) => setReceiptWidth(event.target.value)}
-                options={[
-                  { label: "58 mm", value: "58" },
-                  { label: "80 mm", value: "80" },
-                ]}
-              />
-              <label className="flex items-center gap-2 rounded-md border border-[var(--brand-border)] px-3 py-2 text-sm text-slate-600">
-                <input
-                  type="checkbox"
-                  checked={receiptShowLogo}
-                  onChange={(event) => setReceiptShowLogo(event.target.checked)}
-                />
-                Mostrar logo
-              </label>
-              <label className="flex items-center gap-2 rounded-md border border-[var(--brand-border)] px-3 py-2 text-sm text-slate-600">
-                <input
-                  type="checkbox"
-                  checked={receiptShowDocument}
-                  onChange={(event) => setReceiptShowDocument(event.target.checked)}
-                />
-                Mostrar CPF/CNPJ
-              </label>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
-              <Input
-                label="Nome da impressora padrão"
-                placeholder="Ex.: Elgin i9, Zebra GC420t"
-                value={printerName}
-                onChange={(event) => setPrinterName(event.target.value)}
-              />
-              <Input
-                label="Vias"
-                type="number"
-                min={1}
-                max={5}
-                value={copies}
-                onChange={(event) => setCopies(Number(event.target.value || 1))}
-              />
-            </div>
-            <Input
-              label="Rodapé do comprovante"
-              placeholder="Ex.: Obrigado pela preferência."
-              value={receiptFooter}
-              onChange={(event) => setReceiptFooter(event.target.value)}
-            />
-            <label className="flex items-start gap-2 text-sm text-slate-600">
-              <input
-                type="checkbox"
-                checked={silentPrint}
-                onChange={(event) => setSilentPrint(event.target.checked)}
-              />
-              <span>
-                Preparar para impressão silenciosa quando o agente local estiver disponível.
-              </span>
-            </label>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="flex items-start gap-2 rounded-md border border-[var(--brand-border)] p-3 text-sm text-slate-600">
-                <input
-                  type="checkbox"
-                  checked={autoCut}
-                  onChange={(event) => setAutoCut(event.target.checked)}
-                />
-                <span>Cortar papel automaticamente ao final do comprovante.</span>
-              </label>
-              <label className="flex items-start gap-2 rounded-md border border-[var(--brand-border)] p-3 text-sm text-slate-600">
-                <input
-                  type="checkbox"
-                  checked={openCashDrawer}
-                  onChange={(event) => setOpenCashDrawer(event.target.checked)}
-                />
-                <span>Abrir gaveta de dinheiro ao finalizar venda em dinheiro.</span>
-              </label>
-            </div>
-            <div className="rounded-xl border border-[var(--brand-border)] bg-white p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--brand-secondary)]">Prévia compacta</p>
-              <div className="mt-3 max-w-[260px] rounded-md border border-dashed border-slate-300 bg-white p-3 font-mono text-[11px] text-slate-800">
-                {receiptShowLogo ? <p className="text-center font-bold">LOGO DA EMPRESA</p> : null}
-                <p className="text-center font-bold">COMPROVANTE</p>
-                <p>Venda: 00000001</p>
-                {receiptShowDocument ? <p>CPF/CNPJ: 000.000.000-00</p> : null}
-                <p>1x Produto exemplo R$ 10,00</p>
-                <p className="border-t border-dashed pt-1 font-bold">TOTAL R$ 10,00</p>
-                <p className="text-center text-slate-500">{receiptFooter || "Obrigado pela preferência."}</p>
+            </fieldset>
+            <Input label="Rodapé opcional" placeholder="Ex.: Obrigado pela preferência." value={labelFooter} onChange={(event) => setLabelFooter(event.target.value)} maxLength={80} />
+            <div className="rounded-md bg-[var(--brand-surface)] p-3 text-sm text-slate-600">Logo usa a identidade visual cadastrada da empresa e será convertida para preto e branco.</div>
+            <a href={printUrl} className="inline-flex min-h-10 w-fit items-center justify-center rounded-md border border-[var(--brand-border)] px-4 py-2 text-sm font-medium text-[var(--brand-primary)]">Abrir emissão de etiquetas</a>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="grid gap-5 p-5">
+            <div className="flex items-start gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-blue-50 text-[var(--brand-secondary)]"><Printer size={20} /></span>
+              <div>
+                <h2 className="font-semibold text-[var(--brand-primary)]">Comprovante de venda</h2>
+                <p className="mt-1 text-sm text-slate-600">Controle formato, conteúdo e comportamento da impressora do caixa.</p>
               </div>
             </div>
-            <div className="rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface)] p-4 text-sm text-slate-600">
-              Use escala 100%, margens ausentes e orientação automática. Se a etiqueta sair cortada,
-              ajuste primeiro o tamanho no driver da impressora e só depois no Orien.
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Select label="Modo" value={mode} onChange={(event) => setMode(event.target.value)} options={[{ label: "Navegador", value: "browser" }, { label: "Térmica", value: "thermal" }, { label: "Não imprimir", value: "none" }]} />
+              <Select label="Largura" value={receiptWidth} onChange={(event) => setReceiptWidth(event.target.value)} options={[{ label: "58 mm", value: "58" }, { label: "80 mm", value: "80" }]} />
+              <Input label="Vias" type="number" min={1} max={5} value={copies} onChange={(event) => setCopies(Number(event.target.value || 1))} />
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={() => void saveSettings()} disabled={saving || !branchId}>
-                {saving ? "Salvando..." : "Salvar configuração"}
-              </Button>
-              <a
-                href={printUrl}
-                className="inline-flex min-h-10 w-fit items-center justify-center rounded-md border border-[var(--brand-border)] px-4 py-2 text-sm font-medium text-[var(--brand-primary)]"
-              >
-                Abrir emissão de etiquetas
-              </a>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label className="flex min-h-10 items-center gap-2 rounded-md border border-[var(--brand-border)] px-3 text-sm text-slate-700"><input type="checkbox" checked={receiptShowLogo} onChange={(event) => setReceiptShowLogo(event.target.checked)} />Mostrar logo</label>
+              <label className="flex min-h-10 items-center gap-2 rounded-md border border-[var(--brand-border)] px-3 text-sm text-slate-700"><input type="checkbox" checked={receiptShowDocument} onChange={(event) => setReceiptShowDocument(event.target.checked)} />Mostrar CPF/CNPJ</label>
+              <label className="flex min-h-10 items-center gap-2 rounded-md border border-[var(--brand-border)] px-3 text-sm text-slate-700"><input type="checkbox" checked={autoCut} onChange={(event) => setAutoCut(event.target.checked)} />Corte automático</label>
+              <label className="flex min-h-10 items-center gap-2 rounded-md border border-[var(--brand-border)] px-3 text-sm text-slate-700"><input type="checkbox" checked={openCashDrawer} onChange={(event) => setOpenCashDrawer(event.target.checked)} />Abrir gaveta</label>
+            </div>
+            <Input label="Nome da impressora" placeholder="Ex.: Elgin i9" value={printerName} onChange={(event) => setPrinterName(event.target.value)} />
+            <Input label="Rodapé opcional" placeholder="Ex.: Obrigado pela preferência." value={receiptFooter} onChange={(event) => setReceiptFooter(event.target.value)} />
+            <label className="flex items-start gap-2 text-sm text-slate-600"><input type="checkbox" checked={silentPrint} onChange={(event) => setSilentPrint(event.target.checked)} /><span>Usar impressão silenciosa quando o agente local estiver disponível.</span></label>
+            <div className="rounded-md border border-dashed border-slate-300 bg-white p-3 font-mono text-[11px] text-slate-800 sm:max-w-[280px]">
+              {receiptShowLogo ? <p className="text-center font-bold">LOGO DA EMPRESA</p> : null}
+              <p className="text-center font-bold">COMPROVANTE</p>
+              <p>Venda: 00000001</p>
+              {receiptShowDocument ? <p>CPF/CNPJ: 000.000.000-00</p> : null}
+              <p>1x Produto exemplo R$ 10,00</p>
+              <p className="border-t border-dashed pt-1 font-bold">TOTAL R$ 10,00</p>
+              <p className="text-center text-slate-500">{receiptFooter || "Obrigado pela preferência."}</p>
             </div>
           </CardContent>
         </Card>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-3">
-        <Instruction
-          icon={<Usb size={22} />}
-          title="Conexão USB"
-          items={[
-            "Conecte a impressora antes de abrir o navegador.",
-            "Instale o driver do fabricante.",
-            "Defina a térmica como impressora disponível do sistema.",
-          ]}
-        />
-        <Instruction
-          icon={<Printer size={22} />}
-          title="Etiquetas"
-          items={[
-            "Cadastre código de barras no produto.",
-            "Selecione produtos em Ferramentas > Etiquetas.",
-            "Confira a prévia e imprima em 100%.",
-          ]}
-        />
-        <Instruction
-          icon={<ScanBarcode size={22} />}
-          title="Leitor e PDV"
-          items={[
-            "Leitores USB/Bluetooth funcionam em modo teclado.",
-            "Use F2 para focar o campo de leitura.",
-            "Se o leitor falhar, pesquise o produto manualmente.",
-          ]}
-        />
-      </section>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button onClick={() => void saveSettings()} disabled={saving || !branchId}>{saving ? "Salvando..." : "Salvar configurações da loja"}</Button>
+        <span className="text-sm text-slate-500">As mudanças afetam somente a loja selecionada.</span>
+      </div>
 
-      <Card>
-        <CardContent className="grid gap-3">
-          <h2 className="font-semibold text-[var(--brand-primary)]">Próximo nível</h2>
-          <p className="text-sm leading-6 text-slate-600">
-            O Orien salva perfis lógicos por loja. A impressora física é escolhida no diálogo do Windows, macOS ou Linux, o que permite ter uma térmica para venda e outra para etiquetas. Depois do beta, podemos adicionar um agente local opcional para impressão silenciosa,
-            corte automático e descoberta de impressoras. Esse agente precisa de instalação no
-            computador da loja e deve ser tratado como módulo separado por segurança.
-          </p>
-        </CardContent>
-      </Card>
+      <details className="rounded-xl border border-[var(--brand-border)] bg-white">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-5 font-semibold text-[var(--brand-primary)]">Perfis avançados de impressão <ChevronDown size={18} /></summary>
+        <div className="grid gap-4 border-t border-[var(--brand-border)] p-5">
+          <p className="text-sm text-slate-600">Crie perfis quando a loja usar impressoras diferentes para caixa, etiquetas, documentos ou fiscal.</p>
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px_auto] sm:items-end">
+            <Input label="Nome do perfil" value={profileName} onChange={(event) => setProfileName(event.target.value)} placeholder="Ex.: Térmica do caixa" />
+            <Select label="Finalidade" value={profilePurpose} onChange={(event) => setProfilePurpose(event.target.value)} options={[{ label: "Comprovante de venda", value: "sale_receipt" }, { label: "Via do cliente", value: "customer_receipt" }, { label: "Etiquetas", value: "labels" }, { label: "Documentos A4", value: "documents" }, { label: "Fiscal/NFC-e", value: "fiscal" }]} />
+            <Button type="button" variant="secondary" icon={<Plus size={15} />} onClick={() => void saveProfile()} disabled={saving || !branchId}>Salvar perfil</Button>
+          </div>
+          {profiles.length ? (
+            <div className="divide-y divide-[var(--brand-border)] rounded-md border border-[var(--brand-border)]">
+              {profiles.map((profile) => (
+                <div key={profile.id} className="flex flex-wrap items-center justify-between gap-2 p-3 text-sm">
+                  <div><strong className="text-[var(--brand-primary)]">{profile.name}</strong><p className="mt-0.5 text-xs text-slate-500">{purposeLabel(profile.purpose)} · {profile.width === "a4" ? "A4" : `${profile.width} mm`} · {profile.copies} via(s){profile.deviceHint ? ` · ${profile.deviceHint}` : ""}</p></div>
+                  {profile.isDefault ? <Badge>Padrão</Badge> : null}
+                </div>
+              ))}
+            </div>
+          ) : <p className="rounded-md border border-dashed border-[var(--brand-border)] p-3 text-sm text-slate-500">Nenhum perfil criado.</p>}
+        </div>
+      </details>
     </div>
   );
 }
 
 function purposeLabel(value: string) {
   return ({ sale_receipt: "Comprovante de venda", customer_receipt: "Via do cliente", labels: "Etiquetas", documents: "Documentos", fiscal: "Fiscal/NFC-e" } as Record<string, string>)[value] ?? value;
-}
-
-function Step({ number, label, accent = false }: { number: string; label: string; accent?: boolean }) {
-  return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.08] p-4">
-      <p className={accent ? "text-[var(--brand-accent)]" : "text-white"}>{number}</p>
-      <p className="mt-2 text-sm font-medium text-white">{label}</p>
-    </div>
-  );
-}
-
-function Instruction({
-  icon,
-  title,
-  items,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  items: string[];
-}) {
-  return (
-    <Card>
-      <CardContent className="grid gap-4">
-        <div className="flex items-center gap-3 text-[var(--brand-primary)]">
-          {icon}
-          <h2 className="font-semibold">{title}</h2>
-        </div>
-        <div className="grid gap-2">
-          {items.map((item) => (
-            <p key={item} className="flex gap-2 text-sm text-slate-600">
-              <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-emerald-600" />
-              <span>{item}</span>
-            </p>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  );
 }
