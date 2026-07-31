@@ -57,7 +57,7 @@ export function LandingSocialProof({ settings }: LandingSocialProofProps) {
               </p>
             </div>
             <div className="mt-12 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-              {settings.testimonials.map((testimonial, index) => (
+              {settings.testimonials.map((testimonial) => (
                 <article
                   key={`${testimonial.name}-${testimonial.company}`}
                   className="relative flex min-h-[280px] flex-col justify-between rounded-2xl border border-[#d9e1ee] bg-white p-8 shadow-[0_8px_30px_rgba(11,29,61,.06)] transition-all duration-300 hover:shadow-[0_12px_40px_rgba(11,29,61,.1)] hover:-translate-y-1"

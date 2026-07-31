@@ -44,12 +44,24 @@ export default function CatalogToolsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
+    let active = true;
     void apiFetch<List<Product>>("/products?pageSize=100&isActive=true")
-      .then((response) => setProducts(response.data))
-      .catch((err) => setError(err instanceof Error ? err.message : "Falha ao carregar produtos."));
+      .then((response) => {
+        if (active) setProducts(response.data);
+      })
+      .catch((err) => {
+        if (active) setError(err instanceof Error ? err.message : "Falha ao carregar produtos.");
+      });
     void apiFetch<{ labelSize: string }>(`/printing-settings${branchId ? `?branchId=${branchId}` : ""}`)
-      .then((settings) => setSize(settings.labelSize))
-      .catch((err) => setError(err instanceof Error ? err.message : "Falha ao carregar configuração de etiquetas."));
+      .then((settings) => {
+        if (active) setSize(settings.labelSize);
+      })
+      .catch((err) => {
+        if (active) setError(err instanceof Error ? err.message : "Falha ao carregar configuração de etiquetas.");
+      });
+    return () => {
+      active = false;
+    };
   }, [branchId]);
   const allSelected = useMemo(
     () => products.length > 0 && selected.length === products.length,

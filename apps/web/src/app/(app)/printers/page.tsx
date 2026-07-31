@@ -57,10 +57,14 @@ export default function PrintersPage() {
 
   useEffect(() => {
     if (!branchId) return;
-    void loadSettings(branchId);
+    let active = true;
+    void loadSettings(branchId, () => active);
+    return () => {
+      active = false;
+    };
   }, [branchId]);
 
-  async function loadSettings(nextBranchId: string) {
+  async function loadSettings(nextBranchId: string, isActive = () => true) {
     try {
       const settings = await apiFetch<{
         labelSize: string;
@@ -82,6 +86,7 @@ export default function PrintersPage() {
         autoCut: boolean;
         openCashDrawer: boolean;
       }>(`/printing-settings?branchId=${nextBranchId}`);
+      if (!isActive()) return;
       setSize(settings.labelSize);
       setLabelShowLogo(settings.labelShowLogo ?? true);
       setLabelShowName(settings.labelShowName ?? true);
@@ -101,10 +106,11 @@ export default function PrintersPage() {
       setAutoCut(settings.autoCut ?? true);
       setOpenCashDrawer(settings.openCashDrawer ?? false);
       const profileResult = await apiFetch<{ data: typeof profiles }>(`/printer-profiles?branchId=${nextBranchId}`);
+      if (!isActive()) return;
       setProfiles(profileResult.data);
       setError("");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Não foi possível carregar a configuração.");
+      if (isActive()) setError(cause instanceof Error ? cause.message : "Não foi possível carregar a configuração.");
     }
   }
 

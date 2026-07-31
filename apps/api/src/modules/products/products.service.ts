@@ -675,6 +675,8 @@ export class ProductsService {
       .slice(0, 100);
     const ids = requested.map((item) => item.id);
     if (!ids.length) throw new Error("Selecione ao menos um produto.");
+    const targetBranchId = branchId ?? context.branchId;
+    const settings = await this.loadLabelSettings(context, targetBranchId ?? undefined);
     const products = await this.database.tenantQuery<{
       id: string;
       name: string;
@@ -683,10 +685,13 @@ export class ProductsService {
       salePrice: string;
     }>(
       context.tenantId,
-      `SELECT id,name,sku,barcode,sale_price::text AS "salePrice" FROM products WHERE tenant_id=$1 AND id=ANY($2::uuid[]) AND deleted_at IS NULL AND is_active=true ORDER BY name`,
-      [context.tenantId, ids],
+      `SELECT id,name,sku,barcode,sale_price::text AS "salePrice"
+       FROM products
+       WHERE tenant_id=$1 AND id=ANY($2::uuid[]) AND deleted_at IS NULL AND is_active=true
+       ${targetBranchId ? "AND (branch_id=$3 OR branch_id IS NULL)" : ""}
+       ORDER BY name`,
+      targetBranchId ? [context.tenantId, ids, targetBranchId] : [context.tenantId, ids],
     );
-    const settings = await this.loadLabelSettings(context, branchId);
     const branding = await loadTenantBranding(this.database, context.tenantId);
     const labelSize = size || settings.labelSize || "50x30";
     const [width, height] = labelSize === "40x25" ? [40, 25] : labelSize === "60x40" ? [60, 40] : labelSize === "80x40" ? [80, 40] : [50, 30];
