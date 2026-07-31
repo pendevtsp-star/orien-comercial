@@ -1008,7 +1008,13 @@ export const tenantBrandingSchema = z.object({
 
 export const printingSettingsSchema = z.object({
   branchId: uuidSchema.optional(),
-  labelSize: z.enum(["50x30", "60x40", "80x40"]).default("50x30"),
+  labelSize: z.enum(["40x25", "50x30", "60x40", "80x40"]).default("50x30"),
+  labelShowLogo: z.boolean().default(true),
+  labelShowName: z.boolean().default(true),
+  labelShowPrice: z.boolean().default(true),
+  labelShowBarcodeText: z.boolean().default(true),
+  labelShowSku: z.boolean().default(false),
+  labelFooter: z.string().trim().max(80).optional(),
   dpi: z.enum(["203", "300"]).default("203"),
   receiptMode: z.enum(["browser", "thermal", "none"]).default("browser"),
   receiptWidth: z.enum(["58", "80"]).default("80"),

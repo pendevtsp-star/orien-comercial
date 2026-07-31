@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../../lib/api";
 
 const sizes = [
+  { label: "40 x 25 mm", value: "40x25" },
   { label: "50 x 30 mm", value: "50x30" },
   { label: "60 x 40 mm", value: "60x40" },
   { label: "80 x 40 mm", value: "80x40" },
@@ -15,6 +16,12 @@ export default function PrintersPage() {
   const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
   const [branchId, setBranchId] = useState("");
   const [size, setSize] = useState("50x30");
+  const [labelShowLogo, setLabelShowLogo] = useState(true);
+  const [labelShowName, setLabelShowName] = useState(true);
+  const [labelShowPrice, setLabelShowPrice] = useState(true);
+  const [labelShowBarcodeText, setLabelShowBarcodeText] = useState(true);
+  const [labelShowSku, setLabelShowSku] = useState(false);
+  const [labelFooter, setLabelFooter] = useState("");
   const [dpi, setDpi] = useState("203");
   const [mode, setMode] = useState("browser");
   const [receiptWidth, setReceiptWidth] = useState("80");
@@ -33,7 +40,10 @@ export default function PrintersPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  const printUrl = useMemo(() => `/catalog-tools?labelSize=${size}&dpi=${dpi}`, [size, dpi]);
+  const printUrl = useMemo(
+    () => `/catalog-tools?branchId=${branchId}&labelSize=${size}&dpi=${dpi}`,
+    [branchId, size, dpi],
+  );
 
   useEffect(() => {
     void apiFetch<{ data: Array<{ id: string; name: string }> }>("/branches?pageSize=100&isActive=true")
@@ -47,13 +57,23 @@ export default function PrintersPage() {
 
   useEffect(() => {
     if (!branchId) return;
-    void loadSettings(branchId);
+    let active = true;
+    void loadSettings(branchId, () => active);
+    return () => {
+      active = false;
+    };
   }, [branchId]);
 
-  async function loadSettings(nextBranchId: string) {
+  async function loadSettings(nextBranchId: string, isActive = () => true) {
     try {
       const settings = await apiFetch<{
         labelSize: string;
+        labelShowLogo: boolean;
+        labelShowName: boolean;
+        labelShowPrice: boolean;
+        labelShowBarcodeText: boolean;
+        labelShowSku: boolean;
+        labelFooter?: string;
         dpi: string;
         receiptMode: string;
         receiptWidth: string;
@@ -66,7 +86,14 @@ export default function PrintersPage() {
         autoCut: boolean;
         openCashDrawer: boolean;
       }>(`/printing-settings?branchId=${nextBranchId}`);
+      if (!isActive()) return;
       setSize(settings.labelSize);
+      setLabelShowLogo(settings.labelShowLogo ?? true);
+      setLabelShowName(settings.labelShowName ?? true);
+      setLabelShowPrice(settings.labelShowPrice ?? true);
+      setLabelShowBarcodeText(settings.labelShowBarcodeText ?? true);
+      setLabelShowSku(settings.labelShowSku ?? false);
+      setLabelFooter(settings.labelFooter ?? "");
       setDpi(settings.dpi);
       setMode(settings.receiptMode);
       setReceiptWidth(settings.receiptWidth ?? "80");
@@ -79,10 +106,11 @@ export default function PrintersPage() {
       setAutoCut(settings.autoCut ?? true);
       setOpenCashDrawer(settings.openCashDrawer ?? false);
       const profileResult = await apiFetch<{ data: typeof profiles }>(`/printer-profiles?branchId=${nextBranchId}`);
+      if (!isActive()) return;
       setProfiles(profileResult.data);
       setError("");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Não foi possível carregar a configuração.");
+      if (isActive()) setError(cause instanceof Error ? cause.message : "Não foi possível carregar a configuração.");
     }
   }
 
@@ -96,6 +124,12 @@ export default function PrintersPage() {
         body: JSON.stringify({
           branchId,
           labelSize: size,
+          labelShowLogo,
+          labelShowName,
+          labelShowPrice,
+          labelShowBarcodeText,
+          labelShowSku,
+          labelFooter: labelFooter || undefined,
           dpi,
           receiptMode: mode,
           receiptWidth,
@@ -262,6 +296,27 @@ export default function PrintersPage() {
                   { label: "Não imprimir", value: "none" },
                 ]}
               />
+            </div>
+            <div className="grid gap-3 rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface)] p-4">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--brand-secondary)]">Conteúdo da etiqueta</p>
+                <p className="mt-1 text-sm text-slate-600">Personalização aplicada somente nesta loja. Logo usa identidade visual da empresa em preto e branco.</p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {[
+                  ["Logo", labelShowLogo, setLabelShowLogo],
+                  ["Nome do produto", labelShowName, setLabelShowName],
+                  ["Preço", labelShowPrice, setLabelShowPrice],
+                  ["Número do código", labelShowBarcodeText, setLabelShowBarcodeText],
+                  ["SKU", labelShowSku, setLabelShowSku],
+                ].map(([label, checked, setter]) => (
+                  <label key={String(label)} className="flex items-center gap-2 rounded-md border border-[var(--brand-border)] bg-white px-3 py-2 text-sm text-slate-600">
+                    <input type="checkbox" checked={Boolean(checked)} onChange={(event) => (setter as (value: boolean) => void)(event.target.checked)} />
+                    {String(label)}
+                  </label>
+                ))}
+              </div>
+              <Input label="Rodapé da etiqueta" placeholder="Ex.: Obrigado pela preferência." value={labelFooter} onChange={(event) => setLabelFooter(event.target.value)} maxLength={80} />
             </div>
             <div className="grid gap-3 sm:grid-cols-3">
               <Select

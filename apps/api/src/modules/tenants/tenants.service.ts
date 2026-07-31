@@ -779,6 +779,12 @@ function resolvePrintingSettings(input: Partial<PrintingSettingsInput>): Printin
   return {
     branchId: input.branchId,
     labelSize: input.labelSize ?? "50x30",
+    labelShowLogo: input.labelShowLogo ?? true,
+    labelShowName: input.labelShowName ?? true,
+    labelShowPrice: input.labelShowPrice ?? true,
+    labelShowBarcodeText: input.labelShowBarcodeText ?? true,
+    labelShowSku: input.labelShowSku ?? false,
+    labelFooter: input.labelFooter ?? "",
     dpi: input.dpi ?? "203",
     receiptMode: input.receiptMode ?? "browser",
     receiptWidth: input.receiptWidth ?? "80",

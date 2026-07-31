@@ -38,8 +38,8 @@ describe("LandingSocialProof", () => {
 
     expect(html).toContain("Bruno Silva");
     expect(html).toContain("https://wa.me/5511999999999");
-    expect(html).toContain("DEPOIMENTOS DE CLIENTES");
-    expect(html).toContain("Relatos compartilhados por clientes da Orien.");
+    expect(html).toContain("Depoimentos de clientes");
+    expect(html).toContain("Relatos compartilhados por quem já usa a Orien no dia a dia.");
     expect(html).not.toContain("Relatos de empresas que ganharam clareza na rotina comercial.");
     expect(html).not.toContain("Avaliações de clientes");
     expect(html).not.toContain("★★★★★");

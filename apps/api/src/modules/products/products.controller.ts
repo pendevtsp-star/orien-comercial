@@ -53,6 +53,7 @@ export class ProductsController {
     @Query("items") items: string | undefined,
     @Query("ids") legacyIds: string | undefined,
     @Query("size") size: string | undefined,
+    @Query("branchId") branchId: string | undefined,
     @Query("autoprint") autoprint: string | undefined,
     @Res() response: Response,
   ) {
@@ -63,6 +64,7 @@ export class ProductsController {
         items ?? legacyIds ?? "",
         size,
         autoprint !== "false",
+        branchId,
       ),
     );
   }

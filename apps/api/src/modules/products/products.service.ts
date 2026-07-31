@@ -8,6 +8,7 @@ import type {
   ProductFiscalInput,
   ProductUpdateInput,
   BulkStatusUpdateInput,
+  PrintingSettingsInput,
   ResourceListQuery,
 } from "@sgc/types";
 import {
@@ -17,6 +18,7 @@ import {
   resolveSort,
 } from "../../shared/resource-access";
 import type { TenantContext } from "../../shared/request-context";
+import { loadTenantBranding } from "../../shared/tenant-branding";
 import { DatabaseService } from "../database/database.service";
 import { APP_CONFIG } from "../config/config.module";
 import bwipjs from "bwip-js";
@@ -654,7 +656,13 @@ export class ProductsService {
     return { ok: true };
   }
 
-  async labels(context: TenantContext, itemsInput = "", size = "50x30", autoprint = true) {
+  async labels(
+    context: TenantContext,
+    itemsInput = "",
+    size?: string,
+    autoprint = true,
+    branchId?: string,
+  ) {
     const uuidPattern =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     const requested = itemsInput
@@ -667,6 +675,12 @@ export class ProductsService {
       .slice(0, 100);
     const ids = requested.map((item) => item.id);
     if (!ids.length) throw new Error("Selecione ao menos um produto.");
+    const requestedBranchId = branchId?.trim();
+    const targetBranchId = requestedBranchId || context.branchId;
+    if (targetBranchId && !uuidPattern.test(targetBranchId)) {
+      throw new BadRequestException("Filial inválida.");
+    }
+    const settings = await this.loadLabelSettings(context, targetBranchId ?? undefined);
     const products = await this.database.tenantQuery<{
       id: string;
       name: string;
@@ -675,10 +689,20 @@ export class ProductsService {
       salePrice: string;
     }>(
       context.tenantId,
-      `SELECT id,name,sku,barcode,sale_price::text AS "salePrice" FROM products WHERE tenant_id=$1 AND id=ANY($2::uuid[]) AND deleted_at IS NULL AND is_active=true ORDER BY name`,
-      [context.tenantId, ids],
+      `SELECT id,name,sku,barcode,sale_price::text AS "salePrice"
+       FROM products
+       WHERE tenant_id=$1 AND id=ANY($2::uuid[]) AND deleted_at IS NULL AND is_active=true
+       ${targetBranchId ? "AND (branch_id=$3 OR branch_id IS NULL)" : ""}
+       ORDER BY name`,
+      targetBranchId ? [context.tenantId, ids, targetBranchId] : [context.tenantId, ids],
     );
-    const [width, height] = size === "40x25" ? [40, 25] : size === "60x40" ? [60, 40] : [50, 30];
+    const branding = await loadTenantBranding(this.database, context.tenantId);
+    const labelSize = size || settings.labelSize || "50x30";
+    const [width, height] = labelSize === "40x25" ? [40, 25] : labelSize === "60x40" ? [60, 40] : labelSize === "80x40" ? [80, 40] : [50, 30];
+    const logo = (settings.labelShowLogo ?? true) && branding.logoUrl
+      ? `<img class="logo" src="${escapeHtml(branding.logoUrl)}" alt="">`
+      : "";
+    const footer = settings.labelFooter ? `<small>${escapeHtml(settings.labelFooter)}</small>` : "";
     const labels = products.rows
       .flatMap((product) => {
         const code = product.barcode ?? product.sku;
@@ -688,16 +712,47 @@ export class ProductsService {
               text: code,
               scale: 2,
               height: 8,
-              includetext: true,
+              includetext: settings.labelShowBarcodeText ?? true,
               textxalign: "center",
             })
           : "<div class='missing'>SEM CÓDIGO</div>";
-        const label = `<article><strong>${escapeHtml(product.name)}</strong><div class="barcode">${barcode}</div><div class="price">${Number(product.salePrice).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</div></article>`;
+        const name = (settings.labelShowName ?? true) ? `<strong>${escapeHtml(product.name)}</strong>` : "";
+        const sku = settings.labelShowSku && product.sku ? `<span class="sku">SKU: ${escapeHtml(product.sku)}</span>` : "";
+        const price = (settings.labelShowPrice ?? true) ? `<div class="price">${Number(product.salePrice).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</div>` : "";
+        const label = `<article>${logo}${name}<div class="barcode">${barcode}</div>${sku}${price}${footer}</article>`;
         const quantity = requested.find((item) => item.id === product.id)?.quantity ?? 1;
         return Array.from({ length: quantity }, () => label);
       })
       .join("");
-    return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Etiquetas Orien</title><style>@page{size:${width}mm ${height}mm;margin:0}*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;color:#0b1d3d}article{width:${width}mm;height:${height}mm;padding:2.5mm;display:grid;grid-template-rows:auto 1fr auto;place-items:center;text-align:center;break-after:page;overflow:hidden}strong{font-size:10pt;line-height:1.1;max-width:100%;overflow:hidden}.barcode{width:100%;display:grid;place-items:center}.barcode svg{max-width:100%;max-height:${Math.max(10, height - 14)}mm}.price{font-size:12pt;font-weight:700}.missing{font-size:9pt;border:1px solid #999;padding:2mm}@media screen{body{display:flex;flex-wrap:wrap;gap:8px;padding:16px;background:#eef2f7}article{background:white;box-shadow:0 1px 5px #94a3b8}}</style></head><body>${labels}${autoprint ? "<script>window.onload=()=>window.print()</script>" : ""}</body></html>`;
+    return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Etiquetas ${escapeHtml(branding.companyName)}</title><style>@page{size:${width}mm ${height}mm;margin:0}*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;color:#000}article{width:${width}mm;height:${height}mm;padding:2mm;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.7mm;text-align:center;break-after:page;overflow:hidden}.logo{display:block;max-width:70%;max-height:${height >= 40 ? 8 : 5}mm;object-fit:contain;filter:grayscale(1) contrast(1.25)}strong{font-size:9pt;line-height:1.05;max-width:100%;overflow:hidden}.barcode{width:100%;min-height:8mm;display:grid;place-items:center}.barcode svg{max-width:100%;max-height:${Math.max(8, height - 16)}mm}.sku,small{font-size:7pt;line-height:1}.price{font-size:11pt;font-weight:700;line-height:1}.missing{font-size:8pt;border:1px solid #999;padding:1mm}@media screen{body{display:flex;flex-wrap:wrap;gap:8px;padding:16px;background:#eef2f7}article{background:white;box-shadow:0 1px 5px #94a3b8}}</style></head><body>${labels}${autoprint ? "<script>window.onload=()=>window.print()</script>" : ""}</body></html>`;
+  }
+
+  private async loadLabelSettings(
+    context: TenantContext,
+    branchId?: string,
+  ): Promise<Partial<PrintingSettingsInput>> {
+    const targetBranchId = branchId ?? context.branchId;
+    if (!targetBranchId) {
+      const tenantSettings = await this.database.tenantQuery<{ value: Partial<PrintingSettingsInput> | null }>(
+        context.tenantId,
+        "SELECT value FROM tenant_settings WHERE tenant_id=$1 AND key='printing' AND deleted_at IS NULL LIMIT 1",
+        [context.tenantId],
+      );
+      return tenantSettings.rows[0]?.value ?? {};
+    }
+    ensureBranchAccess(context, targetBranchId);
+    const result = await this.database.tenantQuery<{ value: Partial<PrintingSettingsInput> | null }>(
+      context.tenantId,
+      `SELECT bs.value
+       FROM branches b
+       LEFT JOIN branch_settings bs
+         ON bs.tenant_id=b.tenant_id AND bs.branch_id=b.id AND bs.key='printing' AND bs.deleted_at IS NULL
+       WHERE b.tenant_id=$1 AND b.id=$2 AND b.deleted_at IS NULL
+       LIMIT 1`,
+      [context.tenantId, targetBranchId],
+    );
+    ensureFound(result.rows[0], "Filial");
+    return result.rows[0]?.value ?? {};
   }
 }
 
