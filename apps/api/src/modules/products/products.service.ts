@@ -659,7 +659,7 @@ export class ProductsService {
   async labels(
     context: TenantContext,
     itemsInput = "",
-    size = "50x30",
+    size?: string,
     autoprint = true,
     branchId?: string,
   ) {
@@ -675,7 +675,11 @@ export class ProductsService {
       .slice(0, 100);
     const ids = requested.map((item) => item.id);
     if (!ids.length) throw new Error("Selecione ao menos um produto.");
-    const targetBranchId = branchId ?? context.branchId;
+    const requestedBranchId = branchId?.trim();
+    const targetBranchId = requestedBranchId || context.branchId;
+    if (targetBranchId && !uuidPattern.test(targetBranchId)) {
+      throw new BadRequestException("Filial inválida.");
+    }
     const settings = await this.loadLabelSettings(context, targetBranchId ?? undefined);
     const products = await this.database.tenantQuery<{
       id: string;
@@ -728,7 +732,14 @@ export class ProductsService {
     branchId?: string,
   ): Promise<Partial<PrintingSettingsInput>> {
     const targetBranchId = branchId ?? context.branchId;
-    if (!targetBranchId) return {};
+    if (!targetBranchId) {
+      const tenantSettings = await this.database.tenantQuery<{ value: Partial<PrintingSettingsInput> | null }>(
+        context.tenantId,
+        "SELECT value FROM tenant_settings WHERE tenant_id=$1 AND key='printing' AND deleted_at IS NULL LIMIT 1",
+        [context.tenantId],
+      );
+      return tenantSettings.rows[0]?.value ?? {};
+    }
     ensureBranchAccess(context, targetBranchId);
     const result = await this.database.tenantQuery<{ value: Partial<PrintingSettingsInput> | null }>(
       context.tenantId,
