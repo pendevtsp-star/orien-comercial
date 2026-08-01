@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   ServiceUnavailableException,
@@ -141,8 +142,8 @@ export class FiscalService {
       const result = await client.query(
         `UPDATE branch_fiscal_settings SET webhook_token_hash=$2,webhook_token_last4=$3,
           webhook_configured_at=now(),updated_at=now()
-         WHERE tenant_id=$1 RETURNING id`,
-        [context.tenantId, hash, token.slice(-4)],
+         WHERE tenant_id=$1 AND branch_id=$4 RETURNING id`,
+        [context.tenantId, hash, token.slice(-4), branchId],
       );
       ensureFound(result.rows[0], "Configuração fiscal");
       await insertAudit(client, context, "fiscal.webhook.token.rotated", "branch", branchId, {
@@ -1035,8 +1036,21 @@ export class FiscalService {
       throw new UnauthorizedException("Webhook fiscal não autorizado.");
     }
     const payloadDigest = createHash("sha256").update(JSON.stringify(normalized.payload)).digest("hex");
-    const eventKey = `${document.reference}:${eventId?.trim() || payloadDigest}`.slice(0, 128);
+    const legacyEventKey = `${document.reference}:${eventId?.trim() || payloadDigest}`.slice(0, 128);
+    const eventKey = createHash("sha256").update(`${document.tenant_id}:${legacyEventKey}`).digest("hex");
     const context = systemContext(document.tenant_id, document.branch_id);
+    const existing = await this.database.tenantQuery<{ id: string; payload_digest: string }>(
+      document.tenant_id,
+      `SELECT id,payload_digest FROM fiscal_webhook_events
+       WHERE tenant_id=$1 AND provider='focus_nfe' AND event_key = ANY($2::text[]) LIMIT 1`,
+      [document.tenant_id, [eventKey, legacyEventKey]],
+    );
+    if (existing.rows[0]) {
+      if (existing.rows[0].payload_digest !== payloadDigest) {
+        throw new ConflictException("A chave do evento fiscal já foi usada com outro payload.");
+      }
+      return { accepted: true, duplicate: true };
+    }
     const inserted = await this.database.tenantQuery<{ id: string }>(
       document.tenant_id,
       `INSERT INTO fiscal_webhook_events(
@@ -1053,9 +1067,26 @@ export class FiscalService {
         payloadDigest,
       ],
     );
-    if (!inserted.rows[0]) return { accepted: true, duplicate: true };
+    if (!inserted.rows[0]) {
+      const existing = await this.database.tenantQuery<{ payload_digest: string }>(
+        document.tenant_id,
+        `SELECT payload_digest FROM fiscal_webhook_events
+         WHERE tenant_id=$1 AND provider='focus_nfe' AND event_key=$2 LIMIT 1`,
+        [document.tenant_id, eventKey],
+      );
+      if (existing.rows[0]?.payload_digest !== payloadDigest) {
+        throw new ConflictException("A chave do evento fiscal já foi usada com outro payload.");
+      }
+      return { accepted: true, duplicate: true };
+    }
     try {
-      await this.applyProviderResult(context, document, normalized.result, "webhook_received");
+      await this.applyProviderResult(
+        context,
+        document,
+        normalized.result,
+        "webhook_received",
+        `fiscal-webhook:${inserted.rows[0].id}`,
+      );
       await this.database.tenantQuery(
         document.tenant_id,
         "UPDATE fiscal_webhook_events SET status='processed',processed_at=now(),updated_at=now() WHERE tenant_id=$1 AND id=$2",
@@ -1081,14 +1112,16 @@ export class FiscalService {
       fiscal_document_id: string;
       branch_id: string;
       payload: Record<string, unknown>;
+      status: string;
     }>(
       tenantId,
-      `SELECT we.fiscal_document_id,fd.branch_id,we.payload FROM fiscal_webhook_events we
+      `SELECT we.fiscal_document_id,fd.branch_id,we.payload,we.status FROM fiscal_webhook_events we
        JOIN fiscal_documents fd ON fd.id=we.fiscal_document_id
        WHERE we.tenant_id=$1 AND we.id=$2`,
       [tenantId, id],
     );
     const row = ensureFound(result.rows[0], "Evento fiscal");
+    if (row.status === "processed") return { accepted: true, duplicate: true };
     const document = await this.documentRow(systemContext(tenantId, row.branch_id), row.fiscal_document_id);
     const normalized = normalizeFocusWebhook(row.payload);
     await this.applyProviderResult(
@@ -1096,6 +1129,7 @@ export class FiscalService {
       document,
       normalized.result,
       "webhook_reprocessed",
+      `fiscal-webhook:${id}`,
     );
     await this.database.tenantQuery(
       tenantId,
@@ -1103,6 +1137,7 @@ export class FiscalService {
         attempt_count=attempt_count+1,last_error=NULL,updated_at=now() WHERE tenant_id=$1 AND id=$2`,
       [tenantId, id],
     );
+    return { accepted: true, duplicate: false };
   }
 
   async processArtifact(tenantId: string, artifactId: string) {
@@ -1260,8 +1295,22 @@ export class FiscalService {
     document: FiscalDocumentRow,
     result: FiscalProviderResult,
     eventType: string,
+    idempotencyKey?: string,
   ) {
     await this.database.tenantTransaction(context.tenantId, async (client) => {
+      const effectKey = idempotencyKey ?? providerResultIdempotencyKey(document, eventType, result);
+      const eventInserted = await event(
+        client,
+        context,
+        document.id,
+        eventType,
+        document.status,
+        result.status,
+        result.rejectionCode ?? null,
+        result.rejectionReason ?? providerMessage(result.status),
+        effectKey,
+      );
+      if (!eventInserted) return;
       await client.query(
         `UPDATE fiscal_documents SET status=$3,external_id=COALESCE($4,external_id),
           access_key=COALESCE($5,access_key),protocol=COALESCE($6,protocol),
@@ -1287,16 +1336,6 @@ export class FiscalService {
             providerStatus: result.providerStatus ?? null,
           }),
         ],
-      );
-      await event(
-        client,
-        context,
-        document.id,
-        eventType,
-        document.status,
-        result.status,
-        result.rejectionCode ?? null,
-        result.rejectionReason ?? providerMessage(result.status),
       );
       await insertAudit(
         client,
@@ -1671,11 +1710,14 @@ async function event(
   to: string | null,
   providerCode: string | null,
   message: string | undefined,
+  idempotencyKey?: string,
 ) {
-  await client.query(
+  const result = await client.query<{ id: string }>(
     `INSERT INTO fiscal_document_events(
-      tenant_id,fiscal_document_id,actor_user_id,event_type,status_from,status_to,provider_code,message
-     ) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
+      tenant_id,fiscal_document_id,actor_user_id,event_type,status_from,status_to,provider_code,message,idempotency_key
+     ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
+     ON CONFLICT (tenant_id,idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
+     RETURNING id`,
     [
       context.tenantId,
       documentId,
@@ -1685,8 +1727,19 @@ async function event(
       to,
       providerCode,
       message ?? null,
+      idempotencyKey ?? null,
     ],
   );
+  return Boolean(result.rowCount || result.rows[0]);
+}
+
+function providerResultIdempotencyKey(
+  document: FiscalDocumentRow,
+  eventType: string,
+  result: FiscalProviderResult,
+) {
+  const digest = createHash("sha256").update(JSON.stringify(result)).digest("hex");
+  return `fiscal-result:${document.id}:${eventType}:${digest}`.slice(0, 180);
 }
 
 async function insertAudit(

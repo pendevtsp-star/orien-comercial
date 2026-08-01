@@ -5,6 +5,7 @@ import {
   paymentSettlementCreateSchema,
   reconciliationBatchCreateSchema,
   financialForecastListQuerySchema,
+  financialEntryCreateSchema,
   salePaymentSchema,
 } from "./index";
 
@@ -73,6 +74,21 @@ describe("financial settlement contracts", () => {
       brand: "visa",
       installments: 1,
     });
+  });
+
+  it("makes manual financial amount semantics explicit", () => {
+    expect(financialEntryCreateSchema.parse({
+      amount: 100,
+      dueDate: "2026-07-21",
+      installmentCount: 3,
+    })).toMatchObject({ amount: 100, amountMode: "installment" });
+
+    expect(financialEntryCreateSchema.parse({
+      amount: 100,
+      amountMode: "installment",
+      dueDate: "2026-07-21",
+      installmentCount: 3,
+    })).toMatchObject({ amount: 100, amountMode: "installment" });
   });
 
   it("validates reconciliation batches and branch-scoped forecast filters", () => {

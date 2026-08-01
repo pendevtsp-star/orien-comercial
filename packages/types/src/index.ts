@@ -491,6 +491,7 @@ export const financialEntryCreateSchema = z.object({
   customerId: uuidSchema.optional(),
   supplierId: uuidSchema.optional(),
   amount: moneySchema.refine((value) => value > 0, "O valor deve ser maior que zero."),
+  amountMode: z.enum(["total", "installment"]).default("installment"),
   dueDate: z.string().date(),
   status: z.enum(["open", "paid", "cancelled"]).default("open"),
   description: z.string().trim().max(220).optional(),

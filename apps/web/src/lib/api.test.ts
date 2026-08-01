@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { getScopedBranchId, synchronizeTenantScope } from "./api";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { apiFetch, getScopedBranchId, synchronizeTenantScope } from "./api";
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 class MemoryStorage {
   private readonly values = new Map<string, string>();
@@ -37,5 +42,45 @@ describe("tenant and branch scope", () => {
 
     expect(local.getItem("sgc.currentTenantId")).toBe("tenant-b");
     expect(session.getItem("sgc.currentBranchScopeId")).toBeNull();
+  });
+});
+
+describe("apiFetch deadline", () => {
+  it("ends a request that never resolves with a deterministic timeout error", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_: string, init?: RequestInit) =>
+        new Promise<Response>((_, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+        }),
+      ),
+    );
+
+    const request = apiFetch("/slow");
+    const assertion = expect(request).rejects.toMatchObject({
+      statusCode: 408,
+      message: "A requisição demorou demais. Tente novamente.",
+    });
+
+    await vi.advanceTimersByTimeAsync(15_000);
+    await assertion;
+  });
+
+  it("preserves an abort explicitly requested by the caller", async () => {
+    const controller = new AbortController();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_: string, init?: RequestInit) =>
+        new Promise<Response>((_, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new Error("caller aborted")), { once: true });
+        }),
+      ),
+    );
+
+    const request = apiFetch("/cancelled", { signal: controller.signal });
+    controller.abort();
+
+    await expect(request).rejects.toThrow("caller aborted");
   });
 });

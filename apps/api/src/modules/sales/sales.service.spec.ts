@@ -453,6 +453,21 @@ describe("SalesService canonical sale flow", () => {
     ]));
   });
 
+  it("forces store credit to pending even when the client sends it as paid", async () => {
+    const harness = createHarness();
+    const storeCreditInput: SaleCreateInput = {
+      ...input,
+      payments: [{ method: "store_credit", amount: 14, status: "paid", installments: 1 }],
+    };
+
+    const response = await harness.service.createInTransaction(harness.client, context, storeCreditInput);
+
+    const paymentInsert = harness.query.mock.calls.find(([sql]) => sql.includes("INSERT INTO sale_payments"));
+    expect(paymentInsert?.[1]).toEqual(expect.arrayContaining(["store_credit", "pending"]));
+    expect(harness.query.mock.calls.some(([sql]) => sql.includes("INSERT INTO accounts_receivable"))).toBe(true);
+    expect(response).toMatchObject({ paidAmount: 0, openAmount: 14 });
+  });
+
   it("links pending payments to one receivable and leaves only the uncovered balance residual", async () => {
     const harness = createHarness();
     const partialInput: SaleCreateInput = {

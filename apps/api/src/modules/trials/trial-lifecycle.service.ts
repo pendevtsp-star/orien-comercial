@@ -22,6 +22,7 @@ export class TrialLifecycleService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
+    if (this.config.NODE_ENV === "test") return;
     const initial = setTimeout(() => void this.processDue(), 10_000);
     initial.unref();
     this.timer = setInterval(() => void this.processDue(), 60 * 60 * 1000);

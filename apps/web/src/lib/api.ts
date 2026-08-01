@@ -2,6 +2,7 @@ export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3334
 const TENANT_KEY = "sgc.currentTenantId";
 const BRANCH_SCOPE_KEY = "sgc.currentBranchScopeId";
 let refreshPromise: Promise<boolean> | null = null;
+const API_REQUEST_TIMEOUT_MS = 15_000;
 
 type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
@@ -88,18 +89,22 @@ async function request<T>(path: string, init: RequestInit, allowRefresh: boolean
   if (branchScopeId && !ignoreBranchScope) headers.set("x-branch-id", branchScopeId);
 
   let response: Response;
+  const requestControl = createRequestControl(init.signal, API_REQUEST_TIMEOUT_MS);
   try {
     response = await fetch(`${API_URL}${path}`, {
       ...init,
       credentials: "include",
       headers,
+      signal: requestControl.signal,
     });
-  } catch {
-    throw new ApiError(
-      "Não foi possível conectar à API. Verifique sua internet e tente novamente.",
-      0,
-      requestId,
-    );
+  } catch (error) {
+    if (init.signal?.aborted) throw error;
+    if (requestControl.signal.aborted) {
+      throw new ApiError("A requisição demorou demais. Tente novamente.", 408, requestId);
+    }
+    throw new ApiError("Não foi possível conectar à API. Verifique sua internet e tente novamente.", 0, requestId);
+  } finally {
+    requestControl.cleanup();
   }
 
   if (response.status === 401 && allowRefresh && !path.startsWith("/auth/")) {
@@ -142,19 +147,37 @@ async function request<T>(path: string, init: RequestInit, allowRefresh: boolean
 
 async function refreshSession() {
   if (!refreshPromise) {
+    const requestControl = createRequestControl(undefined, API_REQUEST_TIMEOUT_MS);
     refreshPromise = fetch(`${API_URL}/auth/refresh`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json", "x-request-id": createRequestId() },
       body: "{}",
+      signal: requestControl.signal,
     })
       .then((response) => response.ok)
       .catch(() => false)
       .finally(() => {
+        requestControl.cleanup();
         refreshPromise = null;
       });
   }
   return refreshPromise;
+}
+
+function createRequestControl(signal: AbortSignal | null | undefined, timeoutMs: number) {
+  const controller = new AbortController();
+  const abortFromCaller = () => controller.abort(signal?.reason);
+  if (signal?.aborted) abortFromCaller();
+  else signal?.addEventListener("abort", abortFromCaller, { once: true });
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      clearTimeout(timeout);
+      signal?.removeEventListener("abort", abortFromCaller);
+    },
+  };
 }
 
 export async function openApiDocument(
