@@ -2,16 +2,14 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2023"],
-    "module": "CommonJS",
     "outDir": "dist",
     "rootDir": "src",
     "declaration": false,
     "declarationMap": false,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
-    "baseUrl": ".",
     "paths": {
-      "express": ["src/types/express-module"]
+      "express": ["./src/types/express-module"]
     },
     "types": ["node", "vitest/globals"]
   },
