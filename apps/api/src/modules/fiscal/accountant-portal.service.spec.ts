@@ -58,7 +58,7 @@ function createHarness(overrides: { allowedPeriodEnd?: Date | null } = {}) {
     branch_id: null,
     name: "Contabilidade Modelo",
     email: "contador@example.com",
-    expires_at: new Date("2026-12-31T23:59:59.000Z"),
+    expires_at: new Date(Date.now() + 60 * 60 * 1000),
     allowed_period_start: new Date("2026-07-01T00:00:00.000Z"),
     allowed_period_end: overrides.allowedPeriodEnd ?? new Date("2026-07-01T00:00:00.000Z"),
     last_used_at: null,
@@ -66,7 +66,7 @@ function createHarness(overrides: { allowedPeriodEnd?: Date | null } = {}) {
     created_at: new Date("2026-07-01T00:00:00.000Z"),
     tenant_name: "Empresa piloto",
     branch_name: null,
-    session_expires_at: new Date("2026-08-01T00:00:00.000Z"),
+    session_expires_at: new Date(Date.now() + 60 * 60 * 1000),
   };
 
   const pool = {
