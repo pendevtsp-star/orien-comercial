@@ -28,10 +28,21 @@ import {
 import { FormEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { apiFetch } from "../lib/api";
+import { groupFields } from "./resource-page-model";
 
 interface ApiList<T> {
   data: T[];
   pagination: { total: number; page: number; pageSize: number };
+}
+
+interface ResourceField {
+  name: string;
+  label: string;
+  type?: string;
+  required?: boolean;
+  section?: string;
+  sectionDescription?: string;
+  options?: Array<{ label: string; value: string }>;
 }
 
 interface ResourcePageProps<T extends { id: string; isActive?: boolean | null }> {
@@ -39,15 +50,7 @@ interface ResourcePageProps<T extends { id: string; isActive?: boolean | null }>
   description: string;
   endpoint: string;
   columns: Array<{ key: string; header: string; render: (row: T) => React.ReactNode }>;
-  fields: Array<{
-    name: string;
-    label: string;
-    type?: string;
-    required?: boolean;
-    section?: string;
-    sectionDescription?: string;
-    options?: Array<{ label: string; value: string }>;
-  }>;
+  fields: ResourceField[];
   transform?: (form: FormData) => Record<string, unknown>;
   searchPlaceholder?: string;
   heroTitle?: string;
@@ -63,6 +66,7 @@ interface ResourcePageProps<T extends { id: string; isActive?: boolean | null }>
   sortOptions?: Array<{ label: string; value: string }>;
   rowActions?: (row: T) => React.ReactNode;
   formExtras?: React.ReactNode;
+  collapsedSections?: string[];
   bulkStatus?: { itemLabel: string; endpoint?: string };
 }
 
@@ -81,6 +85,7 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
   sortOptions,
   rowActions,
   formExtras,
+  collapsedSections = [],
   bulkStatus,
 }: ResourcePageProps<T>) {
   const searchParams = useSearchParams();
@@ -290,40 +295,34 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
                 </p>
               </div>
               {formExtras}
-              {fields.map((field, index) => {
-                const startsSection = field.section && field.section !== fields[index - 1]?.section;
-                const defaultValue = editingRow ? fieldValue(editingRow, field.name) : undefined;
+              {groupFields(fields).map((group) => {
+                const content = group.fields.map((field) => {
+                  const defaultValue = editingRow ? fieldValue(editingRow, field.name) : undefined;
+                  return field.type === "select" ? (
+                    <Select key={field.name} name={field.name} label={field.label} required={field.required} options={field.options ?? []} defaultValue={defaultValue} />
+                  ) : (
+                    <Input key={field.name} name={field.name} label={field.label} type={field.type ?? "text"} required={field.required} defaultValue={defaultValue} />
+                  );
+                });
+                if (!group.section) return <Fragment key={group.key}>{content}</Fragment>;
+                if (collapsedSections.includes(group.section)) {
+                  return (
+                    <details key={group.key} className="mt-3 rounded-md border border-[var(--brand-border)] bg-[var(--brand-surface)]">
+                      <summary className="cursor-pointer list-none p-3 text-sm font-semibold text-[var(--brand-primary)]">
+                        {group.section}
+                        {group.description ? <span className="mt-1 block text-xs font-normal leading-5 text-slate-500">{group.description}</span> : null}
+                      </summary>
+                      <div className="grid gap-3 border-t border-[var(--brand-border)] p-3">{content}</div>
+                    </details>
+                  );
+                }
                 return (
-                  <Fragment key={field.name}>
-                    {startsSection ? (
-                      <div className="mt-3 border-t border-[var(--brand-border)] pt-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--brand-secondary)]">
-                          {field.section}
-                        </p>
-                        {field.sectionDescription ? (
-                          <p className="mt-1 text-xs leading-5 text-slate-500">
-                            {field.sectionDescription}
-                          </p>
-                        ) : null}
-                      </div>
-                    ) : null}
-                    {field.type === "select" ? (
-                      <Select
-                        name={field.name}
-                        label={field.label}
-                        required={field.required}
-                        options={field.options ?? []}
-                        defaultValue={defaultValue}
-                      />
-                    ) : (
-                      <Input
-                        name={field.name}
-                        label={field.label}
-                        type={field.type ?? "text"}
-                        required={field.required}
-                        defaultValue={defaultValue}
-                      />
-                    )}
+                  <Fragment key={group.key}>
+                    <div className="mt-3 border-t border-[var(--brand-border)] pt-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--brand-secondary)]">{group.section}</p>
+                      {group.description ? <p className="mt-1 text-xs leading-5 text-slate-500">{group.description}</p> : null}
+                    </div>
+                    {content}
                   </Fragment>
                 );
               })}

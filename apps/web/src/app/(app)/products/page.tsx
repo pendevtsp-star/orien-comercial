@@ -5,11 +5,8 @@ import {
   Boxes,
   FileWarning,
   ImagePlus,
-  PackageSearch,
   ScanBarcode,
-  ShieldCheck,
   Sparkles,
-  Tags,
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -60,50 +57,19 @@ export default function ProductsPage() {
       endpoint="/products"
       bulkStatus={{ itemLabel: "produtos" }}
       searchPlaceholder="Buscar por produto, SKU ou código de barras"
-      heroBadge="Catálogo comercial e fiscal"
-      heroTitle="Produtos preparados para vender e emitir corretamente."
-      heroDescription="Cadastre o essencial primeiro e complete a tributação em uma etapa separada, com pendências claras antes da futura emissão fiscal."
       insights={[
         {
           label: "Produtos cadastrados",
           value: (rows) => rows.length,
-          detail: "Itens no catálogo comercial",
+          detail: "Itens no catálogo",
           icon: Boxes,
-        },
-        {
-          label: "Com SKU",
-          value: (rows) => rows.filter((row) => row.sku).length,
-          detail: "Rastreabilidade comercial",
-          icon: PackageSearch,
-        },
-        {
-          label: "Ticket médio de tabela",
-          value: (rows) =>
-            rows.length
-              ? Number(
-                  (rows.reduce((sum, row) => sum + Number(row.salePrice), 0) / rows.length).toFixed(
-                    2,
-                  ),
-                ).toLocaleString("pt-BR", {
-                  style: "currency",
-                  currency: "BRL",
-                })
-              : "R$ 0,00",
-          detail: "Preço médio dos produtos",
-          icon: Tags,
-        },
-        {
-          label: "Aptos fiscalmente",
-          value: (rows) => rows.filter((row) => row.fiscalReadiness?.status === "ready").length,
-          detail: "Sem pendências críticas",
-          icon: ShieldCheck,
-          accent: true,
         },
         {
           label: "Pendências fiscais",
           value: (rows) => rows.filter((row) => row.fiscalReadiness?.status !== "ready").length,
           detail: "Precisam de revisão",
           icon: FileWarning,
+          accent: true,
         },
       ]}
       sortOptions={[
@@ -190,6 +156,7 @@ export default function ProductsPage() {
         { name: "fiscalNotes", label: "Observações fiscais" },
       ]}
       formExtras={<CatalogAssistant />}
+      collapsedSections={["Tributação"]}
       transform={(form) => ({
         name: form.get("name"),
         sku: form.get("sku") || undefined,
@@ -404,14 +371,9 @@ function CatalogAssistant() {
     <div className="grid gap-3 rounded-md border border-[var(--brand-border)] bg-[var(--brand-surface)] p-3">
       <input type="hidden" name="imageUrl" />
       <input type="hidden" name="initialStockBranchId" value={initialStockBranchId} />
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-[var(--brand-primary)]">Cadastro assistido</p>
-          <p className="mt-1 text-xs leading-5 text-slate-500">
-            Use o leitor, gere um SKU e revise os dados antes de publicar o produto.
-          </p>
-        </div>
-        <ScanBarcode size={18} className="text-[var(--brand-secondary)]" />
+      <div>
+        <p className="text-sm font-semibold text-[var(--brand-primary)]">Atalhos do cadastro</p>
+        <p className="mt-1 text-xs leading-5 text-slate-500">Consulte um código existente ou gere o próximo SKU disponível.</p>
       </div>
       <div className="grid gap-2 sm:grid-cols-2">
         <Button
@@ -431,43 +393,14 @@ function CatalogAssistant() {
           Gerar SKU
         </Button>
       </div>
-      <ol className="grid gap-2 text-xs sm:grid-cols-4">
-        {[
-          ["1", "Leia o código"],
-          ["2", "Confirme dados"],
-          ["3", "Preço e imagem"],
-          ["4", "Estoque inicial"],
-        ].map(([step, label]) => (
-          <li
-            key={step}
-            className="flex items-center gap-2 rounded-md border border-[var(--brand-border)] bg-white px-2 py-2 text-slate-600"
-          >
-            <span className="grid h-5 w-5 place-items-center rounded-full bg-[var(--brand-primary)] text-[10px] font-bold text-white">
-              {step}
-            </span>
-            {label}
-          </li>
-        ))}
-      </ol>
-      <div className="grid gap-2 rounded-md border border-amber-200 bg-amber-50 p-3">
-        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-900">
-          Atalho fiscal controlado
-        </p>
-        <p className="text-xs leading-5 text-amber-900">
-          Use presets apenas como ponto de partida. NCM, CEST, CFOP, CST/CSOSN e alíquotas continuam exigindo conferência humana.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="secondary" onClick={() => applyFiscalPreset("simples_retail")}>
-            Simples · revenda
-          </Button>
-          <Button type="button" variant="secondary" onClick={() => applyFiscalPreset("st_retail")}>
-            Substituição tributária
-          </Button>
-          <Button type="button" variant="secondary" onClick={() => applyFiscalPreset("normal_retail")}>
-            Regime normal
-          </Button>
+      <details className="rounded-md border border-amber-200 bg-amber-50">
+        <summary className="cursor-pointer list-none p-3 text-xs font-semibold text-amber-900">Presets fiscais — usar somente com conferência contábil</summary>
+        <div className="flex flex-wrap gap-2 border-t border-amber-200 p-3">
+          <Button type="button" variant="secondary" onClick={() => applyFiscalPreset("simples_retail")}>Simples · revenda</Button>
+          <Button type="button" variant="secondary" onClick={() => applyFiscalPreset("st_retail")}>Substituição tributária</Button>
+          <Button type="button" variant="secondary" onClick={() => applyFiscalPreset("normal_retail")}>Regime normal</Button>
         </div>
-      </div>
+      </details>
       {lookupStatus ? <p className="text-xs leading-5 text-slate-600">{lookupStatus}</p> : null}
       <div className="rounded-md border border-dashed border-[var(--brand-border)] bg-white p-2">
         <div className="flex items-center gap-3">

@@ -1,75 +1,90 @@
 "use client";
 
 import { Button, Card, CardContent, EmptyState, PageHeader } from "@sgc/ui";
-import { BarChart3, Calendar, Clock, DollarSign, Download, FileCheck2, FileText, Landmark, PackageCheck, ShoppingCart, Users, ChevronDown, ChevronUp, TrendingUp, UserCheck } from "lucide-react";
+import { ChevronDown, Download, Eye, FileText, SlidersHorizontal } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch, downloadApiFile, openApiDocument } from "../../../lib/api";
-
-type Tab = "executive-dashboard" | "overview" | "sales" | "financial" | "stock" | "billing" | "commission-by-payment" | "reconciliation-defasaged" | "seller-performance" | "monthly-consolidated" | "product-analysis" | "customer-analysis" | "cash-flow";
-const tabs: Array<{ id: Tab; label: string; icon: typeof BarChart3 }> = [
-  { id: "executive-dashboard", label: "Dashboard", icon: BarChart3 },
-  { id: "overview", label: "Resumo gerencial", icon: TrendingUp },
-  { id: "sales", label: "Vendas", icon: ShoppingCart },
-  { id: "financial", label: "Financeiro", icon: Landmark },
-  { id: "stock", label: "Estoque", icon: PackageCheck },
-  { id: "product-analysis", label: "Produtos", icon: PackageCheck },
-  { id: "customer-analysis", label: "Clientes", icon: UserCheck },
-  { id: "cash-flow", label: "Fluxo Caixa", icon: DollarSign },
-  { id: "billing", label: "Faturamento", icon: FileCheck2 },
-  { id: "commission-by-payment", label: "Comissões", icon: DollarSign },
-  { id: "reconciliation-defasaged", label: "Conciliação", icon: Clock },
-  { id: "seller-performance", label: "Vendedores", icon: Users },
-  { id: "monthly-consolidated", label: "Consolidado", icon: Calendar },
-];
+import {
+  getReportLabel,
+  primaryPresetLabels,
+  reportGroups,
+  supportsDocumentExport,
+  type ReportId,
+} from "./page-model";
 
 type Branch = { id: string; name: string };
 type Seller = { id: string; name: string };
 type Customer = { id: string; name: string };
-type Product = { id: string; name: string };
 
 type DatePreset = { label: string; startDate: string; endDate: string };
 
 function getDatePresets(): DatePreset[] {
   const today = new Date();
   const todayStr = today.toISOString().slice(0, 10);
-  
+
   const startOfWeek = new Date(today);
   startOfWeek.setDate(today.getDate() - today.getDay());
-  
+
   const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-  
+
   const startOfQuarter = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1);
-  
+
   const startOfYear = new Date(today.getFullYear(), 0, 1);
-  
+
   const yesterday = new Date(today);
   yesterday.setDate(today.getDate() - 1);
-  
+
   const lastWeekStart = new Date(today);
   lastWeekStart.setDate(today.getDate() - today.getDay() - 7);
   const lastWeekEnd = new Date(today);
   lastWeekEnd.setDate(today.getDate() - today.getDay() - 1);
-  
+
   const lastMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1);
   const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
 
   return [
     { label: "Hoje", startDate: todayStr, endDate: todayStr },
-    { label: "Ontem", startDate: yesterday.toISOString().slice(0, 10), endDate: yesterday.toISOString().slice(0, 10) },
+    {
+      label: "Ontem",
+      startDate: yesterday.toISOString().slice(0, 10),
+      endDate: yesterday.toISOString().slice(0, 10),
+    },
     { label: "Esta semana", startDate: startOfWeek.toISOString().slice(0, 10), endDate: todayStr },
-    { label: "Semana passada", startDate: lastWeekStart.toISOString().slice(0, 10), endDate: lastWeekEnd.toISOString().slice(0, 10) },
+    {
+      label: "Semana passada",
+      startDate: lastWeekStart.toISOString().slice(0, 10),
+      endDate: lastWeekEnd.toISOString().slice(0, 10),
+    },
     { label: "Este mês", startDate: startOfMonth.toISOString().slice(0, 10), endDate: todayStr },
-    { label: "Mês passado", startDate: lastMonthStart.toISOString().slice(0, 10), endDate: lastMonthEnd.toISOString().slice(0, 10) },
-    { label: "Este trimestre", startDate: startOfQuarter.toISOString().slice(0, 10), endDate: todayStr },
+    {
+      label: "Mês passado",
+      startDate: lastMonthStart.toISOString().slice(0, 10),
+      endDate: lastMonthEnd.toISOString().slice(0, 10),
+    },
+    {
+      label: "Este trimestre",
+      startDate: startOfQuarter.toISOString().slice(0, 10),
+      endDate: todayStr,
+    },
     { label: "Este ano", startDate: startOfYear.toISOString().slice(0, 10), endDate: todayStr },
-    { label: "Últimos 30 dias", startDate: new Date(today.getTime() - 29 * 86400000).toISOString().slice(0, 10), endDate: todayStr },
-    { label: "Últimos 90 dias", startDate: new Date(today.getTime() - 89 * 86400000).toISOString().slice(0, 10), endDate: todayStr },
+    {
+      label: "Últimos 30 dias",
+      startDate: new Date(today.getTime() - 29 * 86400000).toISOString().slice(0, 10),
+      endDate: todayStr,
+    },
+    {
+      label: "Últimos 90 dias",
+      startDate: new Date(today.getTime() - 89 * 86400000).toISOString().slice(0, 10),
+      endDate: todayStr,
+    },
   ];
 }
 
 export default function ReportsPage() {
-  const [tab, setTab] = useState<Tab>("overview");
-  const [startDate, setStartDate] = useState(() => new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10));
+  const [tab, setTab] = useState<ReportId>("overview");
+  const [startDate, setStartDate] = useState(() =>
+    new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10),
+  );
   const [endDate, setEndDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [data, setData] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -77,28 +92,33 @@ export default function ReportsPage() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [sellers, setSellers] = useState<Seller[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string>("");
   const [selectedSeller, setSelectedSeller] = useState<string>("");
   const [selectedCustomer, setSelectedCustomer] = useState<string>("");
-  const [selectedProduct, setSelectedProduct] = useState<string>("");
   const [selectedStatus, setSelectedStatus] = useState<string>("");
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>("");
   const [showFilters, setShowFilters] = useState(false);
   const [activePreset, setActivePreset] = useState<string>("Últimos 30 dias");
 
   const datePresets = useMemo(() => getDatePresets(), []);
+  const primaryPresets = datePresets.filter((preset) => primaryPresetLabels.includes(preset.label));
+  const secondaryPresets = datePresets.filter(
+    (preset) => !primaryPresetLabels.includes(preset.label),
+  );
+  const activeFilterCount = [
+    selectedBranch,
+    selectedSeller,
+    selectedCustomer,
+    selectedStatus,
+  ].filter(Boolean).length;
 
   const query = useMemo(() => {
     const params = new URLSearchParams({ startDate, endDate });
     if (selectedBranch) params.set("branchId", selectedBranch);
     if (selectedSeller) params.set("sellerId", selectedSeller);
     if (selectedCustomer) params.set("customerId", selectedCustomer);
-    if (selectedProduct) params.set("productId", selectedProduct);
     if (selectedStatus) params.set("status", selectedStatus);
-    if (selectedPaymentMethod) params.set("paymentMethod", selectedPaymentMethod);
     return `?${params.toString()}`;
-  }, [startDate, endDate, selectedBranch, selectedSeller, selectedCustomer, selectedProduct, selectedStatus, selectedPaymentMethod]);
+  }, [startDate, endDate, selectedBranch, selectedSeller, selectedCustomer, selectedStatus]);
 
   useEffect(() => {
     void apiFetch<{ data: Branch[] }>("/branches?pageSize=100")
@@ -109,9 +129,6 @@ export default function ReportsPage() {
       .catch(() => {});
     void apiFetch<{ data: Array<{ id: string; name: string }> }>("/customers?pageSize=100")
       .then((res) => setCustomers(res.data ?? []))
-      .catch(() => {});
-    void apiFetch<{ data: Array<{ id: string; name: string }> }>("/products?pageSize=100")
-      .then((res) => setProducts(res.data ?? []))
       .catch(() => {});
   }, []);
 
@@ -158,7 +175,8 @@ export default function ReportsPage() {
 
   const overview = data;
   const rows = arrayRows(data);
-  const summary = data?.summary as Array<{ label: string; value: unknown; format?: string }> | undefined;
+  const summary = data?.summary as
+    Array<{ label: string; value: unknown; format?: string }> | undefined;
   const warnings = data?.warnings as string[] | undefined;
 
   const statusOptions = [
@@ -168,201 +186,192 @@ export default function ReportsPage() {
     { label: "Cancelado", value: "cancelled" },
     { label: "Aprovado", value: "approved" },
     { label: "Convertido", value: "converted" },
-    { label: "Reconciliado", value: "reconciled" },
-  ];
-
-  const paymentMethodOptions = [
-    { label: "Todas as formas", value: "" },
-    { label: "Pix", value: "pix" },
-    { label: "Cartão de crédito", value: "credit_card" },
-    { label: "Cartão de débito", value: "debit_card" },
-    { label: "Dinheiro", value: "cash" },
-    { label: "Boleto", value: "boleto" },
   ];
 
   return (
     <div className="grid gap-6">
       <PageHeader
         title="Relatórios"
-        description="Emita leituras simples e gerenciais de vendas, financeiro e estoque."
+        description="Escolha uma análise, ajuste o período e exporte quando precisar."
         actions={
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="secondary"
-              icon={<FileText size={16} />}
-              onClick={() =>
-                void downloadApiFile(
-                  `/reports/${tab}/pdf${tab === "stock" ? "" : query}`,
-                  `orien-relatorio-${tab}-${startDate}.pdf`,
-                )
-              }
-            >
-              Baixar PDF
-            </Button>
-            <Button
-              variant="secondary"
-              icon={<FileText size={16} />}
-              onClick={() =>
-                void openApiDocument(
-                  `/reports/${tab}/document${tab === "stock" ? "" : query}`,
-                  true,
-                )
-              }
-            >
-              Visualizar
-            </Button>
-            <Button variant="secondary" icon={<Download size={16} />} onClick={exportCsv}>
-              Exportar CSV
-            </Button>
-          </div>
+          <ReportExportMenu tab={tab} query={query} startDate={startDate} onExportCsv={exportCsv} />
         }
       />
 
       {/* Tabs */}
       <Card>
         <CardContent className="grid gap-4">
-          <div className="flex flex-wrap gap-2" role="tablist">
-            {tabs.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setTab(item.id)}
-                className={`inline-flex h-10 items-center gap-2 rounded-md px-3 text-sm font-medium transition-colors ${tab === item.id ? "bg-[var(--brand-primary)] text-white shadow-sm" : "border border-[var(--brand-border)] bg-white text-[var(--brand-primary)] hover:bg-slate-50"}`}
-              >
-                <item.icon size={16} />
-                {item.label}
-              </button>
-            ))}
-          </div>
+          <label className="grid max-w-xl gap-1 text-sm font-medium text-[var(--brand-primary)]">
+            Tipo de relatório
+            <select
+              className="h-11 rounded-md border border-[var(--brand-border)] bg-white px-3"
+              value={tab}
+              onChange={(event) => setTab(event.target.value as ReportId)}
+            >
+              {reportGroups.map((group) => (
+                <optgroup key={group.label} label={group.label}>
+                  {group.reports.map((report) => (
+                    <option key={report.id} value={report.id}>
+                      {report.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </label>
 
-          {/* Date Presets */}
-          <div className="flex flex-wrap gap-2">
-            {datePresets.map((preset) => (
-              <button
-                key={preset.label}
-                type="button"
-                onClick={() => applyPreset(preset)}
-                className={`h-8 rounded-md px-3 text-xs font-medium transition-colors ${activePreset === preset.label ? "bg-[var(--brand-primary)] text-white" : "border border-[var(--brand-border)] bg-white text-slate-600 hover:bg-slate-50"}`}
-              >
-                {preset.label}
-              </button>
-            ))}
-          </div>
+          {tab === "stock" ? (
+            <p className="rounded-md bg-[var(--brand-surface)] p-3 text-sm text-slate-600">
+              A posição de estoque reflete os dados atuais e não utiliza período.
+            </p>
+          ) : (
+            <>
+              <div className="flex flex-wrap gap-2">
+                {primaryPresets.map((preset) => (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => applyPreset(preset)}
+                    className={`h-8 rounded-md px-3 text-xs font-medium transition-colors ${activePreset === preset.label ? "bg-[var(--brand-primary)] text-white" : "border border-[var(--brand-border)] bg-white text-slate-600 hover:bg-slate-50"}`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+                <details className="relative">
+                  <summary className="flex h-8 cursor-pointer list-none items-center gap-1 rounded-md border border-[var(--brand-border)] px-3 text-xs font-medium text-slate-600">
+                    Mais períodos <ChevronDown size={14} />
+                  </summary>
+                  <div className="absolute left-0 z-20 mt-2 grid min-w-48 gap-1 rounded-md border border-[var(--brand-border)] bg-white p-2 shadow-xl">
+                    {secondaryPresets.map((preset) => (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        className="rounded px-3 py-2 text-left text-sm hover:bg-[var(--brand-surface)]"
+                        onClick={() => applyPreset(preset)}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                </details>
+              </div>
 
-          {/* Date Inputs and Actions */}
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <label className="grid gap-1 text-sm font-medium">
-              Início
-              <input
-                className="h-10 rounded-md border border-[var(--brand-border)] px-3"
-                type="date"
-                value={startDate}
-                onChange={(event) => { setStartDate(event.target.value); setActivePreset(""); }}
-              />
-            </label>
-            <label className="grid gap-1 text-sm font-medium">
-              Fim
-              <input
-                className="h-10 rounded-md border border-[var(--brand-border)] px-3"
-                type="date"
-                value={endDate}
-                onChange={(event) => { setEndDate(event.target.value); setActivePreset(""); }}
-              />
-            </label>
-            <div className="flex items-end gap-2">
-              <Button onClick={() => void load()} icon={<FileText size={16} />}>
-                Emitir relatório
-              </Button>
-              <Button
-                variant="secondary"
-                icon={showFilters ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                onClick={() => setShowFilters(!showFilters)}
-              >
-                Filtros
-              </Button>
-            </div>
-          </div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,220px)_minmax(0,220px)_auto]">
+                <label className="grid gap-1 text-sm font-medium">
+                  Início
+                  <input
+                    className="h-10 rounded-md border border-[var(--brand-border)] px-3"
+                    type="date"
+                    value={startDate}
+                    onChange={(event) => {
+                      setStartDate(event.target.value);
+                      setActivePreset("");
+                    }}
+                  />
+                </label>
+                <label className="grid gap-1 text-sm font-medium">
+                  Fim
+                  <input
+                    className="h-10 rounded-md border border-[var(--brand-border)] px-3"
+                    type="date"
+                    value={endDate}
+                    onChange={(event) => {
+                      setEndDate(event.target.value);
+                      setActivePreset("");
+                    }}
+                  />
+                </label>
+                <div className="flex items-end">
+                  <Button
+                    variant="secondary"
+                    icon={<SlidersHorizontal size={16} />}
+                    onClick={() => setShowFilters(!showFilters)}
+                  >
+                    Filtros{activeFilterCount ? ` (${activeFilterCount})` : ""}
+                  </Button>
+                </div>
+              </div>
 
-          {/* Advanced Filters */}
-          {showFilters && (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 border-t border-[var(--brand-border)] pt-3">
-              <label className="grid gap-1 text-sm font-medium">
-                Filial
-                <select
-                  className="h-10 rounded-md border border-[var(--brand-border)] px-3"
-                  value={selectedBranch}
-                  onChange={(e) => setSelectedBranch(e.target.value)}
-                >
-                  <option value="">Todas as filiais</option>
-                  {branches.map((b) => (
-                    <option key={b.id} value={b.id}>{b.name}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="grid gap-1 text-sm font-medium">
-                Vendedor
-                <select
-                  className="h-10 rounded-md border border-[var(--brand-border)] px-3"
-                  value={selectedSeller}
-                  onChange={(e) => setSelectedSeller(e.target.value)}
-                >
-                  <option value="">Todos os vendedores</option>
-                  {sellers.map((s) => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="grid gap-1 text-sm font-medium">
-                Cliente
-                <select
-                  className="h-10 rounded-md border border-[var(--brand-border)] px-3"
-                  value={selectedCustomer}
-                  onChange={(e) => setSelectedCustomer(e.target.value)}
-                >
-                  <option value="">Todos os clientes</option>
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="grid gap-1 text-sm font-medium">
-                Situação
-                <select
-                  className="h-10 rounded-md border border-[var(--brand-border)] px-3"
-                  value={selectedStatus}
-                  onChange={(e) => setSelectedStatus(e.target.value)}
-                >
-                  {statusOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="grid gap-1 text-sm font-medium">
-                Forma de Pagamento
-                <select
-                  className="h-10 rounded-md border border-[var(--brand-border)] px-3"
-                  value={selectedPaymentMethod}
-                  onChange={(e) => setSelectedPaymentMethod(e.target.value)}
-                >
-                  {paymentMethodOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="grid gap-1 text-sm font-medium">
-                Produto
-                <select
-                  className="h-10 rounded-md border border-[var(--brand-border)] px-3"
-                  value={selectedProduct}
-                  onChange={(e) => setSelectedProduct(e.target.value)}
-                >
-                  <option value="">Todos os produtos</option>
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
+              {showFilters && (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 border-t border-[var(--brand-border)] pt-3">
+                  <label className="grid gap-1 text-sm font-medium">
+                    Filial
+                    <select
+                      className="h-10 rounded-md border border-[var(--brand-border)] px-3"
+                      value={selectedBranch}
+                      onChange={(e) => setSelectedBranch(e.target.value)}
+                    >
+                      <option value="">Todas as filiais</option>
+                      {branches.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="grid gap-1 text-sm font-medium">
+                    Vendedor
+                    <select
+                      className="h-10 rounded-md border border-[var(--brand-border)] px-3"
+                      value={selectedSeller}
+                      onChange={(e) => setSelectedSeller(e.target.value)}
+                    >
+                      <option value="">Todos os vendedores</option>
+                      {sellers.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="grid gap-1 text-sm font-medium">
+                    Cliente
+                    <select
+                      className="h-10 rounded-md border border-[var(--brand-border)] px-3"
+                      value={selectedCustomer}
+                      onChange={(e) => setSelectedCustomer(e.target.value)}
+                    >
+                      <option value="">Todos os clientes</option>
+                      {customers.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="grid gap-1 text-sm font-medium">
+                    Situação
+                    <select
+                      className="h-10 rounded-md border border-[var(--brand-border)] px-3"
+                      value={selectedStatus}
+                      onChange={(e) => setSelectedStatus(e.target.value)}
+                    >
+                      {statusOptions.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {activeFilterCount ? (
+                    <div className="flex items-end">
+                      <Button
+                        className="w-full"
+                        variant="secondary"
+                        onClick={() => {
+                          setSelectedBranch("");
+                          setSelectedSeller("");
+                          setSelectedCustomer("");
+                          setSelectedStatus("");
+                        }}
+                      >
+                        Limpar filtros
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
@@ -382,7 +391,9 @@ export default function ReportsPage() {
       {/* Warnings */}
       {warnings && warnings.length > 0 ? (
         <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
-          {warnings.map((w, i) => <p key={i}>{w}</p>)}
+          {warnings.map((w, i) => (
+            <p key={i}>{w}</p>
+          ))}
         </div>
       ) : null}
 
@@ -405,16 +416,21 @@ export default function ReportsPage() {
       {/* Overview Cards */}
       {!loading && tab === "overview" && overview ? (
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {([
-            ["Vendas", String((overview as Record<string, string>).salesCount ?? 0)],
-            ["Receita", money((overview as Record<string, string>).grossRevenue)],
-            ["Ticket médio", money((overview as Record<string, string>).averageTicket)],
-            ["Clientes", String((overview as Record<string, string>).customers ?? 0)],
-            ["Margem bruta", money((overview as Record<string, string>).grossMargin)],
-            ["Inadimplência", money((overview as Record<string, string>).overdueReceivables)],
-            ["Estoque crítico", String((overview as Record<string, string>).lowStockProducts ?? 0)],
-            ["Descontos", money((overview as Record<string, string>).discounts)],
-          ] as [string, string][]).map(([lbl, value]) => (
+          {(
+            [
+              ["Vendas", String((overview as Record<string, string>).salesCount ?? 0)],
+              ["Receita", money((overview as Record<string, string>).grossRevenue)],
+              ["Ticket médio", money((overview as Record<string, string>).averageTicket)],
+              ["Clientes", String((overview as Record<string, string>).customers ?? 0)],
+              ["Margem bruta", money((overview as Record<string, string>).grossMargin)],
+              ["Inadimplência", money((overview as Record<string, string>).overdueReceivables)],
+              [
+                "Estoque crítico",
+                String((overview as Record<string, string>).lowStockProducts ?? 0),
+              ],
+              ["Descontos", money((overview as Record<string, string>).discounts)],
+            ] as [string, string][]
+          ).map(([lbl, value]) => (
             <Card key={lbl}>
               <CardContent>
                 <p className="text-sm text-slate-500">{lbl}</p>
@@ -430,9 +446,11 @@ export default function ReportsPage() {
         <Card>
           <CardContent className="p-0">
             {rows.length ? (
-              <div style={{ maxHeight: '500px', overflow: 'auto' }}>
+              <div style={{ maxHeight: "500px", overflow: "auto" }}>
                 <table className="w-full min-w-[800px] text-left text-sm">
-                  <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'white' }}>
+                  <thead
+                    style={{ position: "sticky", top: 0, zIndex: 10, backgroundColor: "white" }}
+                  >
                     <tr>
                       {Object.keys(rows[0]!).map((key) => (
                         <th
@@ -466,7 +484,91 @@ export default function ReportsPage() {
           </CardContent>
         </Card>
       ) : null}
+
+      {!loading && !error ? (
+        <div className="grid justify-items-start gap-2">
+          <p className="text-xs text-slate-500">
+            {getReportLabel(tab)} ·{" "}
+            {tab === "stock"
+              ? "Posição atual"
+              : `${new Date(`${startDate}T00:00:00`).toLocaleDateString("pt-BR")} a ${new Date(`${endDate}T00:00:00`).toLocaleDateString("pt-BR")}`}
+          </p>
+          <ReportExportMenu
+            tab={tab}
+            query={query}
+            startDate={startDate}
+            onExportCsv={exportCsv}
+            label="Exportar relatório"
+            openUp
+          />
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+function ReportExportMenu({
+  tab,
+  query,
+  startDate,
+  onExportCsv,
+  label = "Exportar",
+  openUp = false,
+}: {
+  tab: ReportId;
+  query: string;
+  startDate: string;
+  onExportCsv: () => void;
+  label?: string;
+  openUp?: boolean;
+}) {
+  return (
+    <details className="relative">
+      <summary className="flex min-h-10 cursor-pointer list-none items-center gap-2 rounded-md border border-[var(--brand-border)] px-3 text-sm font-medium text-[var(--brand-primary)]">
+        <Download size={16} /> {label} <ChevronDown size={15} />
+      </summary>
+      <div
+        className={`absolute z-20 grid min-w-56 gap-1 rounded-md border border-[var(--brand-border)] bg-white p-2 shadow-xl ${
+          openUp ? "bottom-full right-0 mb-2" : "left-0 top-full mt-2 sm:left-auto sm:right-0"
+        }`}
+      >
+        {supportsDocumentExport(tab) ? (
+          <>
+            <button
+              type="button"
+              className="flex items-center gap-2 rounded px-3 py-2 text-left text-sm hover:bg-[var(--brand-surface)]"
+              onClick={() =>
+                void openApiDocument(
+                  `/reports/${tab}/document${tab === "stock" ? "" : query}`,
+                  true,
+                )
+              }
+            >
+              <Eye size={15} /> Visualizar relatório
+            </button>
+            <button
+              type="button"
+              className="flex items-center gap-2 rounded px-3 py-2 text-left text-sm hover:bg-[var(--brand-surface)]"
+              onClick={() =>
+                void downloadApiFile(
+                  `/reports/${tab}/pdf${tab === "stock" ? "" : query}`,
+                  `orien-relatorio-${tab}-${startDate}.pdf`,
+                )
+              }
+            >
+              <FileText size={15} /> Baixar PDF
+            </button>
+          </>
+        ) : null}
+        <button
+          type="button"
+          className="flex items-center gap-2 rounded px-3 py-2 text-left text-sm hover:bg-[var(--brand-surface)]"
+          onClick={onExportCsv}
+        >
+          <Download size={15} /> Exportar CSV
+        </button>
+      </div>
+    </details>
   );
 }
 
@@ -486,9 +588,25 @@ function money(value: unknown) {
 
 function isMoneyField(key: string): boolean {
   const moneyFields = [
-    "amount", "Amount", "revenue", "stockValue", "Sales", "sales",
-    "Target", "target", "Ticket", "ticket", "Plan", "plan",
-    "gross", "fee", "net", "difference", "Difference", "Value", "value",
+    "amount",
+    "Amount",
+    "revenue",
+    "stockValue",
+    "Sales",
+    "sales",
+    "Target",
+    "target",
+    "Ticket",
+    "ticket",
+    "Plan",
+    "plan",
+    "gross",
+    "fee",
+    "net",
+    "difference",
+    "Difference",
+    "Value",
+    "value",
   ];
   return moneyFields.some((f) => key.includes(f));
 }
@@ -498,7 +616,8 @@ function formatCell(value: unknown) {
   if (typeof value === "string" && value.match(/^\d{4}-\d{2}-\d{2}T/)) {
     return new Date(value).toLocaleString("pt-BR");
   }
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean")
+    return String(value);
   return JSON.stringify(value);
 }
 
@@ -507,7 +626,8 @@ function formatSummaryValue(value: unknown, format?: string): string {
   if (format === "integer") return Number(value ?? 0).toLocaleString("pt-BR");
   if (value === null || value === undefined) return "-";
   if (typeof value === "object") return JSON.stringify(value);
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean")
+    return String(value);
   return "-";
 }
 
