@@ -26,6 +26,15 @@ describe("CashRegistersService close", () => {
 
     const paymentQuery = query.mock.calls[1]?.[0] as string;
     expect(paymentQuery).toContain("sp.method IN ('cash', 'dinheiro')");
-    expect(query.mock.calls[3]?.[1]).toEqual(expect.arrayContaining([115, 115, 0]));
+    expect(query.mock.calls[3]?.[1]).toEqual([
+      context.tenantId,
+      "cash-a",
+      context.userId,
+      115,
+      115,
+      0,
+      null,
+      "not_required",
+    ]);
   });
 });

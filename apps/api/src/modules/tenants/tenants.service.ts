@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable, Optional } from "@nestjs/common";
 import type { AppConfig } from "@sgc/config";
 import {
   defaultTenantBranding,
@@ -23,6 +23,7 @@ import { join, resolve } from "node:path";
 import type { PoolClient } from "pg";
 import { DatabaseService } from "../database/database.service";
 import type { TenantContext } from "../../shared/request-context";
+import { CapabilitiesService } from "../capabilities/capabilities.service";
 import {
   ensureBranchAccess,
   ensureFound,
@@ -46,6 +47,7 @@ interface MembershipRow {
   tenantName: string;
   tenantSlug: string;
   tenantStatus: string;
+  planSlug: string | null;
   membershipId: string;
   branchId: string | null;
   branchName?: string | null;
@@ -73,6 +75,7 @@ export class TenantsService {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Optional() @Inject(CapabilitiesService) private readonly capabilities?: CapabilitiesService,
   ) {}
 
   async getMe(userId: string) {
@@ -88,6 +91,7 @@ export class TenantsService {
         t.name AS "tenantName",
         t.slug AS "tenantSlug",
         t.status AS "tenantStatus",
+        t.plan_slug AS "planSlug",
         m.id AS "membershipId",
         m.branch_id AS "branchId",
         b.name AS "branchName",
@@ -107,6 +111,15 @@ export class TenantsService {
     );
 
     const user = userResult.rows[0];
+    const capabilityEntries = this.capabilities
+      ? await Promise.all(
+          [...new Set(memberships.rows.map((membership) => membership.tenantId))].map(async (tenantId) => [
+            tenantId,
+            await this.capabilities!.resolveForTenant(tenantId),
+          ] as const),
+        )
+      : [];
+    const capabilitiesByTenant = new Map(capabilityEntries);
     return {
       user: user
         ? {
@@ -115,7 +128,11 @@ export class TenantsService {
               user.email.toLowerCase() === this.config.PLATFORM_OWNER_EMAIL.toLowerCase(),
           }
         : user,
-      memberships: memberships.rows,
+      memberships: memberships.rows.map((membership) => ({
+        ...membership,
+        planSlug: capabilitiesByTenant.get(membership.tenantId)?.planSlug ?? membership.planSlug,
+        capabilities: capabilitiesByTenant.get(membership.tenantId),
+      })),
     };
   }
 

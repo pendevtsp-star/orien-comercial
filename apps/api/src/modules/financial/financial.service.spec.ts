@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { financialEntryCreateSchema } from "@sgc/types";
 import { FinancialService } from "./financial.service";
 
 const context = {
@@ -17,19 +18,23 @@ describe("FinancialService", () => {
       if (sql.includes("INSERT INTO accounts_receivable")) {
         inserts.push(values ?? []);
         return Promise.resolve({
-          rows: [{
-            id: `receivable-${inserts.length}`,
-            amount: values?.[3],
-            dueDate: values?.[4],
-            status: values?.[5],
-          }],
+          rows: [
+            {
+              id: `receivable-${inserts.length}`,
+              amount: values?.[3],
+              dueDate: values?.[4],
+              status: values?.[5],
+            },
+          ],
         });
       }
       return Promise.resolve({ rows: [] });
     });
     const database = {
-      tenantTransaction: vi.fn((_tenantId: string, callback: (client: { query: typeof query }) => Promise<unknown>) =>
-        callback({ query })),
+      tenantTransaction: vi.fn(
+        (_tenantId: string, callback: (client: { query: typeof query }) => Promise<unknown>) =>
+          callback({ query }),
+      ),
     };
     const service = new FinancialService(database as never);
 
@@ -53,14 +58,23 @@ describe("FinancialService", () => {
       if (sql.includes("INSERT INTO accounts_payable")) {
         inserts.push(values ?? []);
         return Promise.resolve({
-          rows: [{ id: `payable-${inserts.length}`, amount: values?.[3], dueDate: values?.[4], status: values?.[5] }],
+          rows: [
+            {
+              id: `payable-${inserts.length}`,
+              amount: values?.[3],
+              dueDate: values?.[4],
+              status: values?.[5],
+            },
+          ],
         });
       }
       return Promise.resolve({ rows: [] });
     });
     const database = {
-      tenantTransaction: vi.fn((_tenantId: string, callback: (client: { query: typeof query }) => Promise<unknown>) =>
-        callback({ query })),
+      tenantTransaction: vi.fn(
+        (_tenantId: string, callback: (client: { query: typeof query }) => Promise<unknown>) =>
+          callback({ query }),
+      ),
     };
     const service = new FinancialService(database as never);
 
@@ -82,24 +96,34 @@ describe("FinancialService", () => {
       if (sql.includes("INSERT INTO accounts_receivable")) {
         inserts.push(values ?? []);
         return Promise.resolve({
-          rows: [{ id: `receivable-${inserts.length}`, amount: values?.[3], dueDate: values?.[4], status: values?.[5] }],
+          rows: [
+            {
+              id: `receivable-${inserts.length}`,
+              amount: values?.[3],
+              dueDate: values?.[4],
+              status: values?.[5],
+            },
+          ],
         });
       }
       return Promise.resolve({ rows: [] });
     });
     const database = {
-      tenantTransaction: vi.fn((_tenantId: string, callback: (client: { query: typeof query }) => Promise<unknown>) =>
-        callback({ query })),
+      tenantTransaction: vi.fn(
+        (_tenantId: string, callback: (client: { query: typeof query }) => Promise<unknown>) =>
+          callback({ query }),
+      ),
     };
     const service = new FinancialService(database as never);
 
-    await service.create(context, "receivables", {
-      branchId: "branch-a",
+    const input = financialEntryCreateSchema.parse({
       amount: 12.5,
       dueDate: "2026-07-21",
       status: "open",
       installmentCount: 2,
     });
+
+    await service.create(context, "receivables", input);
 
     expect(inserts.map((values) => values[3])).toEqual(["12.50", "12.50"]);
   });

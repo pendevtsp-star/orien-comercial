@@ -50,10 +50,13 @@ describe("apiFetch deadline", () => {
     vi.useFakeTimers();
     vi.stubGlobal(
       "fetch",
-      vi.fn((_: string, init?: RequestInit) =>
-        new Promise<Response>((_, reject) => {
-          init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
-        }),
+      vi.fn(
+        (_: string, init?: RequestInit) =>
+          new Promise<Response>((_, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), {
+              once: true,
+            });
+          }),
       ),
     );
 
@@ -67,14 +70,43 @@ describe("apiFetch deadline", () => {
     await assertion;
   });
 
+  it("keeps the timeout active while the response body is being read", async () => {
+    vi.useFakeTimers();
+    let rejectBody!: (reason?: unknown) => void;
+    const body = new Promise<string>((_, reject) => {
+      rejectBody = reject;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_: string, init?: RequestInit) => {
+        init?.signal?.addEventListener("abort", () => rejectBody(new Error("aborted")), {
+          once: true,
+        });
+        return Promise.resolve({ ok: true, status: 200, text: () => body } as Response);
+      }),
+    );
+
+    const request = apiFetch("/slow-body");
+    const assertion = expect(request).rejects.toMatchObject({
+      statusCode: 408,
+      message: "A requisição demorou demais. Tente novamente.",
+    });
+
+    await vi.advanceTimersByTimeAsync(15_000);
+    await assertion;
+  });
+
   it("preserves an abort explicitly requested by the caller", async () => {
     const controller = new AbortController();
     vi.stubGlobal(
       "fetch",
-      vi.fn((_: string, init?: RequestInit) =>
-        new Promise<Response>((_, reject) => {
-          init?.signal?.addEventListener("abort", () => reject(new Error("caller aborted")), { once: true });
-        }),
+      vi.fn(
+        (_: string, init?: RequestInit) =>
+          new Promise<Response>((_, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(new Error("caller aborted")), {
+              once: true,
+            });
+          }),
       ),
     );
 

@@ -11,9 +11,9 @@ describe("customer form payload", () => {
 
     expect(buildCustomerPayload(form, true)).toEqual({
       name: "Cliente atualizado",
-      document: undefined,
+      document: null,
       email: "cliente@example.com",
-      whatsapp: undefined,
+      whatsapp: null,
     });
   });
 });

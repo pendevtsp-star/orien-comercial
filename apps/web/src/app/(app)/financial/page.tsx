@@ -211,7 +211,7 @@ export default function FinancialPage() {
         body: JSON.stringify({
           branchId: form.get("branchId") || undefined,
           amount: Number(form.get("amount") || 0),
-          amountMode: form.get("amountMode") || "total",
+          amountMode: form.get("amountMode") || "installment",
           dueDate: form.get("dueDate"),
           status: "open",
           description: form.get("description") || undefined,
@@ -685,6 +685,7 @@ function FinancialColumn({
               <Select
                 name="amountMode"
                 label="Valor informado"
+                defaultValue="installment"
                 options={[
                   { label: "Total das parcelas", value: "total" },
                   { label: "Valor de cada parcela", value: "installment" },

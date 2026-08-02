@@ -36,6 +36,13 @@ export function writePendingSales(storage: StorageLike, sales: PendingSale[]) {
   storage.setItem(POS_PENDING_SALES_KEY, JSON.stringify(sales));
 }
 
+export function removeSyncedSales(storage: StorageLike, syncedKeys: Set<string>) {
+  const latest = readPendingSales(storage);
+  const remaining = latest.filter((sale) => !syncedKeys.has(sale.idempotencyKey));
+  writePendingSales(storage, remaining);
+  return remaining;
+}
+
 export function pendingSalesForScope(sales: PendingSale[], scope: PosQueueScope) {
   return sales.filter(
     (sale) =>

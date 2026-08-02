@@ -54,6 +54,22 @@ const permissionSlugs = [
   "sales.history",
   "pricing.policies.manage",
   "pricing.exceptions.authorize",
+  "cash.read",
+  "cash.open",
+  "cash.close",
+  "cash.manage",
+  "purchases.read",
+  "purchases.manage",
+  "returns.read",
+  "returns.create",
+  "services.read",
+  "services.manage",
+  "service_orders.read",
+  "service_orders.manage",
+  "integrations.read",
+  "integrations.manage",
+  "pipeline.read",
+  "pipeline.manage",
   "financial.read",
   "financial.receive",
   "financial.pay",
@@ -68,10 +84,21 @@ const permissionSlugs = [
   "fiscal.issue",
   "fiscal.cancel",
   "fiscal.review",
-  "fiscal.activate"
+  "fiscal.activate",
 ] as const;
 
-const roleSlugs = ["owner", "admin", "manager", "seller", "cashier", "stock", "finance", "accountant", "support", "viewer"] as const;
+const roleSlugs = [
+  "owner",
+  "admin",
+  "manager",
+  "seller",
+  "cashier",
+  "stock",
+  "finance",
+  "accountant",
+  "support",
+  "viewer",
+] as const;
 
 type RoleSlug = (typeof roleSlugs)[number];
 
@@ -111,7 +138,7 @@ const defaultRolePermissions: Record<RoleSlug, string[]> = {
     "financial.categories.manage",
     "subscriptions.read",
     "subscriptions.manage",
-    "dashboard.read"
+    "dashboard.read",
   ],
   manager: [
     "branches.read",
@@ -139,10 +166,26 @@ const defaultRolePermissions: Record<RoleSlug, string[]> = {
     "users.read",
     "users.invite",
     "subscriptions.read",
-    "dashboard.read"
+    "dashboard.read",
   ],
-  seller: ["products.read", "customers.read", "customers.create", "customers.update", "sales.read", "sales.create", "sales.history", "dashboard.read"],
-  cashier: ["products.read", "customers.read", "sales.read", "sales.create", "sales.history", "dashboard.read"],
+  seller: [
+    "products.read",
+    "customers.read",
+    "customers.create",
+    "customers.update",
+    "sales.read",
+    "sales.create",
+    "sales.history",
+    "dashboard.read",
+  ],
+  cashier: [
+    "products.read",
+    "customers.read",
+    "sales.read",
+    "sales.create",
+    "sales.history",
+    "dashboard.read",
+  ],
   stock: [
     "branches.read",
     "products.read",
@@ -154,7 +197,7 @@ const defaultRolePermissions: Record<RoleSlug, string[]> = {
     "stock.inventory",
     "stock.purchase",
     "stock.reports",
-    "dashboard.read"
+    "dashboard.read",
   ],
   finance: [
     "customers.read",
@@ -166,11 +209,18 @@ const defaultRolePermissions: Record<RoleSlug, string[]> = {
     "financial.reconcile",
     "financial.categories.manage",
     "subscriptions.read",
-    "dashboard.read"
+    "dashboard.read",
   ],
-  accountant: ["products.read", "stock.reports", "financial.read", "dashboard.read", "fiscal.read", "fiscal.review"],
+  accountant: [
+    "products.read",
+    "stock.reports",
+    "financial.read",
+    "dashboard.read",
+    "fiscal.read",
+    "fiscal.review",
+  ],
   support: ["tenants.read", "users.read", "subscriptions.read", "dashboard.read"],
-  viewer: ["branches.read", "products.read", "customers.read", "dashboard.read"]
+  viewer: ["branches.read", "products.read", "customers.read", "dashboard.read"],
 };
 
 export interface SeededTenant {
@@ -219,9 +269,9 @@ export async function resetDatabase(pool: Pool) {
     SELECT tablename
     FROM pg_tables
     WHERE schemaname = 'public'
-      AND tablename <> '__drizzle_migrations'
+      AND tablename NOT IN ('__drizzle_migrations', 'plans', 'plan_features', 'platform_feature_flags')
     ORDER BY tablename
-    `
+    `,
   );
 
   if (!tables.rowCount) return;
@@ -240,13 +290,14 @@ export async function seedTenant(
     ownerPassword: string;
     branchName: string;
     branchCode: string;
-  }
+    planSlug?: string;
+  },
 ): Promise<SeededTenant> {
   const passwordHash = await argon2.hash(`${input.ownerPassword}${pepper}`, {
     type: argon2.argon2id,
     memoryCost: 65536,
     timeCost: 3,
-    parallelism: 1
+    parallelism: 1,
   });
 
   await ensurePermissions(pool);
@@ -258,10 +309,10 @@ export async function seedTenant(
     const tenantResult = await client.query<{ id: string }>(
       `
       INSERT INTO tenants (name, slug, status, plan_slug)
-      VALUES ($1, $2, 'active', 'starter')
-      RETURNING id
-      `,
-      [input.tenantName, input.tenantSlug]
+       VALUES ($1, $2, 'active', $3)
+       RETURNING id
+       `,
+      [input.tenantName, input.tenantSlug, input.planSlug ?? "starter"],
     );
     const tenantId = tenantResult.rows[0]!.id;
 
@@ -271,7 +322,7 @@ export async function seedTenant(
       VALUES ($1, $2, $3, true)
       RETURNING id
       `,
-      [input.ownerEmail.toLowerCase(), input.ownerName, passwordHash]
+      [input.ownerEmail.toLowerCase(), input.ownerName, passwordHash],
     );
     const userId = userResult.rows[0]!.id;
 
@@ -284,7 +335,7 @@ export async function seedTenant(
         VALUES ($1, $2, $3, true)
         RETURNING id
         `,
-        [tenantId, roleSlug, roleName]
+        [tenantId, roleSlug, roleName],
       );
 
       roleIds[roleSlug] = roleResult.rows[0]!.id;
@@ -308,7 +359,7 @@ export async function seedTenant(
       INSERT INTO memberships (tenant_id, user_id, role_id, status)
       VALUES ($1, $2, $3, 'active')
       `,
-      [tenantId, userId, roleIds.owner]
+      [tenantId, userId, roleIds.owner],
     );
 
     const branchResult = await client.query<{ id: string }>(
@@ -317,7 +368,7 @@ export async function seedTenant(
       VALUES ($1, $2, $3, 'Sao Paulo', 'SP', true)
       RETURNING id
       `,
-      [tenantId, input.branchName, input.branchCode]
+      [tenantId, input.branchName, input.branchCode],
     );
 
     await client.query(
@@ -325,7 +376,7 @@ export async function seedTenant(
       INSERT INTO product_categories (tenant_id, name)
       VALUES ($1, 'Geral')
       `,
-      [tenantId]
+      [tenantId],
     );
 
     await client.query("COMMIT");
@@ -337,7 +388,7 @@ export async function seedTenant(
       email: input.ownerEmail.toLowerCase(),
       password: input.ownerPassword,
       branchId: branchResult.rows[0]!.id,
-      roleIds
+      roleIds,
     };
   } catch (error) {
     await client.query("ROLLBACK");
@@ -355,7 +406,8 @@ export async function seedBaselineTenants(pool: Pool) {
     ownerName: "Administrador Demo",
     ownerPassword: "ChangeMe123!DoNotUseInProduction",
     branchName: "Matriz Demo",
-    branchCode: "MATRIZ-A"
+    branchCode: "MATRIZ-A",
+    planSlug: "pro",
   });
 
   const tenantB = await seedTenant(pool, {
@@ -365,7 +417,8 @@ export async function seedBaselineTenants(pool: Pool) {
     ownerName: "Administrador B",
     ownerPassword: "ChangeMe123!DoNotUseInProduction",
     branchName: "Matriz B",
-    branchCode: "MATRIZ-B"
+    branchCode: "MATRIZ-B",
+    planSlug: "pro",
   });
 
   return { tenantA, tenantB };

@@ -39,7 +39,8 @@ export class SalesService {
     @Inject(PricingService) private readonly pricing: PricingService,
     @Inject(SaleCompositionService) private readonly composition: SaleCompositionService,
     @Inject(LoyaltyService) private readonly loyalty: LoyaltyService,
-    @Inject(FinancialSettlementsService) private readonly financialSettlements: FinancialSettlementsService,
+    @Inject(FinancialSettlementsService)
+    private readonly financialSettlements: FinancialSettlementsService,
     @Inject(SaleCommissionService) private readonly commissions: SaleCommissionService,
   ) {}
 
@@ -499,7 +500,8 @@ export class SalesService {
           occurredAt: paymentOccurredAt,
         },
       );
-      const settlementStatus = payment.status === "paid" && !snapshot.acquirerId ? "settled" : "pending";
+      const settlementStatus =
+        payment.status === "paid" && !snapshot.acquirerId ? "settled" : "pending";
       const insertedPayment = await client.query<{ id: string }>(
         `INSERT INTO sale_payments (
            tenant_id,sale_id,branch_id,method,amount,status,paid_at,acquirer_id,fee_rule_id,
@@ -545,7 +547,7 @@ export class SalesService {
           [
             context.tenantId,
             input.branchId,
-            payment.status === "pending" ? input.customerId ?? null : null,
+            payment.status === "pending" ? (input.customerId ?? null) : null,
             saleId,
             salePaymentId,
             payment.method,
@@ -568,7 +570,10 @@ export class SalesService {
     });
 
     const openAmount = roundMoney(totalAmount - paidAmount);
-    const residualOpenAmountCents = Math.max(0, moneyToCents(openAmount) - representedPendingAmountCents);
+    const residualOpenAmountCents = Math.max(
+      0,
+      moneyToCents(openAmount) - representedPendingAmountCents,
+    );
     if (residualOpenAmountCents > 0) {
       const residualOpenAmount = centsToMoney(residualOpenAmountCents);
       await client.query(
@@ -918,9 +923,7 @@ export class SalesService {
             { label: "Total", value: toMoney(sale.total_amount) },
             {
               label: "Pago",
-              value: toMoney(
-                payments.rows.reduce((sum, payment) => sum + Number(payment.amount), 0),
-              ),
+              value: toMoney(sumPaidPayments(payments.rows)),
             },
             {
               label: "Itens",
@@ -1015,7 +1018,7 @@ export class SalesService {
     const copies = Math.max(1, Math.min(5, Number(settings.receiptCopies ?? 1)));
     const footer =
       typeof settings.receiptFooter === "string" ? settings.receiptFooter : branding.footerNote;
-    const paid = payments.rows.reduce((sum, payment) => sum + Number(payment.amount), 0);
+    const paid = sumPaidPayments(payments.rows);
     const copyHtml = Array.from({ length: copies }, (_, index) =>
       receiptCopyHtml({
         branding,
@@ -1264,6 +1267,12 @@ async function insertAuditLog(
 
 function toMoney(value: string | number) {
   return Number(value).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function sumPaidPayments(payments: SaleDocumentPaymentRow[]) {
+  return payments
+    .filter((payment) => payment.status === "paid")
+    .reduce((sum, payment) => sum + Number(payment.amount), 0);
 }
 
 interface SaleDocumentItemRow {

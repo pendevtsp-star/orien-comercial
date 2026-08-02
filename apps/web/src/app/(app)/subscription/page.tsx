@@ -17,7 +17,6 @@ interface SubscriptionResponse {
   } | null;
   plans: Array<{ id: string; slug: string; name: string; priceCents: number }>;
   invoices: Array<{ id: string; amount: string; dueDate?: string | null; status: string; invoiceUrl?: string | null }>;
-  provider: { env: string };
 }
 
 export default function SubscriptionPage() {
@@ -121,9 +120,6 @@ export default function SubscriptionPage() {
               <Badge className="border-white/10 bg-white/10 text-white">{loading ? "carregando" : data?.subscription?.status ?? "trial"}</Badge>
             </div>
             <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/6 p-4 text-sm text-white/78">
-              <p>
-                Ambiente do provedor: <span className="font-medium text-white">{data?.provider.env ?? "sandbox"}</span>
-              </p>
               <p>
                 Plano atual: <span className="font-medium text-white">{data?.subscription?.planName ?? "Trial"}</span>
               </p>

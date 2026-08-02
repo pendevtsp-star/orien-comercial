@@ -6,9 +6,10 @@ import { IntegrationHubController } from "./integration-hub.controller";
 import { IntegrationHubService } from "./integration-hub.service";
 import { PermissionsGuard } from "../../shared/permissions.guard";
 import { TenantContextGuard } from "../../shared/tenant-context.guard";
+import { CapabilitiesModule } from "../capabilities/capabilities.module";
 
 @Module({
-  imports: [DatabaseModule],
+  imports: [DatabaseModule, CapabilitiesModule],
   controllers: [IntegrationsController, IntegrationHubController],
   providers: [IntegrationsService, IntegrationHubService, PermissionsGuard, TenantContextGuard],
   exports: [IntegrationsService, IntegrationHubService],

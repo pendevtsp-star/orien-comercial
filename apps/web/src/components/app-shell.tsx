@@ -17,16 +17,14 @@ import {
   CreditCard,
   ChevronDown,
   CircleHelp,
-  Headset,
   LogOut,
+  LockKeyhole,
   Menu,
   Moon,
-  Newspaper,
   ReceiptText,
   PackageCheck,
   Palette,
   Settings,
-  Wrench,
   MonitorCog,
   PlugZap,
   ScanBarcode,
@@ -41,7 +39,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   apiFetch,
@@ -61,33 +59,37 @@ type NavigationItem = {
   permissions?: string[];
   anyPermissions?: string[];
   platformOnly?: boolean;
+  capability?: string;
+  planLocked?: boolean;
 };
 const navigation: NavigationItem[] = [
   {
-    href: "/dashboard",
-    label: "Visão estratégica",
+    href: "/store-central",
+    label: "Hoje",
     icon: BarChart3,
     permissions: ["dashboard.read"],
   },
   {
-    href: "/store-central",
-    label: "Operação de hoje",
+    href: "/dashboard",
+    label: "Visão do negócio",
     icon: BriefcaseBusiness,
     permissions: ["dashboard.read"],
   },
-  { href: "/updates", label: "Novidades", icon: Newspaper, permissions: ["dashboard.read"] },
-  { href: "/branches", label: "Lojas", icon: Building2, permissions: ["branches.read"] },
-  { href: "/products", label: "Produtos", icon: Boxes, permissions: ["products.read"] },
-  { href: "/stock", label: "Estoque", icon: PackageCheck, permissions: ["stock.read"] },
-  { href: "/suppliers", label: "Fornecedores", icon: Truck, permissions: ["stock.purchase"] },
-  { href: "/purchases", label: "Compras", icon: ClipboardList, permissions: ["stock.purchase"] },
   { href: "/sales", label: "Vendas", icon: ShoppingCart, permissions: ["sales.read"] },
   { href: "/pos", label: "PDV", icon: ScanBarcode, permissions: ["sales.create"] },
   {
     href: "/operations?section=quotes",
     label: "Orçamentos e pedidos",
     icon: FileText,
-    permissions: ["sales.create"],
+    permissions: ["pipeline.read"],
+    capability: "pipeline",
+  },
+  {
+    href: "/operations?section=returns",
+    label: "Trocas e devoluções",
+    icon: ReceiptText,
+    permissions: ["returns.read"],
+    capability: "returns",
   },
   {
     href: "/operations?section=pricing",
@@ -103,8 +105,11 @@ const navigation: NavigationItem[] = [
   },
   { href: "/customers", label: "Clientes", icon: UsersRound, permissions: ["customers.read"] },
   { href: "/loyalty", label: "Fidelidade", icon: Gift, permissions: ["customers.read"] },
-  { href: "/catalog-tools", label: "Ferramentas", icon: Wrench, permissions: ["products.read"] },
-  { href: "/printers", label: "Impressoras", icon: MonitorCog, permissions: ["products.read"] },
+  { href: "/products", label: "Produtos", icon: Boxes, permissions: ["products.read"] },
+  { href: "/stock", label: "Estoque", icon: PackageCheck, permissions: ["stock.read"] },
+  { href: "/purchases", label: "Compras", icon: ClipboardList, permissions: ["purchases.read"], capability: "purchases" },
+  { href: "/suppliers", label: "Fornecedores", icon: Truck, permissions: ["purchases.read"], capability: "purchases" },
+  { href: "/branches", label: "Lojas", icon: Building2, permissions: ["branches.read"] },
   {
     href: "/financial",
     label: "Financeiro",
@@ -119,7 +124,6 @@ const navigation: NavigationItem[] = [
   },
   { href: "/alerts", label: "Alertas", icon: BellRing, permissions: ["stock.read"] },
   { href: "/tasks", label: "Tarefas", icon: ClipboardList, permissions: ["dashboard.read"] },
-  { href: "/support", label: "Suporte", icon: Headset, permissions: ["dashboard.read"] },
   { href: "/audit", label: "Auditoria", icon: History, permissions: ["users.read"] },
   { href: "/team", label: "Equipe", icon: ShieldCheck, permissions: ["users.read"] },
   {
@@ -129,7 +133,7 @@ const navigation: NavigationItem[] = [
     permissions: ["subscriptions.read"],
   },
   { href: "/settings", label: "Configurações", icon: Settings, permissions: ["tenants.read"] },
-  { href: "/integrations", label: "Integrações", icon: PlugZap, permissions: ["tenants.read"] },
+  { href: "/integrations", label: "Integrações", icon: PlugZap, permissions: ["integrations.read"], capability: "integrations" },
   {
     href: "/fiscal",
     label: "Central fiscal",
@@ -143,54 +147,53 @@ const navigation: NavigationItem[] = [
     permissions: ["fiscal.review"],
   },
   { href: "/preferences", label: "Preferências", icon: Palette },
+  { href: "/printers", label: "Impressoras", icon: MonitorCog, permissions: ["branches.read"] },
   { href: "/sessions", label: "Dispositivos", icon: ShieldCheck },
 ];
 const navigationGroups = [
-  { id: "overview", label: "Visão executiva", routes: ["/dashboard", "/updates"] },
+  { id: "overview", label: "Início", routes: ["/store-central", "/dashboard"] },
   {
-    id: "operation",
-    label: "Operação diária",
-    routes: ["/store-central", "/pos", "/sales", "/operations?section=quotes"],
+    id: "sales",
+    label: "Vendas",
+    routes: ["/pos", "/sales", "/operations?section=quotes", "/operations?section=returns", "/operations?section=pricing", "/operations?section=credit"],
   },
   {
     id: "catalog",
-    label: "Catálogo e estoque",
+    label: "Catálogo e suprimentos",
     routes: [
-      "/branches",
       "/products",
       "/stock",
-      "/suppliers",
       "/purchases",
-      "/catalog-tools",
-      "/printers",
+      "/suppliers",
     ],
   },
   { id: "customers", label: "Clientes", routes: ["/customers", "/loyalty"] },
   {
+    id: "finance",
+    label: "Financeiro e fiscal",
+    routes: ["/financial", "/fiscal", "/accounting"],
+  },
+  {
     id: "management",
     label: "Gestão",
     routes: [
-      "/financial",
       "/reports",
       "/alerts",
       "/tasks",
-      "/support",
-      "/operations?section=pricing",
-      "/operations?section=credit",
       "/audit",
+      "/team",
     ],
   },
   {
-    id: "administration",
-    label: "Administração",
+    id: "configuration",
+    label: "Configurações",
     routes: [
-      "/team",
+      "/branches",
       "/subscription",
       "/settings",
       "/integrations",
-      "/fiscal",
-      "/accounting",
       "/preferences",
+      "/printers",
       "/sessions",
     ],
   },
@@ -206,6 +209,14 @@ interface MeResponse {
     branchName?: string | null;
     roleSlug: string;
     permissions: string[];
+    planSlug?: string | null;
+    capabilities?: {
+      planSlug: string | null;
+      legacyFallback: boolean;
+      features: Record<string, boolean>;
+      limits: Record<string, number | null>;
+      flags: Record<string, boolean>;
+    };
   }>;
 }
 
@@ -272,6 +283,7 @@ function helpForPath(pathname: string) {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const [me, setMe] = useState<MeResponse | null>(null);
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
@@ -292,14 +304,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     Array<{ label: string; detail: string; href: string }>
   >([]);
   const [activeSearchIndex, setActiveSearchIndex] = useState(0);
-  const [currentSearch, setCurrentSearch] = useState("");
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     overview: true,
-    operation: true,
+    sales: true,
     catalog: false,
     customers: false,
+    finance: false,
     management: false,
-    administration: false,
+    configuration: false,
   });
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const notificationsRef = useRef<HTMLDivElement>(null);
@@ -502,9 +514,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       ? `Orien | ${currentMembership.tenantName}`
       : "Orien | Gestão inteligente";
   }, [currentMembership?.tenantName]);
-  useEffect(() => {
-    setCurrentSearch(window.location.search.slice(1));
-  }, [pathname]);
+  const currentSearch = searchParams.toString();
+  const currentRouteKey = currentSearch ? `${pathname}?${currentSearch}` : pathname;
   const allowedNavigation = useMemo(() => {
     const granted = currentMembership?.permissions ?? [];
     return navigation.filter(
@@ -514,8 +525,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           item.permissions.every((permission) => granted.includes(permission))) &&
         (!item.anyPermissions ||
           item.anyPermissions.some((permission) => granted.includes(permission))),
-    );
-  }, [currentMembership]);
+    ).map((item) => ({
+      ...item,
+      planLocked:
+        Boolean(item.capability) &&
+        currentMembership?.capabilities !== undefined &&
+        currentMembership.capabilities.features[item.capability!] === false,
+    }));
+  }, [currentMembership, me?.user.isPlatformAdmin]);
   const groupedNavigation = useMemo(() => {
     const favoriteRoutes = new Set(preferences.favoriteRoutes);
     const favoriteItems = allowedNavigation.filter((item) => favoriteRoutes.has(item.href));
@@ -537,15 +554,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const branchScopeLabel = currentMembership?.branchId
     ? "Filial autorizada"
     : (currentBranch?.name ?? "Todas as lojas");
-  const routeItem = navigation.find((item) => pathname === item.href);
+  const routeItem =
+    navigation.find((item) => item.href === currentRouteKey) ??
+    navigation.find((item) => item.href === pathname) ??
+    (pathname === "/operations" ? navigation.find((item) => item.href === "/operations?section=returns") : undefined);
+  const routeIsKnown = pathname !== "/operations" || Boolean(navigation.find((item) => item.href === currentRouteKey));
   const grantedPermissions = currentMembership?.permissions ?? [];
   const routeAllowed =
-    !routeItem ||
+    routeIsKnown && (!routeItem ||
     ((!routeItem.platformOnly || me?.user.isPlatformAdmin) &&
       (!routeItem.permissions ||
         routeItem.permissions.every((permission) => grantedPermissions.includes(permission))) &&
       (!routeItem.anyPermissions ||
-        routeItem.anyPermissions.some((permission) => grantedPermissions.includes(permission))));
+        routeItem.anyPermissions.some((permission) => grantedPermissions.includes(permission)))));
+  const routePlanLocked =
+    Boolean(routeItem?.capability) &&
+    currentMembership?.capabilities?.features[routeItem?.capability ?? ""] === false;
   const initials = (me?.user.name ?? "Orien")
     .split(" ")
     .slice(0, 2)
@@ -603,20 +627,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   function navigationLink(item: NavigationItem, compactMode: boolean, closeMobile = false) {
     const Icon = item.icon;
-    const active = item.href.includes("?")
-      ? pathname === item.href.split("?")[0] && currentSearch === item.href.split("?")[1]
-      : pathname === item.href;
+    const active = item.href.includes("?") ? currentRouteKey === item.href : pathname === item.href;
     return (
       <div key={item.href} className="relative flex items-center">
-        <Link
-          href={item.href}
-          title={compactMode ? item.label : undefined}
-          onClick={() => closeMobile && setMobileNavigationOpen(false)}
-          className={`orien-nav-item flex h-11 min-w-0 flex-1 items-center rounded-md text-sm font-medium transition ${compactMode ? "justify-center px-0" : "gap-3 px-3"} ${active ? "orien-nav-item-active" : ""}`}
-        >
-          <Icon size={17} />
-          {!compactMode ? item.label : null}
-        </Link>
+        {item.planLocked ? (
+          <span
+            title="Disponível em um plano superior"
+            className={`orien-nav-item flex h-11 min-w-0 flex-1 items-center rounded-md text-sm font-medium text-white/55 ${compactMode ? "justify-center px-0" : "gap-3 px-3"}`}
+          >
+            <LockKeyhole size={17} />
+            {!compactMode ? item.label : null}
+          </span>
+        ) : (
+          <Link
+            href={item.href}
+            title={compactMode ? item.label : undefined}
+            onClick={() => closeMobile && setMobileNavigationOpen(false)}
+            className={`orien-nav-item flex h-11 min-w-0 flex-1 items-center rounded-md text-sm font-medium transition ${compactMode ? "justify-center px-0" : "gap-3 px-3"} ${active ? "orien-nav-item-active" : ""}`}
+          >
+            <Icon size={17} />
+            {!compactMode ? item.label : null}
+          </Link>
+        )}
         {editingFavorites && !compactMode ? (
           <button
             type="button"
@@ -662,7 +694,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </section>
         ) : null}
         {groupedNavigation.groups.map((group) => {
-          const containsActive = group.items.some((item) => item.href === pathname);
+          const containsActive = group.items.some((item) =>
+            item.href.includes("?") ? item.href === currentRouteKey : item.href === pathname,
+          );
           const open = compactMode || containsActive || openGroups[group.id];
           return (
             <section key={group.id} className="grid gap-1">
@@ -764,7 +798,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </aside>
       ) : null}
       <div className={posProductionMode ? "" : collapsed ? "" : compact ? "lg:pl-20" : "lg:pl-72"}>
-        {!posProductionMode ? <header className="sticky top-0 z-20 flex min-h-16 items-center justify-between gap-2 border-b border-[var(--brand-border)] bg-white/95 px-3 py-2 backdrop-blur sm:gap-3 sm:px-4 sm:py-3 lg:h-16 lg:px-8 lg:py-0">
+        {!posProductionMode ? <header className="orien-glass sticky top-0 z-20 flex min-h-16 items-center justify-between gap-2 border-b border-[var(--brand-border)] bg-white/95 px-3 py-2 backdrop-blur sm:gap-3 sm:px-4 sm:py-3 lg:h-16 lg:px-8 lg:py-0">
           <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
             <button
               type="button"
@@ -776,14 +810,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </button>
             <div className="grid min-w-0 flex-1 gap-0.5 sm:gap-1">
               <p className="truncate text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--brand-secondary)] sm:text-xs sm:tracking-[0.18em]">
-                Tenant ativo
+                Organização atual
               </p>
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold leading-5 text-[var(--brand-primary)]">
                   {currentMembership?.tenantName ?? "Carregando..."}
                 </p>
                 <p className="hidden truncate text-xs text-slate-500 sm:block">
-                  Perfil {currentMembership?.roleSlug ?? "-"}
+                  {roleName}
                   {` · ${branchScopeLabel}`}
                 </p>
               </div>
@@ -859,7 +893,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 ) : null}
               </button>
               {notificationsOpen ? (
-                <div className="absolute right-0 top-12 z-50 w-[min(92vw,380px)] rounded-xl border border-[var(--brand-border)] bg-white p-3 shadow-2xl">
+                <div className="orien-glass absolute right-0 top-12 z-50 w-[min(92vw,380px)] rounded-xl border border-[var(--brand-border)] bg-white p-3 shadow-2xl">
                   <div className="flex items-center justify-between gap-3 px-1 pb-2">
                     <div>
                       <p className="text-sm font-semibold text-[var(--brand-primary)]">
@@ -940,7 +974,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <ChevronDown className="hidden sm:block" size={14} />
               </button>
               {accountOpen ? (
-                <div className="absolute right-0 top-12 z-50 grid w-[min(92vw,288px)] gap-1 rounded-md border border-[var(--brand-border)] bg-white p-2 shadow-2xl">
+                <div className="orien-glass absolute right-0 top-12 z-50 grid w-[min(92vw,288px)] gap-1 rounded-md border border-[var(--brand-border)] bg-white p-2 shadow-2xl">
                   <div className="border-b border-[var(--brand-border)] p-3">
                     <p className="font-semibold text-[var(--brand-primary)]">{me?.user.name}</p>
                     <p className="truncate text-xs text-slate-500">{me?.user.email}</p>
@@ -1005,7 +1039,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {helpOpen ? (
           <aside
             ref={helpRef}
-            className="fixed bottom-5 right-5 z-40 w-[min(92vw,360px)] rounded-xl border border-[var(--brand-border)] bg-white p-5 shadow-2xl"
+            className="orien-glass fixed bottom-5 right-5 z-40 w-[min(92vw,360px)] rounded-xl border border-[var(--brand-border)] bg-white p-5 shadow-2xl"
           >
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -1032,7 +1066,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             onMouseDown={() => setCommandOpen(false)}
           >
             <div
-              className="w-full max-w-xl overflow-hidden rounded-xl border border-[var(--brand-border)] bg-white shadow-2xl"
+              className="orien-glass w-full max-w-xl overflow-hidden rounded-xl border border-[var(--brand-border)] bg-white shadow-2xl"
               onMouseDown={(event) => event.stopPropagation()}
             >
               <div className="flex items-center gap-3 border-b border-[var(--brand-border)] px-4">
@@ -1118,11 +1152,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         >
           {!me ? (
             <div className="py-16 text-center text-sm text-slate-500">Carregando acesso...</div>
-          ) : routeAllowed ? (
+          ) : routeAllowed && !routePlanLocked ? (
             children
+          ) : routePlanLocked ? (
+            <div className="mx-auto max-w-xl rounded-xl border border-amber-200 bg-amber-50 p-6 text-center text-sm text-amber-950">
+              <strong className="block text-base">Recurso disponível em um plano superior</strong>
+              <span className="mt-2 block">Fale com o responsável pela assinatura para liberar este fluxo.</span>
+            </div>
           ) : (
             <div className="py-16 text-center text-sm text-slate-500">
-              Redirecionando para uma area autorizada...
+              Redirecionando para uma área autorizada...
             </div>
           )}
         </main>

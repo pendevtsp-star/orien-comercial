@@ -26,6 +26,8 @@ import { PermissionsGuard } from "../../shared/permissions.guard";
 import { RequirePermissions } from "../../shared/require-permissions.decorator";
 import type { TenantContext } from "../../shared/request-context";
 import { TenantContextGuard } from "../../shared/tenant-context.guard";
+import { CapabilitiesGuard } from "../../shared/capabilities.guard";
+import { RequireCapability } from "../../shared/require-capability.decorator";
 import { ZodValidationPipe } from "../../shared/zod-validation.pipe";
 import { CommercialDocumentsService } from "./commercial-documents.service";
 import { OperationsService } from "./operations.service";
@@ -63,7 +65,7 @@ const renegotiateSchema = z.object({
 });
 
 @ApiTags("operations")
-@UseGuards(JwtAuthGuard, TenantContextGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, TenantContextGuard, PermissionsGuard, CapabilitiesGuard)
 @Controller("operations")
 export class OperationsController {
   constructor(
@@ -76,12 +78,12 @@ export class OperationsController {
   ) {
     return this.service.overview(c);
   }
-  @Get("returns") @RequirePermissions(permissions.sales.read) returns(
+  @Get("returns") @RequirePermissions(permissions.returns.read) @RequireCapability("returns") returns(
     @CurrentTenant() c: TenantContext,
   ) {
     return this.service.returns(c);
   }
-  @Post("returns") @RequirePermissions(permissions.sales.cancel) createReturn(
+  @Post("returns") @RequirePermissions(permissions.returns.create) @RequireCapability("returns") createReturn(
     @CurrentTenant() c: TenantContext,
     @Body(new ZodValidationPipe(returnSchema)) b: never,
   ) {
@@ -113,46 +115,47 @@ export class OperationsController {
   ) {
     return this.service.resolvePrice(c, p, b, Number(q), g);
   }
-  @Get("quotes") @RequirePermissions(permissions.sales.read) quotes(
+  @Get("quotes") @RequirePermissions(permissions.pipeline.read) @RequireCapability("pipeline") quotes(
     @CurrentTenant() c: TenantContext,
     @Query(new ZodValidationPipe(commercialDocumentListQuerySchema)) query: never,
   ) {
     return this.commercialDocuments.list(c, query).then((result) => result.data);
   }
-  @Post("quotes") @RequirePermissions(permissions.sales.create) createQuote(
+  @Post("quotes") @RequirePermissions(permissions.pipeline.manage) @RequireCapability("pipeline") createQuote(
     @CurrentTenant() c: TenantContext,
     @Body(new ZodValidationPipe(commercialDocumentCreateSchema)) b: never,
   ) {
     return this.commercialDocuments.create(c, b);
   }
-  @Post("quotes/:id/convert") @RequirePermissions(permissions.sales.create) convert(
+  @Post("quotes/:id/convert") @RequirePermissions(permissions.pipeline.manage) @RequireCapability("pipeline") convert(
     @CurrentTenant() c: TenantContext,
     @Param("id") id: string,
     @Headers("idempotency-key") idempotencyKey?: string,
   ) {
     return this.commercialDocuments.convert(c, id, idempotencyKey);
   }
-  @Get("quotes/:id/document") @RequirePermissions(permissions.sales.read) async document(
+  @Get("quotes/:id/document") @RequirePermissions(permissions.pipeline.read) @RequireCapability("pipeline") async document(
     @CurrentTenant() c: TenantContext,
     @Param("id") id: string,
     @Res() r: Response,
   ) {
     r.type("html").send(await this.commercialDocuments.document(c, id));
   }
-  @Get("commercial-documents") @RequirePermissions(permissions.sales.read) commercialList(
+  @Get("commercial-documents") @RequirePermissions(permissions.pipeline.read) @RequireCapability("pipeline") commercialList(
     @CurrentTenant() c: TenantContext,
     @Query(new ZodValidationPipe(commercialDocumentListQuerySchema)) query: never,
   ) {
     return this.commercialDocuments.list(c, query);
   }
-  @Post("commercial-documents") @RequirePermissions(permissions.sales.create) commercialCreate(
+  @Post("commercial-documents") @RequirePermissions(permissions.pipeline.manage) @RequireCapability("pipeline") commercialCreate(
     @CurrentTenant() c: TenantContext,
     @Body(new ZodValidationPipe(commercialDocumentCreateSchema)) body: never,
   ) {
     return this.commercialDocuments.create(c, body);
   }
   @Patch("commercial-documents/:id/status")
-  @RequirePermissions(permissions.sales.create)
+  @RequirePermissions(permissions.pipeline.manage)
+  @RequireCapability("pipeline")
   commercialTransition(
     @CurrentTenant() c: TenantContext,
     @Param("id") id: string,
@@ -161,7 +164,8 @@ export class OperationsController {
     return this.commercialDocuments.transition(c, id, body);
   }
   @Post("commercial-documents/:id/convert")
-  @RequirePermissions(permissions.sales.create)
+  @RequirePermissions(permissions.pipeline.manage)
+  @RequireCapability("pipeline")
   commercialConvert(
     @CurrentTenant() c: TenantContext,
     @Param("id") id: string,

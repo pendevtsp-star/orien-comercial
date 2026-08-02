@@ -32,8 +32,11 @@ export class TenantContextGuard implements CanActivate {
         m.id AS "membershipId",
         r.slug AS "roleSlug",
         m.branch_id AS "branchId",
+        t.status AS "tenantStatus",
+        t.plan_slug AS "planSlug",
         COALESCE(array_agg(p.slug) FILTER (WHERE p.slug IS NOT NULL), '{}') AS permissions
       FROM memberships m
+      JOIN tenants t ON t.id = m.tenant_id
       JOIN roles r ON r.id = m.role_id
       LEFT JOIN role_permissions rp ON rp.role_id = r.id
       LEFT JOIN permissions p ON p.id = rp.permission_id
@@ -41,7 +44,9 @@ export class TenantContextGuard implements CanActivate {
         AND m.tenant_id = $2
         AND m.status = 'active'
         AND m.deleted_at IS NULL
-      GROUP BY m.id, r.slug
+        AND t.deleted_at IS NULL
+        AND t.status NOT IN ('suspended', 'cancelled')
+       GROUP BY m.id, r.slug, t.status, t.plan_slug
       LIMIT 1
       `,
       [user.userId, tenantId],
@@ -58,8 +63,13 @@ export class TenantContextGuard implements CanActivate {
     }
 
     if (requestedBranchId && !membership.branchId) {
-      // Branch validation is handled by individual services
-      // RLS policies ensure tenant isolation
+      const branchResult = await this.database.pool.query<{ id: string }>(
+        "SELECT id FROM branches WHERE tenant_id = $1 AND id = $2 AND is_active = true AND deleted_at IS NULL",
+        [tenantId, requestedBranchId],
+      );
+      if (!branchResult.rows[0]) {
+        throw new ForbiddenException("Filial inexistente ou inativa para o tenant informado.");
+      }
     }
 
     request.tenant = {

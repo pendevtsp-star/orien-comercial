@@ -369,7 +369,18 @@ export const customerCreateSchema = z.object({
   isActive: z.boolean().default(true),
 });
 
-export const customerUpdateSchema = customerCreateSchema.partial();
+export const customerUpdateSchema = customerCreateSchema.partial().extend({
+  document: z.string().trim().max(20).nullable().optional(),
+  phone: z.string().trim().max(30).nullable().optional(),
+  whatsapp: z.string().trim().max(30).nullable().optional(),
+  email: z.string().email().nullable().optional(),
+  birthDate: z.string().date().nullable().optional(),
+  addressLine1: z.string().trim().max(180).nullable().optional(),
+  city: z.string().trim().max(90).nullable().optional(),
+  state: z.string().trim().max(2).nullable().optional(),
+  zipCode: z.string().trim().max(16).nullable().optional(),
+  notes: z.string().trim().max(2000).nullable().optional(),
+});
 
 export const stockAdjustmentSchema = z.object({
   branchId: uuidSchema,

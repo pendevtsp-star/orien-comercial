@@ -7,29 +7,32 @@ import { PermissionsGuard } from "../../shared/permissions.guard";
 import { RequirePermissions } from "../../shared/require-permissions.decorator";
 import type { TenantContext } from "../../shared/request-context";
 import { TenantContextGuard } from "../../shared/tenant-context.guard";
+import { CapabilitiesGuard } from "../../shared/capabilities.guard";
+import { RequireCapability } from "../../shared/require-capability.decorator";
 import { IntegrationHubService } from "./integration-hub.service";
 
 @ApiTags("integrations")
-@UseGuards(JwtAuthGuard, TenantContextGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, TenantContextGuard, PermissionsGuard, CapabilitiesGuard)
+@RequireCapability("integrations")
 @Controller("integrations/hub")
 export class IntegrationHubController {
   constructor(
     @Inject(IntegrationHubService) private readonly hub: IntegrationHubService,
   ) {}
 
-  @RequirePermissions(permissions.dashboard.read)
+  @RequirePermissions(permissions.integrations.read)
   @Get("health")
   checkHealth(@CurrentTenant() tenant: TenantContext) {
     return this.hub.checkIntegrationHealth(tenant);
   }
 
-  @RequirePermissions(permissions.dashboard.read)
+  @RequirePermissions(permissions.integrations.read)
   @Get("stats")
   getStats(@CurrentTenant() tenant: TenantContext) {
     return this.hub.getIntegrationStats(tenant);
   }
 
-  @RequirePermissions(permissions.dashboard.read)
+  @RequirePermissions(permissions.integrations.read)
   @Get("logs")
   getLogs(
     @CurrentTenant() tenant: TenantContext,
@@ -39,7 +42,7 @@ export class IntegrationHubController {
     return this.hub.getIntegrationLogs(tenant, provider, Number(limit) || 50);
   }
 
-  @RequirePermissions(permissions.dashboard.read)
+  @RequirePermissions(permissions.integrations.manage)
   @Post("bank-statement/import")
   importBankStatement(
     @CurrentTenant() tenant: TenantContext,
