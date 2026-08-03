@@ -17,6 +17,8 @@ import {
   commercialDocumentCreateSchema,
   commercialDocumentListQuerySchema,
   commercialDocumentTransitionSchema,
+  serviceOrderCreateSchema,
+  serviceOrderStatusSchema,
 } from "@sgc/types";
 import type { Response } from "express";
 import { z } from "zod";
@@ -78,12 +80,16 @@ export class OperationsController {
   ) {
     return this.service.overview(c);
   }
-  @Get("returns") @RequirePermissions(permissions.returns.read) @RequireCapability("returns") returns(
-    @CurrentTenant() c: TenantContext,
-  ) {
+  @Get("returns")
+  @RequirePermissions(permissions.returns.read)
+  @RequireCapability("returns")
+  returns(@CurrentTenant() c: TenantContext) {
     return this.service.returns(c);
   }
-  @Post("returns") @RequirePermissions(permissions.returns.create) @RequireCapability("returns") createReturn(
+  @Post("returns")
+  @RequirePermissions(permissions.returns.create)
+  @RequireCapability("returns")
+  createReturn(
     @CurrentTenant() c: TenantContext,
     @Body(new ZodValidationPipe(returnSchema)) b: never,
   ) {
@@ -115,39 +121,78 @@ export class OperationsController {
   ) {
     return this.service.resolvePrice(c, p, b, Number(q), g);
   }
-  @Get("quotes") @RequirePermissions(permissions.pipeline.read) @RequireCapability("pipeline") quotes(
+  @Get("quotes")
+  @RequirePermissions(permissions.pipeline.read)
+  @RequireCapability("pipeline")
+  quotes(
     @CurrentTenant() c: TenantContext,
     @Query(new ZodValidationPipe(commercialDocumentListQuerySchema)) query: never,
   ) {
     return this.commercialDocuments.list(c, query).then((result) => result.data);
   }
-  @Post("quotes") @RequirePermissions(permissions.pipeline.manage) @RequireCapability("pipeline") createQuote(
+  @Post("quotes")
+  @RequirePermissions(permissions.pipeline.manage)
+  @RequireCapability("pipeline")
+  createQuote(
     @CurrentTenant() c: TenantContext,
     @Body(new ZodValidationPipe(commercialDocumentCreateSchema)) b: never,
   ) {
     return this.commercialDocuments.create(c, b);
   }
-  @Post("quotes/:id/convert") @RequirePermissions(permissions.pipeline.manage) @RequireCapability("pipeline") convert(
+  @Post("quotes/:id/convert")
+  @RequirePermissions(permissions.pipeline.manage)
+  @RequireCapability("pipeline")
+  convert(
     @CurrentTenant() c: TenantContext,
     @Param("id") id: string,
     @Headers("idempotency-key") idempotencyKey?: string,
   ) {
     return this.commercialDocuments.convert(c, id, idempotencyKey);
   }
-  @Get("quotes/:id/document") @RequirePermissions(permissions.pipeline.read) @RequireCapability("pipeline") async document(
-    @CurrentTenant() c: TenantContext,
-    @Param("id") id: string,
-    @Res() r: Response,
-  ) {
+  @Get("quotes/:id/document")
+  @RequirePermissions(permissions.pipeline.read)
+  @RequireCapability("pipeline")
+  async document(@CurrentTenant() c: TenantContext, @Param("id") id: string, @Res() r: Response) {
     r.type("html").send(await this.commercialDocuments.document(c, id));
   }
-  @Get("commercial-documents") @RequirePermissions(permissions.pipeline.read) @RequireCapability("pipeline") commercialList(
+  @Get("commercial-documents")
+  @RequirePermissions(permissions.pipeline.read)
+  @RequireCapability("pipeline")
+  commercialList(
     @CurrentTenant() c: TenantContext,
     @Query(new ZodValidationPipe(commercialDocumentListQuerySchema)) query: never,
   ) {
     return this.commercialDocuments.list(c, query);
   }
-  @Post("commercial-documents") @RequirePermissions(permissions.pipeline.manage) @RequireCapability("pipeline") commercialCreate(
+  @Get("service-orders")
+  @RequirePermissions(permissions.serviceOrders.read)
+  @RequireCapability("service_orders")
+  serviceOrders(@CurrentTenant() c: TenantContext) {
+    return this.service.serviceOrders(c);
+  }
+  @Post("service-orders")
+  @RequirePermissions(permissions.serviceOrders.manage)
+  @RequireCapability("service_orders")
+  createServiceOrder(
+    @CurrentTenant() c: TenantContext,
+    @Body(new ZodValidationPipe(serviceOrderCreateSchema)) body: never,
+  ) {
+    return this.service.createServiceOrder(c, body);
+  }
+  @Patch("service-orders/:id/status")
+  @RequirePermissions(permissions.serviceOrders.manage)
+  @RequireCapability("service_orders")
+  updateServiceOrderStatus(
+    @CurrentTenant() c: TenantContext,
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(serviceOrderStatusSchema)) body: never,
+  ) {
+    return this.service.updateServiceOrderStatus(c, id, body);
+  }
+  @Post("commercial-documents")
+  @RequirePermissions(permissions.pipeline.manage)
+  @RequireCapability("pipeline")
+  commercialCreate(
     @CurrentTenant() c: TenantContext,
     @Body(new ZodValidationPipe(commercialDocumentCreateSchema)) body: never,
   ) {

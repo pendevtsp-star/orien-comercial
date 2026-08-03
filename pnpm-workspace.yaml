@@ -3,8 +3,10 @@ packages:
   - "packages/*"
 allowBuilds:
   "@scarf/scarf": true
+  "@whiskeysockets/baileys": true
   argon2: true
   esbuild: true
+  protobufjs: true
   sharp: true
 blockExoticSubdeps: true
 minimumReleaseAge: 10080
@@ -16,3 +18,5 @@ overrides:
   multer: 2.2.0
   brace-expansion@1.1.15: 1.1.16
   postcss: 8.5.16
+  libsignal: 6.0.0
+  pino: 9.6.0

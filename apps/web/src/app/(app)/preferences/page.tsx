@@ -17,12 +17,13 @@ const themes = [
   { value: "solaris", label: "Solaris", colors: ["#111111", "#D6A600", "#FFD54A"] },
 ] as const;
 const routes: Array<[string, string]> = [
+  ["/store-central", "Hoje"],
   ["/dashboard", "Dashboard"],
   ["/pos", "PDV"],
   ["/sales", "Vendas"],
   ["/stock", "Estoque"],
   ["/financial", "Financeiro"],
-  ["/operations", "Operacoes avancadas"],
+  ["/operations?section=quotes", "Orçamentos e pedidos"],
   ["/customers", "Clientes"],
   ["/purchases", "Compras"],
 ];

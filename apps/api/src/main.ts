@@ -1,4 +1,5 @@
 import "reflect-metadata";
+import { config as loadDotEnv } from "dotenv";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import { NestFactory } from "@nestjs/core";
@@ -13,6 +14,9 @@ import { CacheService } from "./modules/cache/cache.service";
 import { DatabaseService } from "./modules/database/database.service";
 import { HttpExceptionFilter } from "./shared/http-exception.filter";
 import { initializeSentry } from "./shared/sentry";
+
+loadDotEnv({ path: resolve(process.cwd(), ".env") });
+loadDotEnv({ path: resolve(process.cwd(), "../../.env"), override: false });
 
 async function bootstrap() {
   const config = loadConfig();

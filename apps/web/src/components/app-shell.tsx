@@ -36,6 +36,7 @@ import {
   History,
   Truck,
   UsersRound,
+  Wrench,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -104,11 +105,38 @@ const navigation: NavigationItem[] = [
     permissions: ["financial.read"],
   },
   { href: "/customers", label: "Clientes", icon: UsersRound, permissions: ["customers.read"] },
+  { href: "/leads", label: "Leads", icon: UsersRound, permissions: ["customers.read"] },
   { href: "/loyalty", label: "Fidelidade", icon: Gift, permissions: ["customers.read"] },
   { href: "/products", label: "Produtos", icon: Boxes, permissions: ["products.read"] },
+  {
+    href: "/services",
+    label: "Serviços",
+    icon: Wrench,
+    permissions: ["services.read"],
+    capability: "services",
+  },
   { href: "/stock", label: "Estoque", icon: PackageCheck, permissions: ["stock.read"] },
-  { href: "/purchases", label: "Compras", icon: ClipboardList, permissions: ["purchases.read"], capability: "purchases" },
-  { href: "/suppliers", label: "Fornecedores", icon: Truck, permissions: ["purchases.read"], capability: "purchases" },
+  {
+    href: "/purchases",
+    label: "Compras",
+    icon: ClipboardList,
+    permissions: ["purchases.read"],
+    capability: "purchases",
+  },
+  {
+    href: "/suppliers",
+    label: "Fornecedores",
+    icon: Truck,
+    permissions: ["purchases.read"],
+    capability: "purchases",
+  },
+  {
+    href: "/service-orders",
+    label: "Ordens de serviço",
+    icon: ClipboardList,
+    permissions: ["service_orders.read"],
+    capability: "service_orders",
+  },
   { href: "/branches", label: "Lojas", icon: Building2, permissions: ["branches.read"] },
   {
     href: "/financial",
@@ -133,7 +161,13 @@ const navigation: NavigationItem[] = [
     permissions: ["subscriptions.read"],
   },
   { href: "/settings", label: "Configurações", icon: Settings, permissions: ["tenants.read"] },
-  { href: "/integrations", label: "Integrações", icon: PlugZap, permissions: ["integrations.read"], capability: "integrations" },
+  {
+    href: "/integrations",
+    label: "Integrações",
+    icon: PlugZap,
+    permissions: ["integrations.read"],
+    capability: "integrations",
+  },
   {
     href: "/fiscal",
     label: "Central fiscal",
@@ -155,19 +189,25 @@ const navigationGroups = [
   {
     id: "sales",
     label: "Vendas",
-    routes: ["/pos", "/sales", "/operations?section=quotes", "/operations?section=returns", "/operations?section=pricing", "/operations?section=credit"],
+    routes: [
+      "/pos",
+      "/sales",
+      "/operations?section=quotes",
+      "/operations?section=returns",
+      "/operations?section=pricing",
+      "/operations?section=credit",
+    ],
   },
   {
     id: "catalog",
     label: "Catálogo e suprimentos",
-    routes: [
-      "/products",
-      "/stock",
-      "/purchases",
-      "/suppliers",
-    ],
+    routes: ["/products", "/services", "/stock", "/purchases", "/suppliers"],
   },
-  { id: "customers", label: "Clientes", routes: ["/customers", "/loyalty"] },
+  {
+    id: "customers",
+    label: "Clientes e relacionamento",
+    routes: ["/customers", "/leads", "/loyalty", "/service-orders"],
+  },
   {
     id: "finance",
     label: "Financeiro e fiscal",
@@ -176,13 +216,7 @@ const navigationGroups = [
   {
     id: "management",
     label: "Gestão",
-    routes: [
-      "/reports",
-      "/alerts",
-      "/tasks",
-      "/audit",
-      "/team",
-    ],
+    routes: ["/reports", "/alerts", "/tasks", "/audit", "/team"],
   },
   {
     id: "configuration",
@@ -518,20 +552,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const currentRouteKey = currentSearch ? `${pathname}?${currentSearch}` : pathname;
   const allowedNavigation = useMemo(() => {
     const granted = currentMembership?.permissions ?? [];
-    return navigation.filter(
-      (item) =>
-        (!item.platformOnly || me?.user.isPlatformAdmin) &&
-        (!item.permissions ||
-          item.permissions.every((permission) => granted.includes(permission))) &&
-        (!item.anyPermissions ||
-          item.anyPermissions.some((permission) => granted.includes(permission))),
-    ).map((item) => ({
-      ...item,
-      planLocked:
-        Boolean(item.capability) &&
-        currentMembership?.capabilities !== undefined &&
-        currentMembership.capabilities.features[item.capability!] === false,
-    }));
+    return navigation
+      .filter(
+        (item) =>
+          (!item.platformOnly || me?.user.isPlatformAdmin) &&
+          (!item.permissions ||
+            item.permissions.every((permission) => granted.includes(permission))) &&
+          (!item.anyPermissions ||
+            item.anyPermissions.some((permission) => granted.includes(permission))),
+      )
+      .map((item) => ({
+        ...item,
+        planLocked:
+          Boolean(item.capability) &&
+          currentMembership?.capabilities !== undefined &&
+          currentMembership.capabilities.features[item.capability!] === false,
+      }));
   }, [currentMembership, me?.user.isPlatformAdmin]);
   const groupedNavigation = useMemo(() => {
     const favoriteRoutes = new Set(preferences.favoriteRoutes);
@@ -554,19 +590,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const branchScopeLabel = currentMembership?.branchId
     ? "Filial autorizada"
     : (currentBranch?.name ?? "Todas as lojas");
+  const operationRouteItem =
+    pathname === "/operations"
+      ? navigation.find(
+          (item) => item.href === `/operations?section=${searchParams.get("section") ?? "returns"}`,
+        )
+      : undefined;
   const routeItem =
     navigation.find((item) => item.href === currentRouteKey) ??
     navigation.find((item) => item.href === pathname) ??
-    (pathname === "/operations" ? navigation.find((item) => item.href === "/operations?section=returns") : undefined);
-  const routeIsKnown = pathname !== "/operations" || Boolean(navigation.find((item) => item.href === currentRouteKey));
+    operationRouteItem;
+  const routeIsKnown = pathname !== "/operations" || Boolean(operationRouteItem);
   const grantedPermissions = currentMembership?.permissions ?? [];
   const routeAllowed =
-    routeIsKnown && (!routeItem ||
-    ((!routeItem.platformOnly || me?.user.isPlatformAdmin) &&
-      (!routeItem.permissions ||
-        routeItem.permissions.every((permission) => grantedPermissions.includes(permission))) &&
-      (!routeItem.anyPermissions ||
-        routeItem.anyPermissions.some((permission) => grantedPermissions.includes(permission)))));
+    routeIsKnown &&
+    (!routeItem ||
+      ((!routeItem.platformOnly || me?.user.isPlatformAdmin) &&
+        (!routeItem.permissions ||
+          routeItem.permissions.every((permission) => grantedPermissions.includes(permission))) &&
+        (!routeItem.anyPermissions ||
+          routeItem.anyPermissions.some((permission) => grantedPermissions.includes(permission)))));
   const routePlanLocked =
     Boolean(routeItem?.capability) &&
     currentMembership?.capabilities?.features[routeItem?.capability ?? ""] === false;
@@ -798,244 +841,246 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </aside>
       ) : null}
       <div className={posProductionMode ? "" : collapsed ? "" : compact ? "lg:pl-20" : "lg:pl-72"}>
-        {!posProductionMode ? <header className="orien-glass sticky top-0 z-20 flex min-h-16 items-center justify-between gap-2 border-b border-[var(--brand-border)] bg-white/95 px-3 py-2 backdrop-blur sm:gap-3 sm:px-4 sm:py-3 lg:h-16 lg:px-8 lg:py-0">
-          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
-            <button
-              type="button"
-              className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-[var(--brand-border)] bg-white text-[var(--brand-primary)] transition hover:bg-[var(--brand-surface)] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-blue-500/25 ${collapsed ? "" : "lg:hidden"}`}
-              aria-label="Abrir menu"
-              onClick={() => setMobileNavigationOpen(true)}
-            >
-              <Menu size={18} />
-            </button>
-            <div className="grid min-w-0 flex-1 gap-0.5 sm:gap-1">
-              <p className="truncate text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--brand-secondary)] sm:text-xs sm:tracking-[0.18em]">
-                Organização atual
-              </p>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold leading-5 text-[var(--brand-primary)]">
-                  {currentMembership?.tenantName ?? "Carregando..."}
+        {!posProductionMode ? (
+          <header className="orien-glass sticky top-0 z-20 flex min-h-16 items-center justify-between gap-2 border-b border-[var(--brand-border)] bg-white/95 px-3 py-2 backdrop-blur sm:gap-3 sm:px-4 sm:py-3 lg:h-16 lg:px-8 lg:py-0">
+            <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+              <button
+                type="button"
+                className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-[var(--brand-border)] bg-white text-[var(--brand-primary)] transition hover:bg-[var(--brand-surface)] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-blue-500/25 ${collapsed ? "" : "lg:hidden"}`}
+                aria-label="Abrir menu"
+                onClick={() => setMobileNavigationOpen(true)}
+              >
+                <Menu size={18} />
+              </button>
+              <div className="grid min-w-0 flex-1 gap-0.5 sm:gap-1">
+                <p className="truncate text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--brand-secondary)] sm:text-xs sm:tracking-[0.18em]">
+                  Organização atual
                 </p>
-                <p className="hidden truncate text-xs text-slate-500 sm:block">
-                  {roleName}
-                  {` · ${branchScopeLabel}`}
-                </p>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold leading-5 text-[var(--brand-primary)]">
+                    {currentMembership?.tenantName ?? "Carregando..."}
+                  </p>
+                  <p className="hidden truncate text-xs text-slate-500 sm:block">
+                    {roleName}
+                    {` · ${branchScopeLabel}`}
+                  </p>
+                </div>
+                {me?.memberships && me.memberships.length > 1 ? (
+                  <select
+                    className="h-9 max-w-xs rounded-md border border-[var(--brand-border)] bg-white px-3 text-sm text-[var(--brand-primary)]"
+                    value={currentMembership?.tenantId ?? ""}
+                    onChange={(event) => {
+                      setTenantId(event.target.value);
+                      window.location.reload();
+                    }}
+                  >
+                    {me.memberships.map((membership) => (
+                      <option key={membership.tenantId} value={membership.tenantId}>
+                        {membership.tenantName}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
+                {!currentMembership?.branchId && branches.length ? (
+                  <select
+                    aria-label="Visão da loja"
+                    className="hidden h-8 max-w-48 rounded-md border border-[var(--brand-border)] bg-white px-2 text-xs text-[var(--brand-primary)] lg:block"
+                    value={selectedBranchId ?? ""}
+                    onChange={(event) => changeBranchScope(event.target.value)}
+                  >
+                    <option value="">Todas as lojas</option>
+                    {branches.map((branch) => (
+                      <option key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
               </div>
-              {me?.memberships && me.memberships.length > 1 ? (
-                <select
-                  className="h-9 max-w-xs rounded-md border border-[var(--brand-border)] bg-white px-3 text-sm text-[var(--brand-primary)]"
-                  value={currentMembership?.tenantId ?? ""}
-                  onChange={(event) => {
-                    setTenantId(event.target.value);
-                    window.location.reload();
+            </div>
+            <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+              <button
+                type="button"
+                className="hidden h-10 items-center gap-2 rounded-md border border-[var(--brand-border)] bg-white px-3 text-sm text-slate-500 lg:flex"
+                onClick={() => setCommandOpen(true)}
+                aria-label="Busca global"
+              >
+                <Search size={16} /> Buscar{" "}
+                <kbd className="rounded border px-1 text-[10px]">Ctrl K</kbd>
+              </button>
+              <button
+                type="button"
+                className="hidden h-10 w-10 items-center justify-center rounded-md border border-[var(--brand-border)] bg-white text-[var(--brand-primary)] md:inline-flex"
+                aria-label="Ajuda desta tela"
+                onClick={() => setHelpOpen((value) => !value)}
+              >
+                <CircleHelp size={17} />
+              </button>
+              <div ref={notificationsRef} className="relative">
+                <button
+                  type="button"
+                  className="relative inline-flex h-10 w-10 items-center justify-center rounded-md border border-[var(--brand-border)] bg-white text-[var(--brand-primary)]"
+                  aria-label="Novidades e notificações"
+                  aria-expanded={notificationsOpen}
+                  onClick={() => {
+                    setNotificationsOpen((value) => !value);
+                    setAccountOpen(false);
+                    setHelpOpen(false);
+                    void refreshHeaderSignals();
                   }}
                 >
-                  {me.memberships.map((membership) => (
-                    <option key={membership.tenantId} value={membership.tenantId}>
-                      {membership.tenantName}
-                    </option>
-                  ))}
-                </select>
-              ) : null}
-              {!currentMembership?.branchId && branches.length ? (
-                <select
-                  aria-label="Visão da loja"
-                  className="hidden h-8 max-w-48 rounded-md border border-[var(--brand-border)] bg-white px-2 text-xs text-[var(--brand-primary)] lg:block"
-                  value={selectedBranchId ?? ""}
-                  onChange={(event) => changeBranchScope(event.target.value)}
-                >
-                  <option value="">Todas as lojas</option>
-                  {branches.map((branch) => (
-                    <option key={branch.id} value={branch.id}>
-                      {branch.name}
-                    </option>
-                  ))}
-                </select>
-              ) : null}
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-            <button
-              type="button"
-              className="hidden h-10 items-center gap-2 rounded-md border border-[var(--brand-border)] bg-white px-3 text-sm text-slate-500 lg:flex"
-              onClick={() => setCommandOpen(true)}
-              aria-label="Busca global"
-            >
-              <Search size={16} /> Buscar{" "}
-              <kbd className="rounded border px-1 text-[10px]">Ctrl K</kbd>
-            </button>
-            <button
-              type="button"
-              className="hidden h-10 w-10 items-center justify-center rounded-md border border-[var(--brand-border)] bg-white text-[var(--brand-primary)] md:inline-flex"
-              aria-label="Ajuda desta tela"
-              onClick={() => setHelpOpen((value) => !value)}
-            >
-              <CircleHelp size={17} />
-            </button>
-            <div ref={notificationsRef} className="relative">
-              <button
-                type="button"
-                className="relative inline-flex h-10 w-10 items-center justify-center rounded-md border border-[var(--brand-border)] bg-white text-[var(--brand-primary)]"
-                aria-label="Novidades e notificações"
-                aria-expanded={notificationsOpen}
-                onClick={() => {
-                  setNotificationsOpen((value) => !value);
-                  setAccountOpen(false);
-                  setHelpOpen(false);
-                  void refreshHeaderSignals();
-                }}
-              >
-                <BellRing size={17} />
-                {notificationCount + updateCount ? (
-                  <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-rose-600 px-1 text-center text-[10px] font-semibold text-white">
-                    {Math.min(notificationCount + updateCount, 99)}
-                  </span>
+                  <BellRing size={17} />
+                  {notificationCount + updateCount ? (
+                    <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-rose-600 px-1 text-center text-[10px] font-semibold text-white">
+                      {Math.min(notificationCount + updateCount, 99)}
+                    </span>
+                  ) : null}
+                </button>
+                {notificationsOpen ? (
+                  <div className="orien-glass absolute right-0 top-12 z-50 w-[min(92vw,380px)] rounded-xl border border-[var(--brand-border)] bg-white p-3 shadow-2xl">
+                    <div className="flex items-center justify-between gap-3 px-1 pb-2">
+                      <div>
+                        <p className="text-sm font-semibold text-[var(--brand-primary)]">
+                          Notificações
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          Novidades e alertas que pedem atenção.
+                        </p>
+                      </div>
+                      <Link
+                        href="/updates"
+                        onClick={() => setNotificationsOpen(false)}
+                        className="text-xs font-semibold text-[var(--brand-secondary)]"
+                      >
+                        Ver mais
+                      </Link>
+                    </div>
+                    {notificationCount ? (
+                      <Link
+                        href="/alerts"
+                        onClick={() => setNotificationsOpen(false)}
+                        className="mb-2 flex rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 hover:bg-amber-100"
+                      >
+                        {notificationCount} alerta(s) operacional(is) aguardando atenção
+                      </Link>
+                    ) : null}
+                    <div className="grid gap-1">
+                      {updatePreview.length ? (
+                        updatePreview.map((note) => (
+                          <Link
+                            key={note.id}
+                            href="/updates"
+                            onClick={() => setNotificationsOpen(false)}
+                            className="rounded-lg p-3 hover:bg-[var(--brand-surface)]"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <strong className="truncate text-sm text-[var(--brand-primary)]">
+                                {note.title}
+                              </strong>
+                              {!note.readAt ? (
+                                <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--brand-accent)]" />
+                              ) : null}
+                            </div>
+                            <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">
+                              {note.summary}
+                            </p>
+                          </Link>
+                        ))
+                      ) : (
+                        <p className="rounded-lg bg-[var(--brand-surface)] p-3 text-sm text-slate-500">
+                          Nenhuma novidade pendente.
+                        </p>
+                      )}
+                    </div>
+                  </div>
                 ) : null}
-              </button>
-              {notificationsOpen ? (
-                <div className="orien-glass absolute right-0 top-12 z-50 w-[min(92vw,380px)] rounded-xl border border-[var(--brand-border)] bg-white p-3 shadow-2xl">
-                  <div className="flex items-center justify-between gap-3 px-1 pb-2">
-                    <div>
-                      <p className="text-sm font-semibold text-[var(--brand-primary)]">
-                        Notificações
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        Novidades e alertas que pedem atenção.
+              </div>
+              <div ref={accountMenuRef} className="relative">
+                <button
+                  type="button"
+                  className="flex min-w-0 items-center gap-2 rounded-md border border-[var(--brand-border)] bg-white p-1.5 pr-2 text-left"
+                  aria-expanded={accountOpen}
+                  onClick={() => {
+                    setAccountOpen((value) => !value);
+                    setNotificationsOpen(false);
+                    setHelpOpen(false);
+                  }}
+                >
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--brand-primary)] text-xs font-semibold text-white">
+                    {initials}
+                  </span>
+                  <span className="hidden min-w-0 sm:grid">
+                    <strong className="max-w-32 truncate text-xs text-[var(--brand-primary)]">
+                      {me?.user.name ?? "Carregando"}
+                    </strong>
+                    <span className="text-[11px] text-slate-500">{roleName}</span>
+                  </span>
+                  <ChevronDown className="hidden sm:block" size={14} />
+                </button>
+                {accountOpen ? (
+                  <div className="orien-glass absolute right-0 top-12 z-50 grid w-[min(92vw,288px)] gap-1 rounded-md border border-[var(--brand-border)] bg-white p-2 shadow-2xl">
+                    <div className="border-b border-[var(--brand-border)] p-3">
+                      <p className="font-semibold text-[var(--brand-primary)]">{me?.user.name}</p>
+                      <p className="truncate text-xs text-slate-500">{me?.user.email}</p>
+                      <p className="mt-2 text-xs text-[var(--brand-secondary)]">
+                        {roleName} · {branchScopeLabel}
                       </p>
                     </div>
-                    <Link
-                      href="/updates"
-                      onClick={() => setNotificationsOpen(false)}
-                      className="text-xs font-semibold text-[var(--brand-secondary)]"
-                    >
-                      Ver mais
-                    </Link>
-                  </div>
-                  {notificationCount ? (
-                    <Link
-                      href="/alerts"
-                      onClick={() => setNotificationsOpen(false)}
-                      className="mb-2 flex rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 hover:bg-amber-100"
-                    >
-                      {notificationCount} alerta(s) operacional(is) aguardando atenção
-                    </Link>
-                  ) : null}
-                  <div className="grid gap-1">
-                    {updatePreview.length ? (
-                      updatePreview.map((note) => (
-                        <Link
-                          key={note.id}
-                          href="/updates"
-                          onClick={() => setNotificationsOpen(false)}
-                          className="rounded-lg p-3 hover:bg-[var(--brand-surface)]"
+                    {!currentMembership?.branchId && branches.length ? (
+                      <label className="grid gap-1 px-3 py-2 text-xs font-medium text-slate-600">
+                        Visualizar operação de
+                        <select
+                          className="h-9 rounded-md border border-[var(--brand-border)] bg-white px-2 text-sm text-[var(--brand-primary)]"
+                          value={selectedBranchId ?? ""}
+                          onChange={(event) => changeBranchScope(event.target.value)}
                         >
-                          <div className="flex items-center justify-between gap-2">
-                            <strong className="truncate text-sm text-[var(--brand-primary)]">
-                              {note.title}
-                            </strong>
-                            {!note.readAt ? (
-                              <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--brand-accent)]" />
-                            ) : null}
-                          </div>
-                          <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">
-                            {note.summary}
-                          </p>
-                        </Link>
-                      ))
-                    ) : (
-                      <p className="rounded-lg bg-[var(--brand-surface)] p-3 text-sm text-slate-500">
-                        Nenhuma novidade pendente.
-                      </p>
-                    )}
+                          <option value="">Todas as lojas</option>
+                          {branches.map((branch) => (
+                            <option key={branch.id} value={branch.id}>
+                              {branch.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : null}
+                    <button
+                      className="flex items-center gap-2 rounded-md p-3 text-sm hover:bg-[var(--brand-surface)]"
+                      onClick={() => void quickMode()}
+                    >
+                      {preferences.colorMode === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+                      Alternar claro/escuro
+                    </button>
+                    <Link
+                      className="rounded-md p-3 text-sm hover:bg-[var(--brand-surface)]"
+                      href="/preferences"
+                    >
+                      Aparência e preferências
+                    </Link>
+                    <Link
+                      className="rounded-md p-3 text-sm hover:bg-[var(--brand-surface)]"
+                      href="/sessions"
+                    >
+                      Dispositivos conectados
+                    </Link>
+                    <Link
+                      className="rounded-md p-3 text-sm hover:bg-[var(--brand-surface)]"
+                      href="/change-password"
+                    >
+                      Trocar senha
+                    </Link>
+                    <button
+                      className="flex items-center gap-2 rounded-md p-3 text-left text-sm text-rose-600 hover:bg-rose-50"
+                      onClick={() => void logout()}
+                    >
+                      <LogOut size={16} />
+                      Sair
+                    </button>
                   </div>
-                </div>
-              ) : null}
+                ) : null}
+              </div>
             </div>
-            <div ref={accountMenuRef} className="relative">
-              <button
-                type="button"
-                className="flex min-w-0 items-center gap-2 rounded-md border border-[var(--brand-border)] bg-white p-1.5 pr-2 text-left"
-                aria-expanded={accountOpen}
-                onClick={() => {
-                  setAccountOpen((value) => !value);
-                  setNotificationsOpen(false);
-                  setHelpOpen(false);
-                }}
-              >
-                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--brand-primary)] text-xs font-semibold text-white">
-                  {initials}
-                </span>
-                <span className="hidden min-w-0 sm:grid">
-                  <strong className="max-w-32 truncate text-xs text-[var(--brand-primary)]">
-                    {me?.user.name ?? "Carregando"}
-                  </strong>
-                  <span className="text-[11px] text-slate-500">{roleName}</span>
-                </span>
-                <ChevronDown className="hidden sm:block" size={14} />
-              </button>
-              {accountOpen ? (
-                <div className="orien-glass absolute right-0 top-12 z-50 grid w-[min(92vw,288px)] gap-1 rounded-md border border-[var(--brand-border)] bg-white p-2 shadow-2xl">
-                  <div className="border-b border-[var(--brand-border)] p-3">
-                    <p className="font-semibold text-[var(--brand-primary)]">{me?.user.name}</p>
-                    <p className="truncate text-xs text-slate-500">{me?.user.email}</p>
-                    <p className="mt-2 text-xs text-[var(--brand-secondary)]">
-                      {roleName} · {branchScopeLabel}
-                    </p>
-                  </div>
-                  {!currentMembership?.branchId && branches.length ? (
-                    <label className="grid gap-1 px-3 py-2 text-xs font-medium text-slate-600">
-                      Visualizar operação de
-                      <select
-                        className="h-9 rounded-md border border-[var(--brand-border)] bg-white px-2 text-sm text-[var(--brand-primary)]"
-                        value={selectedBranchId ?? ""}
-                        onChange={(event) => changeBranchScope(event.target.value)}
-                      >
-                        <option value="">Todas as lojas</option>
-                        {branches.map((branch) => (
-                          <option key={branch.id} value={branch.id}>
-                            {branch.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : null}
-                  <button
-                    className="flex items-center gap-2 rounded-md p-3 text-sm hover:bg-[var(--brand-surface)]"
-                    onClick={() => void quickMode()}
-                  >
-                    {preferences.colorMode === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-                    Alternar claro/escuro
-                  </button>
-                  <Link
-                    className="rounded-md p-3 text-sm hover:bg-[var(--brand-surface)]"
-                    href="/preferences"
-                  >
-                    Aparência e preferências
-                  </Link>
-                  <Link
-                    className="rounded-md p-3 text-sm hover:bg-[var(--brand-surface)]"
-                    href="/sessions"
-                  >
-                    Dispositivos conectados
-                  </Link>
-                  <Link
-                    className="rounded-md p-3 text-sm hover:bg-[var(--brand-surface)]"
-                    href="/change-password"
-                  >
-                    Trocar senha
-                  </Link>
-                  <button
-                    className="flex items-center gap-2 rounded-md p-3 text-left text-sm text-rose-600 hover:bg-rose-50"
-                    onClick={() => void logout()}
-                  >
-                    <LogOut size={16} />
-                    Sair
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </header> : null}
+          </header>
+        ) : null}
         {helpOpen ? (
           <aside
             ref={helpRef}
@@ -1157,7 +1202,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           ) : routePlanLocked ? (
             <div className="mx-auto max-w-xl rounded-xl border border-amber-200 bg-amber-50 p-6 text-center text-sm text-amber-950">
               <strong className="block text-base">Recurso disponível em um plano superior</strong>
-              <span className="mt-2 block">Fale com o responsável pela assinatura para liberar este fluxo.</span>
+              <span className="mt-2 block">
+                Fale com o responsável pela assinatura para liberar este fluxo.
+              </span>
             </div>
           ) : (
             <div className="py-16 text-center text-sm text-slate-500">
@@ -1165,9 +1212,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           )}
         </main>
-        {!posProductionMode ? <footer className="px-3 pb-4 text-center text-[11px] text-slate-500 sm:px-4 lg:px-6">
-          Orien · Gestão inteligente
-        </footer> : null}
+        {!posProductionMode ? (
+          <footer className="px-3 pb-4 text-center text-[11px] text-slate-500 sm:px-4 lg:px-6">
+            Orien · Gestão inteligente
+          </footer>
+        ) : null}
       </div>
     </div>
   );

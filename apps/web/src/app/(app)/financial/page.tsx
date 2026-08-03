@@ -381,7 +381,7 @@ export default function FinancialPage() {
     <div className="grid gap-6">
       <PageHeader
         title="Financeiro"
-        description="Acompanhe vencimentos, baixas e conciliação em um único fluxo."
+         description="Acompanhe vencimentos, baixas e o fluxo financeiro previsto em um único lugar."
         actions={
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={() => void load()} icon={<RefreshCw size={16} />}>
@@ -449,7 +449,7 @@ export default function FinancialPage() {
           <option value="receber">A receber</option>
           <option value="pagar">A pagar</option>
           <option value="categorias">Categorias</option>
-          <option value="conciliacao">Conciliação</option>
+           <option value="conciliacao">Fluxo financeiro previsto</option>
           <option value="liquidacoes">Recebimentos líquidos</option>
         </select>
       </label>
@@ -570,7 +570,7 @@ export default function FinancialPage() {
             },
             {
               value: "conciliacao",
-              label: "Conciliacao",
+               label: "Fluxo financeiro previsto",
               content: (
                 <Card>
                   <CardContent className="grid gap-3">
@@ -578,7 +578,7 @@ export default function FinancialPage() {
                       Conferencia
                     </p>
                     <h2 className="text-base font-semibold text-[var(--brand-primary)]">
-                      Visao por status
+                       Visão por status
                     </h2>
                     <DataTable
                       rows={(cashflow?.byStatus ?? []).map((row, index) => ({
@@ -588,8 +588,8 @@ export default function FinancialPage() {
                       empty={
                         <EmptyState
                           eyebrow="Conferencia"
-                          title="Sem dados para conciliacao."
-                          description="Assim que houver lancamentos com status financeiros diferentes, esta leitura aparecera aqui."
+                           title="Sem dados para o fluxo previsto."
+                           description="Assim que houver lançamentos financeiros, esta leitura aparecerá aqui."
                           icon={<Landmark size={20} />}
                         />
                       }

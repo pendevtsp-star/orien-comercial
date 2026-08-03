@@ -50,7 +50,7 @@ export default function LoginPage() {
         router.push("/change-password");
       } else {
         const preferences = await apiFetch<UserPreferences>("/preferences");
-        router.push(preferences.startPage || "/dashboard");
+        router.push(preferences.startPage || "/store-central");
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Nao foi possivel entrar.");
@@ -63,8 +63,12 @@ export default function LoginPage() {
     <main className="auth-page grid min-h-screen place-items-center px-4 py-8">
       <section className="auth-panel w-full max-w-md rounded-2xl border border-[var(--brand-border)] bg-white p-6 shadow-[0_24px_70px_rgba(11,29,61,0.1)] sm:p-8">
         <div className="mb-6">
-          <div className="auth-brand-light"><BrandLogo size="sm" className="mb-5" /></div>
-          <div className="auth-brand-dark"><BrandLogo size="sm" theme="dark" className="mb-5" /></div>
+          <div className="auth-brand-light">
+            <BrandLogo size="sm" className="mb-5" />
+          </div>
+          <div className="auth-brand-dark">
+            <BrandLogo size="sm" theme="dark" className="mb-5" />
+          </div>
           <p className="text-sm font-medium text-[var(--brand-secondary)]">{appName}</p>
           <h1 className="mt-1 text-3xl font-semibold text-[var(--brand-primary)]">
             Entrar no painel
