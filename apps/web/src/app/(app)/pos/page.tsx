@@ -26,8 +26,15 @@ import {
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { apiFetch, openApiDocument } from "../../../lib/api";
+import { apiFetch, getTenantId, openApiDocument } from "../../../lib/api";
 import { OperationalFigure } from "./operational-figure";
+import {
+  paymentStatusForMethod,
+  pendingSalesForScope,
+  readPendingSales,
+  writePendingSales,
+  type PosQueueScope,
+} from "./pos-workflow";
 
 interface ListResponse<T> {
   data: T[];
@@ -47,6 +54,9 @@ interface Customer {
   id: string;
   name: string;
   document?: string;
+}
+interface MeResponse {
+  user: { id: string };
 }
 interface LoyaltyWallet {
   customerId: string;
@@ -113,6 +123,7 @@ export default function PosPage() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [operatorId, setOperatorId] = useState("");
   const [wallets, setWallets] = useState<LoyaltyWallet[]>([]);
   const [loyaltyRewards, setLoyaltyRewards] = useState<LoyaltyReward[]>([]);
   const [branchId, setBranchId] = useState("");
@@ -143,7 +154,7 @@ export default function PosPage() {
   const [paymentMethod, setPaymentMethod] = useState("pix");
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentParts, setPaymentParts] = useState<
-    Array<{ method: string; amount: number; status: "paid" }>
+    Array<{ method: string; amount: number; status: "paid" | "pending" }>
   >([]);
   const [pendingSync, setPendingSync] = useState(0);
   const [printing, setPrinting] = useState<PrintingSettings | null>(null);
@@ -152,8 +163,11 @@ export default function PosPage() {
   const [error, setError] = useState<string | null>(null);
   const [productionMode, setProductionMode] = useState(false);
   const [lastSaleId, setLastSaleId] = useState("");
+  const [saleSubmitting, setSaleSubmitting] = useState(false);
   const scannerRef = useRef<HTMLInputElement>(null);
   const paymentAmountRef = useRef<HTMLInputElement>(null);
+  const saleInFlightRef = useRef(false);
+  const saleIdempotencyKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     void Promise.all([
@@ -161,12 +175,14 @@ export default function PosPage() {
       apiFetch<ListResponse<Product>>("/products?pageSize=100&isActive=true"),
       apiFetch<ListResponse<Customer>>("/customers?pageSize=100&isActive=true"),
       apiFetch<ListResponse<LoyaltyWallet>>("/loyalty/wallets"),
+      apiFetch<MeResponse>("/me"),
     ])
-      .then(([b, p, c, w]) => {
+      .then(([b, p, c, w, me]) => {
         setBranches(b.data);
         setProducts(p.data);
         setCustomers(c.data);
         setWallets(w.data);
+        setOperatorId(me.user.id);
         setBranchId((current) => current || b.data[0]?.id || "");
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Falha ao abrir o PDV."));
@@ -200,15 +216,26 @@ export default function PosPage() {
   }
   useEffect(() => {
     setIsOnline(navigator.onLine);
-    const queueKey = "orien.pos.pending-sales";
+    const getQueueScope = (): PosQueueScope | null => {
+      const tenantId = getTenantId();
+      if (!tenantId || !branchId || !operatorId || !cash?.id) return null;
+      return {
+        tenantId,
+        branchId,
+        operatorId,
+        cashRegisterSessionId: cash.id,
+      };
+    };
     const sync = async () => {
-      const pending = JSON.parse(window.localStorage.getItem(queueKey) ?? "[]") as Array<{
-        payload: Record<string, unknown>;
-        idempotencyKey: string;
-      }>;
-      if (!pending.length || !navigator.onLine) return setPendingSync(pending.length);
-      const remaining: Array<Record<string, unknown>> = [];
-      for (const sale of pending) {
+      const scope = getQueueScope();
+      if (!scope) return setPendingSync(0);
+      const pending = readPendingSales(window.localStorage);
+      const scoped = pendingSalesForScope(pending, scope);
+      setPendingSync(scoped.length);
+      if (!scoped.length || !navigator.onLine) return;
+      const scopedKeys = new Set(scoped.map((sale) => sale.idempotencyKey));
+      const remaining = pending.filter((sale) => !scopedKeys.has(sale.idempotencyKey));
+      for (const sale of scoped) {
         try {
           await apiFetch("/sales", {
             method: "POST",
@@ -219,8 +246,8 @@ export default function PosPage() {
           remaining.push(sale);
         }
       }
-      window.localStorage.setItem(queueKey, JSON.stringify(remaining));
-      setPendingSync(remaining.length);
+      writePendingSales(window.localStorage, remaining);
+      setPendingSync(pendingSalesForScope(remaining, scope).length);
     };
     void sync();
     const online = () => {
@@ -234,7 +261,7 @@ export default function PosPage() {
       window.removeEventListener("online", online);
       window.removeEventListener("offline", offline);
     };
-  }, []);
+  }, [branchId, cash?.id, operatorId]);
   useEffect(() => {
     const search = parseQuantityCode(productSearch).code.trim();
     if (search.length < 2) {
@@ -406,6 +433,10 @@ export default function PosPage() {
       setError("Conclua ou limpe a venda em montagem antes de fechar o caixa.");
       return;
     }
+    if (pendingSync > 0) {
+      setError("Sincronize as vendas pendentes antes de fechar o caixa.");
+      return;
+    }
     if (!closingAmount) {
       setError("Informe o valor contado para fechar o caixa.");
       return;
@@ -471,7 +502,10 @@ export default function PosPage() {
     const received = Number(paymentAmount || remainingPayment);
     const amount = Math.min(remainingPayment, received);
     if (amount <= 0) return;
-    setPaymentParts((current) => [...current, { method: paymentMethod, amount, status: "paid" }]);
+    setPaymentParts((current) => [
+      ...current,
+      { method: paymentMethod, amount, status: paymentStatusForMethod(paymentMethod) },
+    ]);
     setPaymentAmount("");
   }
   function selectPayment(method: string) {
@@ -484,6 +518,7 @@ export default function PosPage() {
     if (!window.confirm("Limpar todos os itens da venda em montagem?")) return;
     setCart([]);
     setPaymentParts([]);
+    saleIdempotencyKeyRef.current = null;
     setPaymentAmount("");
     setCustomerId("");
     setCustomerDocument("");
@@ -558,12 +593,15 @@ export default function PosPage() {
     if (!cash || !cart.length) return;
     const payments = paymentParts.length
       ? paymentParts
-      : [{ method: paymentMethod, amount: payableTotal, status: "paid" as const }];
+      : [{ method: paymentMethod, amount: payableTotal, status: paymentStatusForMethod(paymentMethod) }];
     const paid = payments.reduce((sum, item) => sum + item.amount, 0);
     if (Math.abs(paid - payableTotal) > 0.009) {
       setError("A soma dos pagamentos precisa ser igual ao total da venda.");
       return;
     }
+    if (saleInFlightRef.current) return;
+    saleInFlightRef.current = true;
+    setSaleSubmitting(true);
     try {
       const payload = {
         branchId,
@@ -582,16 +620,24 @@ export default function PosPage() {
         })),
         payments,
       };
+      const idempotencyKey = saleIdempotencyKeyRef.current ?? createIdempotencyKey();
+      saleIdempotencyKeyRef.current = idempotencyKey;
       window.localStorage.setItem("orien.pos.last-cart", JSON.stringify({ items: cart, branchId }));
       if (!navigator.onLine) {
-        const queueKey = "orien.pos.pending-sales";
-        const pending = JSON.parse(window.localStorage.getItem(queueKey) ?? "[]") as Array<{
-          payload: Record<string, unknown>;
-          idempotencyKey: string;
-        }>;
-        pending.push({ payload, idempotencyKey: createIdempotencyKey() });
-        window.localStorage.setItem(queueKey, JSON.stringify(pending));
-        setPendingSync(pending.length);
+        const tenantId = getTenantId();
+        if (!tenantId || !operatorId) throw new Error("Não foi possível identificar a sessão do operador.");
+        const scope = {
+          tenantId,
+          branchId,
+          operatorId,
+          cashRegisterSessionId: cash.id,
+        };
+        const pending = readPendingSales(window.localStorage);
+        if (!pending.some((sale) => sale.idempotencyKey === idempotencyKey)) {
+          pending.push({ payload, idempotencyKey, scope });
+        }
+        writePendingSales(window.localStorage, pending);
+        setPendingSync(pendingSalesForScope(pending, scope).length);
       } else {
         const result = await apiFetch<{
           id?: string;
@@ -599,7 +645,7 @@ export default function PosPage() {
           loyalty?: { type: string; rewardName: string; couponCode?: string };
         }>("/sales", {
           method: "POST",
-          headers: { "idempotency-key": createIdempotencyKey() },
+          headers: { "idempotency-key": idempotencyKey },
           body: JSON.stringify(payload),
         });
         const saleId = result.id ?? result.sale?.id;
@@ -628,6 +674,7 @@ export default function PosPage() {
             .catch(() => undefined);
         }
       }
+      saleIdempotencyKeyRef.current = null;
       setCart([]);
       setPaymentParts([]);
       setLoyaltyPointsToRedeem(0);
@@ -637,6 +684,9 @@ export default function PosPage() {
       scannerRef.current?.focus();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao concluir venda.");
+    } finally {
+      saleInFlightRef.current = false;
+      setSaleSubmitting(false);
     }
   }
 
@@ -1249,7 +1299,7 @@ export default function PosPage() {
             </label>
             <Button
               className="min-h-12 w-full bg-[var(--brand-accent)] text-base text-[var(--brand-primary)] hover:brightness-95"
-              disabled={!cash || !cart.length}
+              disabled={!cash || !cart.length || saleSubmitting}
               onClick={() => void finishSale()}
             >
               Concluir venda · F10

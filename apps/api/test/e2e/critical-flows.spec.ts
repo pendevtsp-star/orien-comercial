@@ -349,6 +349,65 @@ describe.sequential("critical api flows", { timeout: 60_000 }, () => {
     expect(cashflowResponse.body.paidIn).toBe(50);
   });
 
+  it("keeps the total manual financial amount distributed across its installments", async () => {
+    const agent = await login(app, tenantA);
+    const response = await agent
+      .post("/api/v1/financial/receivables")
+      .set("x-tenant-id", tenantA.tenantId)
+      .send({
+        branchId: tenantA.branchId,
+        amount: 100,
+        amountMode: "total",
+        dueDate: "2026-08-21",
+        description: "Parcelas totais E2E",
+        installmentCount: 3,
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body).toHaveLength(3);
+    expect(response.body.map((row: { amount: string }) => row.amount)).toEqual([
+      "33.34",
+      "33.33",
+      "33.33",
+    ]);
+  });
+
+  it("rotates a fiscal webhook token only inside the selected branch", async () => {
+    const agent = await login(app, tenantA);
+    const secondBranch = await agent
+      .post("/api/v1/branches")
+      .set("x-tenant-id", tenantA.tenantId)
+      .send({ name: "Filial Fiscal E2E", code: "FISCAL-E2E", isActive: true });
+    expect(secondBranch.status).toBe(201);
+    const secondBranchId = secondBranch.body.id as string;
+    const oldHashA = "a".repeat(64);
+    const oldHashB = "b".repeat(64);
+
+    await adminPool.query(
+      `INSERT INTO branch_fiscal_settings(tenant_id,branch_id,status,webhook_token_hash,webhook_token_last4)
+       VALUES($1,$2,'configured',$3,'olda'),($1,$4,'configured',$5,'oldb')`,
+      [tenantA.tenantId, tenantA.branchId, oldHashA, secondBranchId, oldHashB],
+    );
+
+    const rotation = await agent
+      .post(`/api/v1/fiscal/branches/${tenantA.branchId}/webhook-token`)
+      .set("x-tenant-id", tenantA.tenantId)
+      .send({});
+    expect(rotation.status).toBe(201);
+    expect(rotation.body.authorization).toMatch(/^orien_fiscal_/);
+
+    const settings = await adminPool.query<{ branch_id: string; webhook_token_hash: string; webhook_token_last4: string }>(
+      `SELECT branch_id,webhook_token_hash,webhook_token_last4
+       FROM branch_fiscal_settings WHERE tenant_id=$1 ORDER BY branch_id`,
+      [tenantA.tenantId],
+    );
+    const selected = settings.rows.find((row) => row.branch_id === tenantA.branchId);
+    const untouched = settings.rows.find((row) => row.branch_id === secondBranchId);
+    expect(selected?.webhook_token_hash).not.toBe(oldHashA);
+    expect(selected?.webhook_token_last4).not.toBe("olda");
+    expect(untouched).toMatchObject({ webhook_token_hash: oldHashB, webhook_token_last4: "oldb" });
+  });
+
   it("enforces role and branch scopes for manager and seller", async () => {
     const owner = await login(app, tenantA);
     const secondBranch = await owner.agent

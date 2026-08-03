@@ -109,7 +109,7 @@ export class CashRegistersService {
       const session = ensureFound(found.rows[0], "Caixa aberto");
       ensureBranchAccess(context, session.branch_id);
       const payments = await client.query<{ total: string }>(
-        `SELECT COALESCE(sum(sp.amount),0)::text total FROM sale_payments sp JOIN sales s ON s.id = sp.sale_id WHERE sp.tenant_id = $1 AND s.cash_register_session_id = $2 AND sp.status = 'paid' AND s.status = 'sold'`,
+        `SELECT COALESCE(sum(sp.amount),0)::text total FROM sale_payments sp JOIN sales s ON s.id = sp.sale_id WHERE sp.tenant_id = $1 AND s.cash_register_session_id = $2 AND sp.status = 'paid' AND sp.method IN ('cash', 'dinheiro') AND s.status = 'sold'`,
         [context.tenantId, id],
       );
       const movements = await client.query<{ supply: string; withdrawal: string }>(

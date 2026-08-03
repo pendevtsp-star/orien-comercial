@@ -5,6 +5,7 @@ import { Building2, ContactRound, History, MailCheck, Smartphone } from "lucide-
 import { useState } from "react";
 import { ResourcePage } from "../../../components/resource-page";
 import { apiFetch } from "../../../lib/api";
+import { buildCustomerPayload } from "./customer-form";
 
 interface CustomerRow {
   id: string;
@@ -60,16 +61,7 @@ export default function CustomersPage() {
         { name: "email", label: "E-mail", type: "email" },
         { name: "whatsapp", label: "WhatsApp" }
       ]}
-      transform={(form) => ({
-        name: form.get("name"),
-        document: form.get("document") || undefined,
-        email: form.get("email") || undefined,
-        whatsapp: form.get("whatsapp") || undefined,
-        type: "individual",
-        tags: [],
-        communicationOptIn: false,
-        isActive: true
-      })}
+      transform={(form, editingRow) => buildCustomerPayload(form, Boolean(editingRow))}
       columns={[
         { key: "name", header: "Nome", render: (row) => row.name },
         { key: "document", header: "Documento", render: (row) => row.document ?? "-" },

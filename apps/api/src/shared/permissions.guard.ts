@@ -20,7 +20,11 @@ export class PermissionsGuard implements CanActivate {
     const granted = request.tenant?.permissions ?? [];
 
     if (!hasEveryPermission(granted, required)) {
-      throw new ForbiddenException("Permissao insuficiente.");
+      throw new ForbiddenException({
+        code: "PERMISSION_REQUIRED",
+        message: "Seu perfil nao possui permissao para este recurso.",
+        required,
+      });
     }
 
     return true;

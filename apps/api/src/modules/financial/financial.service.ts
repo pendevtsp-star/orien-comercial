@@ -114,6 +114,11 @@ export class FinancialService {
 
     return this.database.tenantTransaction(context.tenantId, async (client) => {
       const created: CreatedFinancialEntry[] = [];
+      const amountCents = moneyToCents(input.amount);
+      const totalAmountCents = input.amountMode === "total"
+        ? amountCents
+        : amountCents * input.installmentCount;
+      const installmentAmounts = splitCents(totalAmountCents, input.installmentCount);
 
       for (let index = 0; index < input.installmentCount; index += 1) {
         const dueDate = new Date(`${input.dueDate}T00:00:00`);
@@ -130,7 +135,7 @@ export class FinancialService {
             context.tenantId,
             context.branchId ?? input.branchId ?? null,
             partyId ?? null,
-            input.amount,
+            centsToMoney(installmentAmounts[index]!),
             dueDate.toISOString().slice(0, 10),
             input.status,
             input.description ?? null,
@@ -148,7 +153,12 @@ export class FinancialService {
         actorUserId: context.userId,
         action: `${kind}.created`,
         entityType: table,
-        metadata: { installmentCount: input.installmentCount, amount: input.amount, branchId: input.branchId ?? null }
+        metadata: {
+          amountMode: input.amountMode,
+          installmentCount: input.installmentCount,
+          totalAmount: centsToMoney(totalAmountCents),
+          branchId: input.branchId ?? null,
+        }
       });
 
       return created;
@@ -374,4 +384,18 @@ async function insertAuditLog(
 
 function toMoney(value: string | number) {
   return Number(value).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function moneyToCents(value: number) {
+  return Math.round(value * 100);
+}
+
+function centsToMoney(cents: number) {
+  return `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, "0")}`;
+}
+
+function splitCents(totalCents: number, installmentCount: number) {
+  const base = Math.floor(totalCents / installmentCount);
+  const remainder = totalCents % installmentCount;
+  return Array.from({ length: installmentCount }, (_, index) => base + (index < remainder ? 1 : 0));
 }

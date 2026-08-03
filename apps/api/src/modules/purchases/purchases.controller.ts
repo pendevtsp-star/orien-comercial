@@ -8,18 +8,25 @@ import { PermissionsGuard } from "../../shared/permissions.guard";
 import { RequirePermissions } from "../../shared/require-permissions.decorator";
 import type { TenantContext } from "../../shared/request-context";
 import { TenantContextGuard } from "../../shared/tenant-context.guard";
+import { CapabilitiesGuard } from "../../shared/capabilities.guard";
+import { RequireCapability } from "../../shared/require-capability.decorator";
 import { ZodValidationPipe } from "../../shared/zod-validation.pipe";
 import { PurchasesService } from "./purchases.service";
 
 @ApiTags("purchases")
-@UseGuards(JwtAuthGuard, TenantContextGuard, PermissionsGuard)
-@RequirePermissions(permissions.stock.purchase)
+@UseGuards(JwtAuthGuard, TenantContextGuard, PermissionsGuard, CapabilitiesGuard)
+@RequireCapability("purchases")
 @Controller("purchases")
 export class PurchasesController {
   constructor(@Inject(PurchasesService) private readonly service: PurchasesService) {}
+  @RequirePermissions(permissions.purchases.read)
   @Get() list(@CurrentTenant() tenant: TenantContext, @Query(new ZodValidationPipe(resourceListQuerySchema)) query: never) { return this.service.list(tenant, query); }
+  @RequirePermissions(permissions.purchases.read)
   @Get(":id") get(@CurrentTenant() tenant: TenantContext, @Param("id") id: string) { return this.service.get(tenant, id); }
+  @RequirePermissions(permissions.purchases.manage)
   @Post() create(@CurrentTenant() tenant: TenantContext, @Body(new ZodValidationPipe(purchaseOrderCreateSchema)) body: never) { return this.service.create(tenant, body); }
+  @RequirePermissions(permissions.purchases.manage)
   @Post(":id/approve") approve(@CurrentTenant() tenant: TenantContext, @Param("id") id: string) { return this.service.approve(tenant, id); }
+  @RequirePermissions(permissions.purchases.manage)
   @Post(":id/receive") receive(@CurrentTenant() tenant: TenantContext, @Param("id") id: string, @Body(new ZodValidationPipe(purchaseOrderReceiveSchema)) body: never) { return this.service.receive(tenant, id, body); }
 }

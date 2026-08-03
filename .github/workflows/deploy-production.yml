@@ -154,6 +154,13 @@ jobs:
               image: ${ORIEN_API_IMAGE}
             worker:
               image: ${ORIEN_API_IMAGE}
+              env_file: .env
+              environment:
+                DATABASE_URL: postgresql://sgc_app:${SGC_APP_PASSWORD}@postgres:5432/sgc
+                DATABASE_MIGRATION_URL: postgresql://sgc_owner:${POSTGRES_OWNER_PASSWORD}@postgres:5432/sgc
+                REDIS_URL: redis://redis:6379
+              command: ["node", "apps/api/dist/worker.js"]
+              restart: unless-stopped
             web:
               image: ${ORIEN_WEB_IMAGE}
             marketing:
@@ -182,6 +189,7 @@ jobs:
           ORIEN_MARKETING_IMAGE=ghcr.io/pendevtsp-star/orien-comercial-marketing:${VERSION}
           ORIEN_ADMIN_IMAGE=ghcr.io/pendevtsp-star/orien-comercial-admin:${VERSION}
           PRODUCTION_VERSION=${VERSION}
+          APP_VERSION=${VERSION}
           EOF
 
           echo "$GHCR_TOKEN_ORIEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
@@ -209,6 +217,18 @@ jobs:
           wait_for_service web http://127.0.0.1:3100
           wait_for_service marketing http://127.0.0.1:3101
           wait_for_service admin http://127.0.0.1:3102
+          for attempt in $(seq 1 24); do
+            if [ "$($compose ps --status running --services worker | tr -d '\r')" = "worker" ]; then
+              echo "[deploy] worker saudavel"
+              break
+            fi
+            if [ "$attempt" = 24 ]; then
+              echo "[deploy] worker nao permaneceu em execucao"
+              $compose logs --tail 80 worker || true
+              exit 1
+            fi
+            sleep 5
+          done
           $compose ps
 
   notify-telegram:

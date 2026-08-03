@@ -18,7 +18,7 @@ export const defaultPreferences: UserPreferences = {
   colorMode: "system",
   sidebarMode: "expanded",
   density: "comfortable",
-  startPage: "/dashboard",
+  startPage: "/store-central",
   dateFormat: "dd/MM/yyyy",
   reduceMotion: false,
   notifyInApp: true,
@@ -26,7 +26,16 @@ export const defaultPreferences: UserPreferences = {
   quietHoursStart: null,
   quietHoursEnd: null,
   favoriteRoutes: [],
-  dashboardWidgets: ["executive", "financial", "indicators", "performance", "period", "goals", "role-focus", "health"],
+  dashboardWidgets: [
+    "executive",
+    "financial",
+    "indicators",
+    "performance",
+    "period",
+    "goals",
+    "role-focus",
+    "health",
+  ],
 };
 export function applyPreferences(preferences: UserPreferences) {
   if (typeof document === "undefined") return;

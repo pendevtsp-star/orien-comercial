@@ -211,6 +211,7 @@ export default function FinancialPage() {
         body: JSON.stringify({
           branchId: form.get("branchId") || undefined,
           amount: Number(form.get("amount") || 0),
+          amountMode: form.get("amountMode") || "installment",
           dueDate: form.get("dueDate"),
           status: "open",
           description: form.get("description") || undefined,
@@ -380,7 +381,7 @@ export default function FinancialPage() {
     <div className="grid gap-6">
       <PageHeader
         title="Financeiro"
-        description="Acompanhe vencimentos, baixas e conciliação em um único fluxo."
+         description="Acompanhe vencimentos, baixas e o fluxo financeiro previsto em um único lugar."
         actions={
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={() => void load()} icon={<RefreshCw size={16} />}>
@@ -448,7 +449,7 @@ export default function FinancialPage() {
           <option value="receber">A receber</option>
           <option value="pagar">A pagar</option>
           <option value="categorias">Categorias</option>
-          <option value="conciliacao">Conciliação</option>
+           <option value="conciliacao">Fluxo financeiro previsto</option>
           <option value="liquidacoes">Recebimentos líquidos</option>
         </select>
       </label>
@@ -569,7 +570,7 @@ export default function FinancialPage() {
             },
             {
               value: "conciliacao",
-              label: "Conciliacao",
+               label: "Fluxo financeiro previsto",
               content: (
                 <Card>
                   <CardContent className="grid gap-3">
@@ -577,7 +578,7 @@ export default function FinancialPage() {
                       Conferencia
                     </p>
                     <h2 className="text-base font-semibold text-[var(--brand-primary)]">
-                      Visao por status
+                       Visão por status
                     </h2>
                     <DataTable
                       rows={(cashflow?.byStatus ?? []).map((row, index) => ({
@@ -587,8 +588,8 @@ export default function FinancialPage() {
                       empty={
                         <EmptyState
                           eyebrow="Conferencia"
-                          title="Sem dados para conciliacao."
-                          description="Assim que houver lancamentos com status financeiros diferentes, esta leitura aparecera aqui."
+                           title="Sem dados para o fluxo previsto."
+                           description="Assim que houver lançamentos financeiros, esta leitura aparecerá aqui."
                           icon={<Landmark size={20} />}
                         />
                       }
@@ -681,6 +682,15 @@ function FinancialColumn({
               <Select name="categoryId" label="Categoria" options={categories} />
               <Input name="description" label="Descrição" />
               <Input name="amount" label="Valor" type="number" step="0.01" required />
+              <Select
+                name="amountMode"
+                label="Valor informado"
+                defaultValue="installment"
+                options={[
+                  { label: "Total das parcelas", value: "total" },
+                  { label: "Valor de cada parcela", value: "installment" },
+                ]}
+              />
               <Input name="dueDate" label="Vencimento" type="date" required />
               <Input
                 name="installmentCount"

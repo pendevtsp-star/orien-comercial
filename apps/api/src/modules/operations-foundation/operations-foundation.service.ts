@@ -367,6 +367,7 @@ export class OperationsFoundationService {
       if (result.rows[0]?.status !== "verified") throw new Error("backup evidence is incomplete");
       return;
     }
+    if (job.type === "whatsapp.message.recorded") return;
     throw new Error(`Unsupported operational job type: ${job.type}`);
   }
 

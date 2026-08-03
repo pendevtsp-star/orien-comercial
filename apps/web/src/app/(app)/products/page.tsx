@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ResourcePage } from "../../../components/resource-page";
+import { clearFileInput } from "../../../components/resource-page-form";
 import { apiFetch } from "../../../lib/api";
 
 interface ProductRow {
@@ -424,7 +425,12 @@ function CatalogAssistant() {
               type="button"
               aria-label="Limpar prévia"
               className="rounded-md p-2 text-slate-500 hover:bg-slate-100"
-              onClick={() => setPreview(null)}
+              onClick={() => {
+                clearFileInput(document.querySelector<HTMLInputElement>('input[name="imageFile"]'));
+                const imageUrl = document.querySelector<HTMLInputElement>('input[name="imageUrl"]');
+                if (imageUrl) imageUrl.value = "";
+                setPreview(null);
+              }}
             >
               <X size={15} />
             </button>

@@ -465,6 +465,22 @@ export const plans = pgTable("plans", {
   ...timestamps,
 });
 
+export const planFeatures = pgTable(
+  "plan_features",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    planId: uuid("plan_id")
+      .notNull()
+      .references(() => plans.id, { onDelete: "cascade" }),
+    key: varchar("key", { length: 120 }).notNull(),
+    value: jsonb("value").notNull().default({}),
+    ...timestamps,
+  },
+  (table) => ({
+    planKeyIdx: uniqueIndex("plan_features_plan_key_idx").on(table.planId, table.key),
+  }),
+);
+
 export const platformFeatureFlags = pgTable("platform_feature_flags", {
   id: uuid("id").primaryKey().defaultRandom(),
   key: varchar("key", { length: 120 }).notNull().unique(),

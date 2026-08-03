@@ -17,7 +17,6 @@ interface SubscriptionResponse {
   } | null;
   plans: Array<{ id: string; slug: string; name: string; priceCents: number }>;
   invoices: Array<{ id: string; amount: string; dueDate?: string | null; status: string; invoiceUrl?: string | null }>;
-  provider: { env: string };
 }
 
 export default function SubscriptionPage() {
@@ -82,7 +81,7 @@ export default function SubscriptionPage() {
     <div className="grid gap-6">
       <PageHeader
         title="Minha assinatura"
-        description="Assinatura SaaS via Asaas sandbox, checkout inicial e historico de cobranca."
+        description="Acompanhe seu plano, renovação e histórico de cobranças em um único lugar."
         actions={<div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={() => void load()} icon={<RefreshCw size={16} />}>Atualizar dados</Button>{data?.subscription && data.subscription.status !== "cancelled" ? <Button variant="secondary" onClick={() => void cancelSubscription()}>Cancelar renovação</Button> : null}</div>}
       />
       {error ? <p className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</p> : null}
@@ -115,15 +114,12 @@ export default function SubscriptionPage() {
                   Controle da recorrencia SaaS com checkout e historico no mesmo fluxo.
                 </h2>
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-white/72">
-                  A tela acompanha ambiente, plano, proxima renovacao e cobrancas em uma leitura unica para o tenant.
+                   A tela reúne plano, próxima renovação e cobranças em uma leitura simples para a empresa.
                 </p>
               </div>
               <Badge className="border-white/10 bg-white/10 text-white">{loading ? "carregando" : data?.subscription?.status ?? "trial"}</Badge>
             </div>
             <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/6 p-4 text-sm text-white/78">
-              <p>
-                Ambiente do provedor: <span className="font-medium text-white">{data?.provider.env ?? "sandbox"}</span>
-              </p>
               <p>
                 Plano atual: <span className="font-medium text-white">{data?.subscription?.planName ?? "Trial"}</span>
               </p>
@@ -180,7 +176,7 @@ export default function SubscriptionPage() {
             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-1">
               <Input
                 aria-label="Buscar cobrancas"
-                placeholder="Buscar por id ou status"
+                 placeholder="Buscar por status"
                 value={invoiceSearch}
                 onChange={(event) => setInvoiceSearch(event.target.value)}
               />

@@ -1,6 +1,10 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import type { AppConfig } from "@sgc/config";
-import type { AsaasWebhookInput, PublicSubscriptionCheckoutInput, SubscriptionCheckoutInput } from "@sgc/types";
+import type {
+  AsaasWebhookInput,
+  PublicSubscriptionCheckoutInput,
+  SubscriptionCheckoutInput,
+} from "@sgc/types";
 import type { PoolClient, QueryResult } from "pg";
 import { randomUUID } from "node:crypto";
 import { APP_CONFIG } from "../config/config.module";
@@ -14,15 +18,25 @@ export class SubscriptionsService {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
-    @Inject(PasswordService) private readonly passwordService: PasswordService
+    @Inject(PasswordService) private readonly passwordService: PasswordService,
   ) {}
 
   async publicCheckout(input: PublicSubscriptionCheckoutInput) {
     const document = input.document.replace(/\D/g, "");
-    if (![11, 14].includes(document.length)) throw new BadRequestException("Informe um CPF ou CNPJ válido.");
-    const existingEmail = await this.database.pool.query<{ id: string }>("SELECT id FROM users WHERE lower(email)=lower($1) AND deleted_at IS NULL", [input.email]);
-    if (existingEmail.rowCount) throw new BadRequestException("Este e-mail já possui uma conta. Entre no painel para contratar outro plano.");
-    const plan = await this.database.pool.query<{ id: string; name: string; price_cents: number }>("SELECT id,name,price_cents FROM plans WHERE slug=$1 AND is_active=true", [input.planSlug]);
+    if (![11, 14].includes(document.length))
+      throw new BadRequestException("Informe um CPF ou CNPJ válido.");
+    const existingEmail = await this.database.pool.query<{ id: string }>(
+      "SELECT id FROM users WHERE lower(email)=lower($1) AND deleted_at IS NULL",
+      [input.email],
+    );
+    if (existingEmail.rowCount)
+      throw new BadRequestException(
+        "Este e-mail já possui uma conta. Entre no painel para contratar outro plano.",
+      );
+    const plan = await this.database.pool.query<{ id: string; name: string; price_cents: number }>(
+      "SELECT id,name,price_cents FROM plans WHERE slug=$1 AND is_active=true",
+      [input.planSlug],
+    );
     if (!plan.rows[0]) throw new BadRequestException("Plano indisponível.");
     const selectedPlan = plan.rows[0];
 
@@ -32,25 +46,77 @@ export class SubscriptionsService {
     try {
       await client.query("BEGIN");
       const slug = `${slugify(input.companyName).slice(0, 60) || "empresa"}-${randomUUID().slice(0, 8)}`;
-      const tenant = await client.query<{ id: string }>("INSERT INTO tenants (name,slug,status,plan_slug) VALUES ($1,$2,'trial',$3) RETURNING id", [input.companyName, slug, input.planSlug]);
+      const tenant = await client.query<{ id: string }>(
+        "INSERT INTO tenants (name,slug,status,plan_slug) VALUES ($1,$2,'trial',$3) RETURNING id",
+        [input.companyName, slug, input.planSlug],
+      );
       const tenantId = tenant.rows[0]!.id;
-      await client.query("INSERT INTO legal_entities (tenant_id,name,document,document_type) VALUES ($1,$2,$3,$4)", [tenantId, input.companyName, document, document.length === 11 ? "cpf" : "cnpj"]);
-      await client.query("INSERT INTO branches (tenant_id,name,code,is_active) VALUES ($1,'Matriz','MATRIZ',true)", [tenantId]);
-      const role = await client.query<{ id: string }>("INSERT INTO roles (tenant_id,slug,name,is_system) VALUES ($1,'owner','Proprietário',true) RETURNING id", [tenantId]);
-      await client.query("INSERT INTO role_permissions (role_id,permission_id) SELECT $1,id FROM permissions ON CONFLICT DO NOTHING", [role.rows[0]!.id]);
-      const user = await client.query<{ id: string }>("INSERT INTO users (email,name,password_hash,is_email_verified) VALUES ($1,$2,$3,false) RETURNING id", [input.email, input.ownerName, await this.passwordService.hashPassword(input.password, this.config.PASSWORD_PEPPER)]);
-      const membership = await client.query<{ id: string }>("INSERT INTO memberships (tenant_id,user_id,role_id,status) VALUES ($1,$2,$3,'active') RETURNING id", [tenantId, user.rows[0]!.id, role.rows[0]!.id]);
-      await client.query("INSERT INTO tenant_settings (tenant_id,key,value) VALUES ($1,'branding',$2::jsonb)", [tenantId, JSON.stringify({ companyName: input.companyName, primaryColor: "#0B1D3D", accentColor: "#F5C34A" })]);
-      await client.query("INSERT INTO subscriptions (tenant_id,plan_id,provider,status,trial_ends_at,current_period_ends_at) VALUES ($1,$2,'manual','trial',$3,$3)", [tenantId, selectedPlan.id, trialEndsAt]);
+      await client.query(
+        "INSERT INTO legal_entities (tenant_id,name,document,document_type) VALUES ($1,$2,$3,$4)",
+        [tenantId, input.companyName, document, document.length === 11 ? "cpf" : "cnpj"],
+      );
+      await client.query(
+        "INSERT INTO branches (tenant_id,name,code,is_active) VALUES ($1,'Matriz','MATRIZ',true)",
+        [tenantId],
+      );
+      const role = await client.query<{ id: string }>(
+        "INSERT INTO roles (tenant_id,slug,name,is_system) VALUES ($1,'owner','Proprietário',true) RETURNING id",
+        [tenantId],
+      );
+      await client.query(
+        "INSERT INTO role_permissions (role_id,permission_id) SELECT $1,id FROM permissions WHERE slug NOT LIKE 'platform.%' ON CONFLICT DO NOTHING",
+        [role.rows[0]!.id],
+      );
+      const user = await client.query<{ id: string }>(
+        "INSERT INTO users (email,name,password_hash,is_email_verified) VALUES ($1,$2,$3,false) RETURNING id",
+        [
+          input.email,
+          input.ownerName,
+          await this.passwordService.hashPassword(input.password, this.config.PASSWORD_PEPPER),
+        ],
+      );
+      const membership = await client.query<{ id: string }>(
+        "INSERT INTO memberships (tenant_id,user_id,role_id,status) VALUES ($1,$2,$3,'active') RETURNING id",
+        [tenantId, user.rows[0]!.id, role.rows[0]!.id],
+      );
+      await client.query(
+        "INSERT INTO tenant_settings (tenant_id,key,value) VALUES ($1,'branding',$2::jsonb)",
+        [
+          tenantId,
+          JSON.stringify({
+            companyName: input.companyName,
+            primaryColor: "#0B1D3D",
+            accentColor: "#F5C34A",
+          }),
+        ],
+      );
+      await client.query(
+        "INSERT INTO subscriptions (tenant_id,plan_id,provider,status,trial_ends_at,current_period_ends_at) VALUES ($1,$2,'manual','trial',$3,$3)",
+        [tenantId, selectedPlan.id, trialEndsAt],
+      );
       await client.query("COMMIT");
-      context = { tenantId, userId: user.rows[0]!.id, membershipId: membership.rows[0]!.id, roleSlug: "owner", branchId: null, permissions: [] };
+      context = {
+        tenantId,
+        userId: user.rows[0]!.id,
+        membershipId: membership.rows[0]!.id,
+        roleSlug: "owner",
+        branchId: null,
+        permissions: [],
+      };
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
     } finally {
       client.release();
     }
-    return { provider: "manual", status: "trial", trialStarted: true, trialEndsAt: trialEndsAt.toISOString(), tenantId: context.tenantId, loginUrl: `${this.config.WEB_APP_URL}/login?email=${encodeURIComponent(input.email)}&trial=1` };
+    return {
+      provider: "manual",
+      status: "trial",
+      trialStarted: true,
+      trialEndsAt: trialEndsAt.toISOString(),
+      tenantId: context.tenantId,
+      loginUrl: `${this.config.WEB_APP_URL}/login?email=${encodeURIComponent(input.email)}&trial=1`,
+    };
   }
 
   async current(context: TenantContext) {
@@ -75,11 +141,11 @@ export class SubscriptionsService {
         ORDER BY s.created_at DESC
         LIMIT 1
         `,
-        [context.tenantId]
+        [context.tenantId],
       ),
       this.database.tenantQuery(
         context.tenantId,
-        "SELECT id, slug, name, price_cents AS \"priceCents\" FROM plans WHERE is_active = true ORDER BY price_cents ASC"
+        'SELECT id, slug, name, price_cents AS "priceCents" FROM plans WHERE is_active = true ORDER BY price_cents ASC',
       ),
       this.database.tenantQuery(
         context.tenantId,
@@ -90,74 +156,113 @@ export class SubscriptionsService {
         ORDER BY created_at DESC
         LIMIT 20
         `,
-        [context.tenantId]
-      )
+        [context.tenantId],
+      ),
     ]);
 
     return {
       subscription: subscription.rows[0] ?? null,
       plans: plans.rows,
       invoices: invoices.rows,
-      provider: { env: this.config.ASAAS_ENV }
     };
   }
 
   private async resolveCoupon(code: string | undefined, planSlug: string, priceCents: number) {
     if (!code) return { id: null as string | null, discountCents: 0 };
-    const result = await this.database.pool.query<{ id: string; discount_type: "percent" | "fixed"; discount_value_cents: number; allowed_plan_slugs: string[]; max_redemptions: number | null; redemption_count: number }>("SELECT id,discount_type,discount_value_cents,allowed_plan_slugs,max_redemptions,redemption_count FROM saas_coupons WHERE upper(code)=upper($1) AND is_active=true AND (starts_at IS NULL OR starts_at<=now()) AND (expires_at IS NULL OR expires_at>now())", [code]);
+    const result = await this.database.pool.query<{
+      id: string;
+      discount_type: "percent" | "fixed";
+      discount_value_cents: number;
+      allowed_plan_slugs: string[];
+      max_redemptions: number | null;
+      redemption_count: number;
+    }>(
+      "SELECT id,discount_type,discount_value_cents,allowed_plan_slugs,max_redemptions,redemption_count FROM saas_coupons WHERE upper(code)=upper($1) AND is_active=true AND (starts_at IS NULL OR starts_at<=now()) AND (expires_at IS NULL OR expires_at>now())",
+      [code],
+    );
     const coupon = result.rows[0];
-    if (!coupon || (coupon.max_redemptions !== null && coupon.redemption_count >= coupon.max_redemptions)) throw new BadRequestException("Cupom inválido, expirado ou indisponível.");
+    if (
+      !coupon ||
+      (coupon.max_redemptions !== null && coupon.redemption_count >= coupon.max_redemptions)
+    )
+      throw new BadRequestException("Cupom inválido, expirado ou indisponível.");
     const allowedPlans = Array.isArray(coupon.allowed_plan_slugs) ? coupon.allowed_plan_slugs : [];
-    if (allowedPlans.length && !allowedPlans.includes(planSlug)) throw new BadRequestException("Este cupom não é válido para o plano selecionado.");
-    return { id: coupon.id, discountCents: Math.min(priceCents, coupon.discount_type === "percent" ? Math.round(priceCents * coupon.discount_value_cents / 100) : coupon.discount_value_cents) };
+    if (allowedPlans.length && !allowedPlans.includes(planSlug))
+      throw new BadRequestException("Este cupom não é válido para o plano selecionado.");
+    return {
+      id: coupon.id,
+      discountCents: Math.min(
+        priceCents,
+        coupon.discount_type === "percent"
+          ? Math.round((priceCents * coupon.discount_value_cents) / 100)
+          : coupon.discount_value_cents,
+      ),
+    };
   }
 
   private async redeemCoupon(couponId: string, tenantId: string, discountCents: number) {
-    const result = await this.database.pool.query("UPDATE saas_coupons SET redemption_count=redemption_count+1,updated_at=now() WHERE id=$1 AND is_active=true AND (max_redemptions IS NULL OR redemption_count<max_redemptions) RETURNING id", [couponId]);
+    const result = await this.database.pool.query(
+      "UPDATE saas_coupons SET redemption_count=redemption_count+1,updated_at=now() WHERE id=$1 AND is_active=true AND (max_redemptions IS NULL OR redemption_count<max_redemptions) RETURNING id",
+      [couponId],
+    );
     if (!result.rowCount) throw new BadRequestException("Este cupom não está mais disponível.");
-    await this.database.pool.query("INSERT INTO saas_coupon_redemptions (coupon_id,tenant_id,discount_cents) VALUES ($1,$2,$3)", [couponId, tenantId, discountCents]);
+    await this.database.pool.query(
+      "INSERT INTO saas_coupon_redemptions (coupon_id,tenant_id,discount_cents) VALUES ($1,$2,$3)",
+      [couponId, tenantId, discountCents],
+    );
   }
 
   async checkout(context: TenantContext, input: SubscriptionCheckoutInput) {
     return this.database.tenantTransaction(context.tenantId, async (client) => {
-      const plan = await client.query<{ id: string; slug: string; name: string; price_cents: number }>(
+      const plan = await client.query<{
+        id: string;
+        slug: string;
+        name: string;
+        price_cents: number;
+      }>(
         "SELECT id, slug, name, price_cents FROM plans WHERE slug = $1 AND is_active = true LIMIT 1",
-        [input.planSlug]
+        [input.planSlug],
       );
       const selectedPlan = ensureFound(plan.rows[0], "Plano");
 
       const tenant = await client.query<{ name: string; id: string; document: string | null }>(
         "SELECT id, name FROM tenants WHERE id = $1 AND deleted_at IS NULL",
-        [context.tenantId]
+        [context.tenantId],
       );
       const tenantRow = ensureFound(tenant.rows[0], "Tenant");
       const legalEntity = await client.query<{ document: string }>(
         "SELECT document FROM legal_entities WHERE tenant_id = $1 AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 1",
-        [context.tenantId]
+        [context.tenantId],
       );
       const document = legalEntity.rows[0]?.document.replace(/\D/g, "");
       if (!document || ![11, 14].includes(document.length)) {
-        throw new BadRequestException("Cadastre o CPF ou CNPJ da empresa antes de iniciar a assinatura.");
+        throw new BadRequestException(
+          "Cadastre o CPF ou CNPJ da empresa antes de iniciar a assinatura.",
+        );
       }
 
       let providerSubscriptionId: string | null = null;
-      let checkoutUrl = buildMockCheckoutUrl(this.config.ASAAS_API_URL, context.tenantId, selectedPlan.slug);
+      let checkoutUrl = buildMockCheckoutUrl(
+        this.config.ASAAS_API_URL,
+        context.tenantId,
+        selectedPlan.slug,
+      );
       let externalCustomerId: string | null = null;
 
       if (this.config.ASAAS_API_KEY) {
         const customerPayload = {
           name: tenantRow.name,
           cpfCnpj: document,
-          externalReference: context.tenantId
+          externalReference: context.tenantId,
         };
         const customerResponse = await fetch(`${this.config.ASAAS_API_URL}/customers`, {
           method: "POST",
           headers: {
             accept: "application/json",
             "content-type": "application/json",
-            access_token: this.config.ASAAS_API_KEY
+            access_token: this.config.ASAAS_API_KEY,
           },
-          body: JSON.stringify(customerPayload)
+          body: JSON.stringify(customerPayload),
         });
 
         if (customerResponse.ok) {
@@ -168,43 +273,75 @@ export class SubscriptionsService {
         if (!externalCustomerId) throw new Error("Não foi possível criar o cliente no Asaas.");
         const subscriptionResponse = await fetch(`${this.config.ASAAS_API_URL}/subscriptions`, {
           method: "POST",
-          headers: { accept: "application/json", "content-type": "application/json", access_token: this.config.ASAAS_API_KEY },
-          body: JSON.stringify({ customer: externalCustomerId, billingType: input.billingType, value: selectedPlan.price_cents / 100, cycle: "MONTHLY", nextDueDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10), externalReference: context.tenantId, description: `Orien ${selectedPlan.name}` })
+          headers: {
+            accept: "application/json",
+            "content-type": "application/json",
+            access_token: this.config.ASAAS_API_KEY,
+          },
+          body: JSON.stringify({
+            customer: externalCustomerId,
+            billingType: input.billingType,
+            value: selectedPlan.price_cents / 100,
+            cycle: "MONTHLY",
+            nextDueDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
+            externalReference: context.tenantId,
+            description: `Orien ${selectedPlan.name}`,
+          }),
         });
-        if (!subscriptionResponse.ok) throw new Error("O Asaas recusou o checkout. Revise as credenciais e o cadastro.");
-        const subscriptionData = (await subscriptionResponse.json()) as { id?: string; invoiceUrl?: string };
+        if (!subscriptionResponse.ok)
+          throw new Error("O Asaas recusou o checkout. Revise as credenciais e o cadastro.");
+        const subscriptionData = (await subscriptionResponse.json()) as {
+          id?: string;
+          invoiceUrl?: string;
+        };
         providerSubscriptionId = subscriptionData.id ?? null;
-        if (!providerSubscriptionId) throw new Error("O Asaas não retornou o identificador da assinatura.");
-        checkoutUrl = subscriptionData.invoiceUrl ?? buildHostedSubscriptionUrl(this.config.ASAAS_API_URL, providerSubscriptionId);
+        if (!providerSubscriptionId)
+          throw new Error("O Asaas não retornou o identificador da assinatura.");
+        checkoutUrl =
+          subscriptionData.invoiceUrl ??
+          buildHostedSubscriptionUrl(this.config.ASAAS_API_URL, providerSubscriptionId);
       }
 
       const existing = await client.query<{ id: string }>(
         "SELECT id FROM subscriptions WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 1",
-        [context.tenantId]
+        [context.tenantId],
       );
 
-      const subscription: { id: string; status: string; checkoutUrl: string | null } | undefined = existing.rows[0]
-        ? (
-            await client.query<{ id: string; status: string; checkoutUrl: string | null }>(
-              `
+      const subscription: { id: string; status: string; checkoutUrl: string | null } | undefined =
+        existing.rows[0]
+          ? (
+              await client.query<{ id: string; status: string; checkoutUrl: string | null }>(
+                `
               UPDATE subscriptions
               SET plan_id = $2, provider_subscription_id = $3, status = 'pending_activation', checkout_url = $4, external_customer_id = $5, updated_at = now()
               WHERE id = $1
               RETURNING id, status, checkout_url AS "checkoutUrl"
               `,
-              [existing.rows[0].id, selectedPlan.id, providerSubscriptionId, checkoutUrl, externalCustomerId]
-            )
-          ).rows[0]
-        : (
-            await client.query<{ id: string; status: string; checkoutUrl: string | null }>(
-              `
+                [
+                  existing.rows[0].id,
+                  selectedPlan.id,
+                  providerSubscriptionId,
+                  checkoutUrl,
+                  externalCustomerId,
+                ],
+              )
+            ).rows[0]
+          : (
+              await client.query<{ id: string; status: string; checkoutUrl: string | null }>(
+                `
               INSERT INTO subscriptions (tenant_id, plan_id, provider, provider_subscription_id, status, checkout_url, external_customer_id)
               VALUES ($1, $2, 'asaas', $3, 'pending_activation', $4, $5)
               RETURNING id, status, checkout_url AS "checkoutUrl"
               `,
-              [context.tenantId, selectedPlan.id, providerSubscriptionId, checkoutUrl, externalCustomerId]
-            )
-          ).rows[0];
+                [
+                  context.tenantId,
+                  selectedPlan.id,
+                  providerSubscriptionId,
+                  checkoutUrl,
+                  externalCustomerId,
+                ],
+              )
+            ).rows[0];
 
       const ensuredSubscription = ensureFound(subscription, "Assinatura");
 
@@ -214,33 +351,71 @@ export class SubscriptionsService {
         action: "subscription.checkout.started",
         entityType: "subscription",
         entityId: ensuredSubscription.id,
-        metadata: { planSlug: selectedPlan.slug, billingType: input.billingType }
+        metadata: { planSlug: selectedPlan.slug, billingType: input.billingType },
       });
 
       return {
         ...ensuredSubscription,
         provider: "asaas",
-        plan: { slug: selectedPlan.slug, name: selectedPlan.name, priceCents: selectedPlan.price_cents }
+        plan: {
+          slug: selectedPlan.slug,
+          name: selectedPlan.name,
+          priceCents: selectedPlan.price_cents,
+        },
       };
     });
   }
 
   async cancel(context: TenantContext) {
-    const subscription = await this.database.tenantQuery<{ id: string; provider: string; providerSubscriptionId: string | null; status: string; currentPeriodEndsAt: Date | null; isLifetime: boolean }>(
+    const subscription = await this.database.tenantQuery<{
+      id: string;
+      provider: string;
+      providerSubscriptionId: string | null;
+      status: string;
+      currentPeriodEndsAt: Date | null;
+      isLifetime: boolean;
+    }>(
       context.tenantId,
       `SELECT id,provider,provider_subscription_id AS "providerSubscriptionId",status,current_period_ends_at AS "currentPeriodEndsAt",COALESCE(is_lifetime,false) AS "isLifetime" FROM subscriptions WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 1`,
       [context.tenantId],
     );
     const current = ensureFound(subscription.rows[0], "Assinatura");
-    if (current.isLifetime) throw new BadRequestException("Acesso vitalício não possui cobrança recorrente para cancelar.");
-    if (["cancelled", "canceled"].includes(current.status)) return { ok: true, alreadyCancelled: true, accessUntil: current.currentPeriodEndsAt ?? null };
-    if (current.provider === "asaas" && current.providerSubscriptionId && this.config.ASAAS_API_KEY) {
-      const response = await fetch(`${this.config.ASAAS_API_URL}/subscriptions/${current.providerSubscriptionId}`, { method: "DELETE", headers: { accept: "application/json", access_token: this.config.ASAAS_API_KEY } });
-      if (!response.ok) throw new BadRequestException("Não foi possível cancelar a recorrência no Asaas. Tente novamente em instantes.");
+    if (current.isLifetime)
+      throw new BadRequestException(
+        "Acesso vitalício não possui cobrança recorrente para cancelar.",
+      );
+    if (["cancelled", "canceled"].includes(current.status))
+      return { ok: true, alreadyCancelled: true, accessUntil: current.currentPeriodEndsAt ?? null };
+    if (
+      current.provider === "asaas" &&
+      current.providerSubscriptionId &&
+      this.config.ASAAS_API_KEY
+    ) {
+      const response = await fetch(
+        `${this.config.ASAAS_API_URL}/subscriptions/${current.providerSubscriptionId}`,
+        {
+          method: "DELETE",
+          headers: { accept: "application/json", access_token: this.config.ASAAS_API_KEY },
+        },
+      );
+      if (!response.ok)
+        throw new BadRequestException(
+          "Não foi possível cancelar a recorrência no Asaas. Tente novamente em instantes.",
+        );
     }
     await this.database.tenantTransaction(context.tenantId, async (client) => {
-      await client.query("UPDATE subscriptions SET status='cancelled',updated_at=now() WHERE id=$1", [current.id]);
-      await insertAuditLog(client, { tenantId: context.tenantId, actorUserId: context.userId, action: "subscription.cancelled", entityType: "subscription", entityId: current.id, metadata: { provider: current.provider, accessUntil: current.currentPeriodEndsAt ?? null } });
+      await client.query(
+        "UPDATE subscriptions SET status='cancelled',updated_at=now() WHERE id=$1",
+        [current.id],
+      );
+      await insertAuditLog(client, {
+        tenantId: context.tenantId,
+        actorUserId: context.userId,
+        action: "subscription.cancelled",
+        entityType: "subscription",
+        entityId: current.id,
+        metadata: { provider: current.provider, accessUntil: current.currentPeriodEndsAt ?? null },
+      });
     });
     return { ok: true, accessUntil: current.currentPeriodEndsAt ?? null };
   }
@@ -255,13 +430,20 @@ export class SubscriptionsService {
     try {
       await client.query("BEGIN");
 
-      const existing = await client.query("SELECT id, status FROM webhook_events WHERE provider = 'asaas' AND event_id = $1", [eventId]);
+      const existing = await client.query(
+        "SELECT id, status FROM webhook_events WHERE provider = 'asaas' AND event_id = $1",
+        [eventId],
+      );
       if (existing.rowCount) {
         await client.query("COMMIT");
         return { ok: true, duplicated: true };
       }
 
-      const tenantId = payload.payment?.externalReference || payload.payment?.customer || payload.payment?.subscription || null;
+      const tenantId =
+        payload.payment?.externalReference ||
+        payload.payment?.customer ||
+        payload.payment?.subscription ||
+        null;
       const tenantLookup: QueryResult<{ tenant_id: string }> | null = tenantId
         ? await client.query<{ tenant_id: string }>(
             `
@@ -272,7 +454,7 @@ export class SubscriptionsService {
             SELECT id AS tenant_id FROM tenants WHERE id::text = $1 AND deleted_at IS NULL
             LIMIT 1
             `,
-            [tenantId]
+            [tenantId],
           )
         : null;
       const resolvedTenantId = tenantLookup?.rows[0]?.tenant_id ?? null;
@@ -282,18 +464,27 @@ export class SubscriptionsService {
         INSERT INTO webhook_events (tenant_id, provider, event_id, event_type, payload, status, attempts)
         VALUES ($1, 'asaas', $2, $3, $4::jsonb, 'processed', 1)
         `,
-        [resolvedTenantId, eventId, payload.event, JSON.stringify(payload)]
+        [resolvedTenantId, eventId, payload.event, JSON.stringify(payload)],
       );
 
       if (resolvedTenantId && payload.payment?.subscription) {
-        await client.query(
+        const nextStatus = normalizeSubscriptionStatus(payload.payment.status);
+        const updatedSubscription = await client.query<{ plan_id: string }>(
           `
           UPDATE subscriptions
           SET status = $2, last_webhook_event_id = $3, updated_at = now()
           WHERE tenant_id = $1 AND provider_subscription_id = $4
+          RETURNING plan_id
           `,
-          [resolvedTenantId, normalizeSubscriptionStatus(payload.payment.status), eventId, payload.payment.subscription]
+          [resolvedTenantId, nextStatus, eventId, payload.payment.subscription],
         );
+
+        if (updatedSubscription.rows[0] && ["active", "trial"].includes(nextStatus)) {
+          await client.query(
+            "UPDATE tenants SET plan_slug = (SELECT slug FROM plans WHERE id = $2), updated_at = now() WHERE id = $1",
+            [resolvedTenantId, updatedSubscription.rows[0].plan_id],
+          );
+        }
       }
 
       if (resolvedTenantId && payload.payment?.id) {
@@ -314,8 +505,11 @@ export class SubscriptionsService {
             payload.payment.value ?? 0,
             normalizeInvoiceStatus(payload.payment.status),
             payload.payment.invoiceUrl ?? null,
-            payload.payment.externalReference ?? payload.payment.subscription ?? payload.payment.customer ?? payload.payment.id
-          ]
+            payload.payment.externalReference ??
+              payload.payment.subscription ??
+              payload.payment.customer ??
+              payload.payment.id,
+          ],
         );
       }
 
@@ -375,7 +569,7 @@ async function insertAuditLog(
     entityType: string;
     entityId?: string | null;
     metadata?: Record<string, unknown>;
-  }
+  },
 ) {
   await client.query(
     `
@@ -388,7 +582,7 @@ async function insertAuditLog(
       input.action,
       input.entityType,
       input.entityId ?? null,
-      JSON.stringify(input.metadata ?? {})
-    ]
+      JSON.stringify(input.metadata ?? {}),
+    ],
   );
 }

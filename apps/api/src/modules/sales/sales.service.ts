@@ -39,7 +39,8 @@ export class SalesService {
     @Inject(PricingService) private readonly pricing: PricingService,
     @Inject(SaleCompositionService) private readonly composition: SaleCompositionService,
     @Inject(LoyaltyService) private readonly loyalty: LoyaltyService,
-    @Inject(FinancialSettlementsService) private readonly financialSettlements: FinancialSettlementsService,
+    @Inject(FinancialSettlementsService)
+    private readonly financialSettlements: FinancialSettlementsService,
     @Inject(SaleCommissionService) private readonly commissions: SaleCommissionService,
   ) {}
 
@@ -234,7 +235,14 @@ export class SalesService {
     }
     const totalAmount = centsToMoney(prepared.totals.netCents);
     const productIds = input.items.map((item) => item.productId);
-    const plannedPaidAmount = input.payments
+    const payments = input.payments.map((payment) => ({
+      ...payment,
+      status: payment.method === "store_credit" ? ("pending" as const) : payment.status,
+    }));
+    if (payments.some((payment) => payment.method === "store_credit") && !input.customerId) {
+      throw new BadRequestException("Crediário exige cliente identificado.");
+    }
+    const plannedPaidAmount = payments
       .filter((payment) => payment.status === "paid")
       .reduce((sum, payment) => sum + payment.amount, 0);
     if (roundMoney(plannedPaidAmount) > totalAmount) {
@@ -243,7 +251,7 @@ export class SalesService {
         message: "O valor pago não pode superar o total da venda.",
       });
     }
-    const plannedPaymentAmount = input.payments.reduce((sum, payment) => sum + payment.amount, 0);
+    const plannedPaymentAmount = payments.reduce((sum, payment) => sum + payment.amount, 0);
     if (roundMoney(plannedPaymentAmount) > totalAmount) {
       throw new BadRequestException({
         code: "SALE_PAYMENT_PLAN_EXCEEDS_TOTAL",
@@ -472,13 +480,13 @@ export class SalesService {
       );
     }
 
-    const paidAmount = input.payments
+    const paidAmount = payments
       .filter((payment) => payment.status === "paid")
       .reduce((sum, payment) => sum + payment.amount, 0);
 
     const paymentOccurredAt = new Date().toISOString();
     let representedPendingAmountCents = 0;
-    for (const payment of input.payments) {
+    for (const payment of payments) {
       const snapshot = await this.financialSettlements.resolvePaymentSnapshotInTransaction(
         client,
         context,
@@ -492,7 +500,8 @@ export class SalesService {
           occurredAt: paymentOccurredAt,
         },
       );
-      const settlementStatus = payment.status === "paid" && !snapshot.acquirerId ? "settled" : "pending";
+      const settlementStatus =
+        payment.status === "paid" && !snapshot.acquirerId ? "settled" : "pending";
       const insertedPayment = await client.query<{ id: string }>(
         `INSERT INTO sale_payments (
            tenant_id,sale_id,branch_id,method,amount,status,paid_at,acquirer_id,fee_rule_id,
@@ -538,7 +547,7 @@ export class SalesService {
           [
             context.tenantId,
             input.branchId,
-            payment.status === "pending" ? input.customerId ?? null : null,
+            payment.status === "pending" ? (input.customerId ?? null) : null,
             saleId,
             salePaymentId,
             payment.method,
@@ -561,7 +570,10 @@ export class SalesService {
     });
 
     const openAmount = roundMoney(totalAmount - paidAmount);
-    const residualOpenAmountCents = Math.max(0, moneyToCents(openAmount) - representedPendingAmountCents);
+    const residualOpenAmountCents = Math.max(
+      0,
+      moneyToCents(openAmount) - representedPendingAmountCents,
+    );
     if (residualOpenAmountCents > 0) {
       const residualOpenAmount = centsToMoney(residualOpenAmountCents);
       await client.query(
@@ -684,9 +696,10 @@ export class SalesService {
         cancelled_at: Date | null;
       }>(
         `
-        SELECT id, branch_id, status, cancelled_at
-        FROM sales
-        WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+         SELECT id, branch_id, status, cancelled_at
+         FROM sales
+         WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+         FOR UPDATE
         `,
         [context.tenantId, saleId],
       );
@@ -731,9 +744,10 @@ export class SalesService {
 
       await client.query(
         `
-        UPDATE sales
-        SET status = 'cancelled', cancelled_at = now(), cancelled_reason = $3, updated_at = now()
-        WHERE tenant_id = $1 AND id = $2
+         UPDATE sales
+         SET status = 'cancelled', cancelled_at = now(), cancelled_reason = $3, updated_at = now()
+         WHERE tenant_id = $1 AND id = $2 AND status <> 'cancelled' AND cancelled_at IS NULL
+         RETURNING id
         `,
         [context.tenantId, saleId, input.reason],
       );
@@ -909,9 +923,7 @@ export class SalesService {
             { label: "Total", value: toMoney(sale.total_amount) },
             {
               label: "Pago",
-              value: toMoney(
-                payments.rows.reduce((sum, payment) => sum + Number(payment.amount), 0),
-              ),
+              value: toMoney(sumPaidPayments(payments.rows)),
             },
             {
               label: "Itens",
@@ -1006,7 +1018,7 @@ export class SalesService {
     const copies = Math.max(1, Math.min(5, Number(settings.receiptCopies ?? 1)));
     const footer =
       typeof settings.receiptFooter === "string" ? settings.receiptFooter : branding.footerNote;
-    const paid = payments.rows.reduce((sum, payment) => sum + Number(payment.amount), 0);
+    const paid = sumPaidPayments(payments.rows);
     const copyHtml = Array.from({ length: copies }, (_, index) =>
       receiptCopyHtml({
         branding,
@@ -1255,6 +1267,12 @@ async function insertAuditLog(
 
 function toMoney(value: string | number) {
   return Number(value).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function sumPaidPayments(payments: SaleDocumentPaymentRow[]) {
+  return payments
+    .filter((payment) => payment.status === "paid")
+    .reduce((sum, payment) => sum + Number(payment.amount), 0);
 }
 
 interface SaleDocumentItemRow {

@@ -72,6 +72,36 @@ export const permissions = {
     review: "fiscal.review",
     activate: "fiscal.activate",
   },
+  cash: {
+    read: "cash.read",
+    open: "cash.open",
+    close: "cash.close",
+    manage: "cash.manage",
+  },
+  purchases: {
+    read: "purchases.read",
+    manage: "purchases.manage",
+  },
+  returns: {
+    read: "returns.read",
+    create: "returns.create",
+  },
+  services: {
+    read: "services.read",
+    manage: "services.manage",
+  },
+  serviceOrders: {
+    read: "service_orders.read",
+    manage: "service_orders.manage",
+  },
+  integrations: {
+    read: "integrations.read",
+    manage: "integrations.manage",
+  },
+  pipeline: {
+    read: "pipeline.read",
+    manage: "pipeline.manage",
+  },
 } as const;
 
 export type Permission = Leaves<typeof permissions>;
@@ -97,8 +127,34 @@ export const roleSlugs = {
 
 export type RoleSlug = (typeof roleSlugs)[keyof typeof roleSlugs];
 
+export const capabilityKeys = {
+  cash: "cash",
+  purchases: "purchases",
+  returns: "returns",
+  services: "services",
+  serviceOrders: "service_orders",
+  integrations: "integrations",
+  pipeline: "pipeline",
+} as const;
+
+export type CapabilityKey = (typeof capabilityKeys)[keyof typeof capabilityKeys];
+export const allCapabilityKeys = Object.values(capabilityKeys) as CapabilityKey[];
+
+export type TenantCapabilities = {
+  planSlug: string | null;
+  legacyFallback: boolean;
+  features: Record<CapabilityKey, boolean>;
+  limits: Record<string, number | null>;
+  flags: Record<string, boolean>;
+};
+
+const tenantPermissionGroups = Object.entries(permissions).filter(
+  ([group]) => group !== "platform",
+);
+const tenantPermissionValues = tenantPermissionGroups.flatMap(([, group]) => Object.values(group));
+
 export const defaultRolePermissions: Record<RoleSlug, Permission[]> = {
-  owner: Object.values(permissions).flatMap((group) => Object.values(group)),
+  owner: tenantPermissionValues,
   admin: [
     permissions.tenants.read,
     permissions.users.invite,
@@ -140,6 +196,22 @@ export const defaultRolePermissions: Record<RoleSlug, Permission[]> = {
     permissions.fiscal.cancel,
     permissions.fiscal.review,
     permissions.fiscal.activate,
+    permissions.cash.read,
+    permissions.cash.open,
+    permissions.cash.close,
+    permissions.cash.manage,
+    permissions.purchases.read,
+    permissions.purchases.manage,
+    permissions.returns.read,
+    permissions.returns.create,
+    permissions.services.read,
+    permissions.services.manage,
+    permissions.serviceOrders.read,
+    permissions.serviceOrders.manage,
+    permissions.integrations.read,
+    permissions.integrations.manage,
+    permissions.pipeline.read,
+    permissions.pipeline.manage,
   ],
   manager: [
     permissions.branches.read,
@@ -172,6 +244,20 @@ export const defaultRolePermissions: Record<RoleSlug, Permission[]> = {
     permissions.fiscal.issue,
     permissions.fiscal.cancel,
     permissions.fiscal.review,
+    permissions.cash.read,
+    permissions.cash.open,
+    permissions.cash.close,
+    permissions.purchases.read,
+    permissions.purchases.manage,
+    permissions.returns.read,
+    permissions.returns.create,
+    permissions.services.read,
+    permissions.services.manage,
+    permissions.serviceOrders.read,
+    permissions.serviceOrders.manage,
+    permissions.integrations.read,
+    permissions.pipeline.read,
+    permissions.pipeline.manage,
   ],
   seller: [
     permissions.products.read,
@@ -184,6 +270,13 @@ export const defaultRolePermissions: Record<RoleSlug, Permission[]> = {
     permissions.dashboard.read,
     permissions.fiscal.read,
     permissions.fiscal.issue,
+    permissions.returns.read,
+    permissions.returns.create,
+    permissions.services.read,
+    permissions.serviceOrders.read,
+    permissions.serviceOrders.manage,
+    permissions.pipeline.read,
+    permissions.pipeline.manage,
   ],
   cashier: [
     permissions.products.read,
@@ -194,6 +287,11 @@ export const defaultRolePermissions: Record<RoleSlug, Permission[]> = {
     permissions.dashboard.read,
     permissions.fiscal.read,
     permissions.fiscal.issue,
+    permissions.cash.read,
+    permissions.cash.open,
+    permissions.cash.close,
+    permissions.returns.read,
+    permissions.returns.create,
   ],
   stock: [
     permissions.branches.read,
@@ -208,6 +306,8 @@ export const defaultRolePermissions: Record<RoleSlug, Permission[]> = {
     permissions.stock.reports,
     permissions.dashboard.read,
     permissions.fiscal.read,
+    permissions.purchases.read,
+    permissions.purchases.manage,
   ],
   finance: [
     permissions.customers.read,
@@ -221,6 +321,9 @@ export const defaultRolePermissions: Record<RoleSlug, Permission[]> = {
     permissions.subscriptions.read,
     permissions.dashboard.read,
     permissions.fiscal.read,
+    permissions.cash.read,
+    permissions.purchases.read,
+    permissions.returns.read,
   ],
   accountant: [
     permissions.products.read,

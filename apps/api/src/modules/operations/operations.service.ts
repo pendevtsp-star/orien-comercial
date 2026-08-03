@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { renderDocumentHtml } from "@sgc/documents";
 import type { PoolClient } from "pg";
 import { ensureBranchAccess, ensureFound } from "../../shared/resource-access";
@@ -43,6 +43,14 @@ type RenegotiateInput = {
   negotiatedAmount: number;
   installments: number;
   firstDueDate: string;
+};
+type ServiceOrderInput = {
+  branchId: string;
+  customerId?: string;
+  serviceId?: string;
+  description: string;
+  responsibleUserId?: string;
+  dueAt?: string;
 };
 
 interface QuoteDocumentRow {
@@ -89,6 +97,85 @@ export class OperationsService {
       [c.tenantId, c.userId ?? null],
     );
     return r.rows[0];
+  }
+
+  async serviceOrders(c: TenantContext) {
+    const result = await this.db.tenantQuery(
+      c.tenantId,
+      `SELECT so.id,so.status,so.description,so.due_at "dueAt",so.created_at "createdAt",b.name "branchName",cu.name "customerName",sv.name "serviceName",u.name "responsibleName" FROM service_orders so JOIN branches b ON b.id=so.branch_id AND b.tenant_id=so.tenant_id LEFT JOIN customers cu ON cu.id=so.customer_id AND cu.tenant_id=so.tenant_id LEFT JOIN services sv ON sv.id=so.service_id AND sv.tenant_id=so.tenant_id LEFT JOIN users u ON u.id=so.responsible_user_id WHERE so.tenant_id=$1 ${c.branchId ? "AND so.branch_id=$2" : ""} ORDER BY so.updated_at DESC LIMIT 100`,
+      c.branchId ? [c.tenantId, c.branchId] : [c.tenantId],
+    );
+    return { data: result.rows };
+  }
+
+  async createServiceOrder(c: TenantContext, input: ServiceOrderInput) {
+    ensureBranchAccess(c, input.branchId);
+    await this.assertServiceOrderReferences(c, input);
+    const result = await this.db.tenantQuery<{ id: string }>(
+      c.tenantId,
+      `INSERT INTO service_orders(tenant_id,branch_id,customer_id,service_id,responsible_user_id,description,due_at) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+      [
+        c.tenantId,
+        input.branchId,
+        input.customerId ?? null,
+        input.serviceId ?? null,
+        input.responsibleUserId ?? c.userId ?? null,
+        input.description,
+        input.dueAt ?? null,
+      ],
+    );
+    return { id: result.rows[0]!.id };
+  }
+
+  private async assertServiceOrderReferences(c: TenantContext, input: ServiceOrderInput) {
+    const branch = await this.db.tenantQuery<{ id: string }>(
+      c.tenantId,
+      "SELECT id FROM branches WHERE tenant_id=$1 AND id=$2 AND is_active=true AND deleted_at IS NULL",
+      [c.tenantId, input.branchId],
+    );
+    if (!branch.rows[0]) throw new BadRequestException("Filial inexistente ou inativa.");
+
+    if (input.customerId) {
+      const customer = await this.db.tenantQuery<{ branch_id: string | null }>(
+        c.tenantId,
+        "SELECT branch_id FROM customers WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL",
+        [c.tenantId, input.customerId],
+      );
+      const row = customer.rows[0];
+      if (!row) throw new BadRequestException("Cliente não encontrado.");
+      if (row.branch_id && row.branch_id !== input.branchId)
+        throw new ForbiddenException("Cliente não pertence à filial informada.");
+    }
+
+    if (input.serviceId) {
+      const service = await this.db.tenantQuery<{ branch_id: string | null }>(
+        c.tenantId,
+        "SELECT branch_id FROM services WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL AND is_active=true",
+        [c.tenantId, input.serviceId],
+      );
+      const row = service.rows[0];
+      if (!row) throw new BadRequestException("Serviço não encontrado.");
+      if (row.branch_id && row.branch_id !== input.branchId)
+        throw new ForbiddenException("Serviço não pertence à filial informada.");
+    }
+
+    if (input.responsibleUserId) {
+      const responsible = await this.db.tenantQuery<{ id: string }>(
+        c.tenantId,
+        "SELECT m.user_id id FROM memberships m WHERE m.tenant_id=$1 AND m.user_id=$2 AND m.status='active' AND (m.branch_id IS NULL OR m.branch_id=$3)",
+        [c.tenantId, input.responsibleUserId, input.branchId],
+      );
+      if (!responsible.rows[0]) throw new ForbiddenException("Responsável não pertence à filial.");
+    }
+  }
+
+  async updateServiceOrderStatus(c: TenantContext, id: string, input: { status: string }) {
+    const result = await this.db.tenantQuery(
+      c.tenantId,
+      `UPDATE service_orders SET status=$3,updated_at=now() WHERE tenant_id=$1 AND id=$2 ${c.branchId ? "AND branch_id=$4" : ""} RETURNING id,status`,
+      c.branchId ? [c.tenantId, id, input.status, c.branchId] : [c.tenantId, id, input.status],
+    );
+    return ensureFound(result.rows[0], "Ordem de serviço");
   }
   async returns(c: TenantContext) {
     const r = await this.db.tenantQuery(

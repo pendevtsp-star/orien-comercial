@@ -4,9 +4,10 @@ import { PermissionsGuard } from "../../shared/permissions.guard";
 import { TenantContextGuard } from "../../shared/tenant-context.guard";
 import { CashRegistersController } from "./cash-registers.controller";
 import { CashRegistersService } from "./cash-registers.service";
+import { CapabilitiesModule } from "../capabilities/capabilities.module";
 
 @Module({
-  imports: [DatabaseModule],
+  imports: [DatabaseModule, CapabilitiesModule],
   controllers: [CashRegistersController],
   providers: [CashRegistersService, TenantContextGuard, PermissionsGuard],
 })

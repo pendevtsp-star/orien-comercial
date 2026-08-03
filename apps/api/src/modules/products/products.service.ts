@@ -1,7 +1,7 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import type { AppConfig } from "@sgc/config";
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type {
   ProductCreateInput,
@@ -178,62 +178,80 @@ export class ProductsService {
   async create(context: TenantContext, input: ProductCreateInput) {
     ensureBranchAccess(context, input.branchId);
     ensureBranchAccess(context, input.initialStockBranchId);
-    const created = await this.database.tenantTransaction(context.tenantId, async (client) => {
-      const sku = input.sku?.trim() || (await this.nextSku(client, context.tenantId));
-      const result = await client.query(
-        `
-        INSERT INTO products (
-          tenant_id, branch_id, category_id, name, sku, barcode, description, unit,
-          cost_price, sale_price, promotional_price, min_stock, is_active
-        )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-        RETURNING *
-        `,
-        [
-          context.tenantId,
-          context.branchId ?? input.branchId ?? null,
-          input.categoryId ?? null,
-          input.name,
-          sku,
-          input.barcode ?? null,
-          input.description ?? null,
-          input.unit,
-          input.costPrice,
-          input.salePrice,
-          input.promotionalPrice ?? null,
-          input.minStock,
-          input.isActive,
-        ],
-      );
-      const product = result.rows[0] as Record<string, unknown>;
-      if (input.fiscal) {
-        await this.upsertFiscalProfile(
-          client,
-          context.tenantId,
-          product.id as string,
-          input.fiscal,
+    let uploadedFilePath: string | undefined;
+    const created = await this.database
+      .tenantTransaction(context.tenantId, async (client) => {
+        const sku = input.sku?.trim() || (await this.nextSku(client, context.tenantId));
+        const result = await client.query(
+          `
+          INSERT INTO products (
+            tenant_id, branch_id, category_id, name, sku, barcode, description, unit,
+            cost_price, sale_price, promotional_price, min_stock, is_active
+          )
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+          RETURNING *
+          `,
+          [
+            context.tenantId,
+            context.branchId ?? input.branchId ?? null,
+            input.categoryId ?? null,
+            input.name,
+            sku,
+            input.barcode ?? null,
+            input.description ?? null,
+            input.unit,
+            input.costPrice,
+            input.salePrice,
+            input.promotionalPrice ?? null,
+            input.minStock,
+            input.isActive,
+          ],
         );
-      }
-      const initialStock = Number(input.initialStock ?? 0);
-      const stockBranchId = input.initialStockBranchId ?? input.branchId ?? context.branchId;
-      if (initialStock > 0 && stockBranchId) {
-        await client.query(
-          `INSERT INTO stock_balances (tenant_id,branch_id,product_id,quantity)
-           VALUES ($1,$2,$3,$4)
-           ON CONFLICT (tenant_id,branch_id,product_id)
-           DO UPDATE SET quantity=stock_balances.quantity + EXCLUDED.quantity, updated_at=now()`,
-          [context.tenantId, stockBranchId, product.id, initialStock],
-        );
-        await client.query(
-          `INSERT INTO stock_movements (tenant_id,branch_id,product_id,movement_type,quantity,reason,actor_user_id)
-           VALUES ($1,$2,$3,'initial_stock',$4,'Estoque inicial no cadastro',$5)`,
-          [context.tenantId, stockBranchId, product.id, initialStock, context.userId ?? null],
-        );
-      }
-      return product;
-    });
-    if (created && (input.imageData || input.imageUrl))
-      await this.setPrimaryImage(context, created.id as string, input.imageData ?? input.imageUrl!);
+        const product = result.rows[0] as Record<string, unknown>;
+        if (input.fiscal) {
+          await this.upsertFiscalProfile(
+            client,
+            context.tenantId,
+            product.id as string,
+            input.fiscal,
+          );
+        }
+        const initialStock = Number(input.initialStock ?? 0);
+        const stockBranchId = input.initialStockBranchId ?? input.branchId ?? context.branchId;
+        if (initialStock > 0 && stockBranchId) {
+          await client.query(
+            `INSERT INTO stock_balances (tenant_id,branch_id,product_id,quantity)
+             VALUES ($1,$2,$3,$4)
+             ON CONFLICT (tenant_id,branch_id,product_id)
+             DO UPDATE SET quantity=stock_balances.quantity + EXCLUDED.quantity, updated_at=now()`,
+            [context.tenantId, stockBranchId, product.id, initialStock],
+          );
+          await client.query(
+            `INSERT INTO stock_movements (tenant_id,branch_id,product_id,movement_type,quantity,reason,actor_user_id)
+             VALUES ($1,$2,$3,'initial_stock',$4,'Estoque inicial no cadastro',$5)`,
+            [context.tenantId, stockBranchId, product.id, initialStock, context.userId ?? null],
+          );
+        }
+        const image = input.imageData
+          ? await this.persistUpload(context.tenantId, input.imageData)
+          : input.imageUrl
+            ? { objectKey: input.imageUrl, filePath: undefined }
+            : undefined;
+        uploadedFilePath = image?.filePath;
+        if (image) {
+          await this.replacePrimaryImage(
+            client,
+            context.tenantId,
+            product.id as string,
+            image.objectKey,
+          );
+        }
+        return product;
+      })
+      .catch(async (error) => {
+        if (uploadedFilePath) await this.removeUploadedFile(uploadedFilePath);
+        throw error;
+      });
     if (created)
       await this.database.tenantQuery(
         context.tenantId,
@@ -449,24 +467,39 @@ export class ProductsService {
   }
 
   private async setPrimaryImage(context: TenantContext, productId: string, source: string) {
-    const imageUrl = source.startsWith("data:image/")
+    const upload = source.startsWith("data:image/")
       ? await this.persistUpload(context.tenantId, source)
-      : source;
-    await this.database.tenantTransaction(context.tenantId, async (client) => {
-      await client.query("DELETE FROM product_images WHERE tenant_id=$1 AND product_id=$2", [
-        context.tenantId,
-        productId,
-      ]);
-      const asset = await client.query<{ id: string }>(
-        `INSERT INTO media_assets (tenant_id,storage_provider,bucket,object_key,original_name,mime_type,size_bytes)
-         VALUES ($1,'external-url','product-images',$2,'Imagem do produto','image/*',0) RETURNING id`,
-        [context.tenantId, imageUrl],
-      );
-      await client.query(
-        "INSERT INTO product_images (tenant_id,product_id,media_asset_id,sort_order) VALUES ($1,$2,$3,0)",
-        [context.tenantId, productId, asset.rows[0]!.id],
-      );
-    });
+      : undefined;
+    const imageUrl = upload?.objectKey ?? source;
+    try {
+      await this.database.tenantTransaction(context.tenantId, async (client) => {
+        await this.replacePrimaryImage(client, context.tenantId, productId, imageUrl);
+      });
+    } catch (error) {
+      if (upload?.filePath) await this.removeUploadedFile(upload.filePath);
+      throw error;
+    }
+  }
+
+  private async replacePrimaryImage(
+    executor: { query: (query: string, values?: unknown[]) => Promise<{ rows: Array<{ id: string }> }> },
+    tenantId: string,
+    productId: string,
+    imageUrl: string,
+  ) {
+    await executor.query("DELETE FROM product_images WHERE tenant_id=$1 AND product_id=$2", [
+      tenantId,
+      productId,
+    ]);
+    const asset = await executor.query(
+      `INSERT INTO media_assets (tenant_id,storage_provider,bucket,object_key,original_name,mime_type,size_bytes)
+       VALUES ($1,'external-url','product-images',$2,'Imagem do produto','image/*',0) RETURNING id`,
+      [tenantId, imageUrl],
+    );
+    await executor.query(
+      "INSERT INTO product_images (tenant_id,product_id,media_asset_id,sort_order) VALUES ($1,$2,$3,0)",
+      [tenantId, productId, asset.rows[0]!.id],
+    );
   }
 
   async removePrimaryImage(context: TenantContext, productId: string) {
@@ -589,8 +622,13 @@ export class ProductsService {
     const folder = resolve(this.config.UPLOAD_DIR, "products", tenantId);
     await mkdir(folder, { recursive: true });
     const filename = `${randomUUID()}.${extension}`;
-    await writeFile(join(folder, filename), content);
-    return `/uploads/products/${tenantId}/${filename}`;
+    const filePath = join(folder, filename);
+    await writeFile(filePath, content);
+    return { objectKey: `/uploads/products/${tenantId}/${filename}`, filePath };
+  }
+
+  private async removeUploadedFile(filePath: string) {
+    await unlink(filePath).catch(() => undefined);
   }
 
   async bulkUpdateStatus(context: TenantContext, input: BulkStatusUpdateInput) {

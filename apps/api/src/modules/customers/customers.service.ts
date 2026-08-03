@@ -1,7 +1,17 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import type { BulkStatusUpdateInput, CustomerCreateInput, CustomerUpdateInput, ResourceListQuery } from "@sgc/types";
-import { ensureBranchAccess, ensureFound, pagination, resolveSort } from "../../shared/resource-access";
+import type {
+  BulkStatusUpdateInput,
+  CustomerCreateInput,
+  CustomerUpdateInput,
+  ResourceListQuery,
+} from "@sgc/types";
+import {
+  ensureBranchAccess,
+  ensureFound,
+  pagination,
+  resolveSort,
+} from "../../shared/resource-access";
 import type { TenantContext } from "../../shared/request-context";
 import { DatabaseService } from "../database/database.service";
 
@@ -16,7 +26,7 @@ export class CustomersService {
     const sort = resolveSort(
       query,
       { name: "c.name", email: "c.email", document: "c.document", createdAt: "c.created_at" },
-      "name"
+      "name",
     );
 
     if (context.branchId) {
@@ -26,7 +36,9 @@ export class CustomersService {
 
     if (query.search) {
       params.push(`%${query.search}%`);
-      filters.push(`(c.name ILIKE $${params.length} OR c.document ILIKE $${params.length} OR c.email ILIKE $${params.length})`);
+      filters.push(
+        `(c.name ILIKE $${params.length} OR c.document ILIKE $${params.length} OR c.email ILIKE $${params.length})`,
+      );
     }
 
     if (typeof query.isActive === "boolean") {
@@ -37,7 +49,7 @@ export class CustomersService {
     const count = await this.database.tenantQuery<{ total: string }>(
       context.tenantId,
       `SELECT count(*)::text AS total FROM customers c WHERE ${filters.join(" AND ")}`,
-      params
+      params,
     );
 
     params.push(page.pageSize, page.offset);
@@ -60,7 +72,7 @@ export class CustomersService {
       ORDER BY ${sort.field} ${sort.direction}, c.name ASC
       LIMIT $${params.length - 1} OFFSET $${params.length}
       `,
-      params
+      params,
     );
 
     return { data: rows.rows, pagination: { ...page, total: Number(count.rows[0]?.total ?? 0) } };
@@ -70,7 +82,7 @@ export class CustomersService {
     const result = await this.database.tenantQuery(
       context.tenantId,
       "SELECT * FROM customers WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL",
-      [context.tenantId, id]
+      [context.tenantId, id],
     );
     const customer = ensureFound(result.rows[0], "Cliente");
     ensureBranchAccess(context, customer.branch_id as string | null);
@@ -116,7 +128,14 @@ export class CustomersService {
         [context.tenantId, id, `%${id}%`],
       ),
     ]);
-    return { customer, sales: sales.rows, receivables: receivables.rows, loyalty: wallet.rows[0] ?? null, credits: credits.rows, audit: audit.rows };
+    return {
+      customer,
+      sales: sales.rows,
+      receivables: receivables.rows,
+      loyalty: wallet.rows[0] ?? null,
+      credits: credits.rows,
+      audit: audit.rows,
+    };
   }
 
   async create(context: TenantContext, input: CustomerCreateInput) {
@@ -151,8 +170,8 @@ export class CustomersService {
         input.tags,
         input.notes ?? null,
         input.communicationOptIn,
-        input.isActive
-      ]
+        input.isActive,
+      ],
     );
 
     return result.rows[0];
@@ -168,20 +187,20 @@ export class CustomersService {
       `
       UPDATE customers
       SET
-        branch_id = COALESCE($3, branch_id),
-        type = COALESCE($4, type),
-        name = COALESCE($5, name),
-        document = COALESCE($6, document),
-        phone = COALESCE($7, phone),
-        whatsapp = COALESCE($8, whatsapp),
-        email = COALESCE($9, email),
-        birth_date = COALESCE($10, birth_date),
-        address_line1 = COALESCE($11, address_line1),
-        city = COALESCE($12, city),
-        state = COALESCE($13, state),
-        zip_code = COALESCE($14, zip_code),
-        tags = COALESCE($15, tags),
-        notes = COALESCE($16, notes),
+         branch_id = COALESCE($3, branch_id),
+         type = COALESCE($4, type),
+         name = COALESCE($5, name),
+         document = CASE WHEN $21::boolean THEN $6 ELSE document END,
+         phone = CASE WHEN $22::boolean THEN $7 ELSE phone END,
+         whatsapp = CASE WHEN $23::boolean THEN $8 ELSE whatsapp END,
+         email = CASE WHEN $24::boolean THEN $9 ELSE email END,
+         birth_date = CASE WHEN $25::boolean THEN $10 ELSE birth_date END,
+         address_line1 = CASE WHEN $26::boolean THEN $11 ELSE address_line1 END,
+         city = CASE WHEN $27::boolean THEN $12 ELSE city END,
+         state = CASE WHEN $28::boolean THEN $13 ELSE state END,
+         zip_code = CASE WHEN $29::boolean THEN $14 ELSE zip_code END,
+         tags = COALESCE($15, tags),
+         notes = CASE WHEN $30::boolean THEN $16 ELSE notes END,
         communication_opt_in = COALESCE($17, communication_opt_in),
         is_active = COALESCE($18, is_active),
         customer_segment_id = CASE WHEN $20::boolean THEN $19::uuid ELSE customer_segment_id END,
@@ -210,7 +229,17 @@ export class CustomersService {
         input.isActive ?? null,
         input.customerSegmentId ?? null,
         input.customerSegmentId !== undefined,
-      ]
+        input.document !== undefined,
+        input.phone !== undefined,
+        input.whatsapp !== undefined,
+        input.email !== undefined,
+        input.birthDate !== undefined,
+        input.addressLine1 !== undefined,
+        input.city !== undefined,
+        input.state !== undefined,
+        input.zipCode !== undefined,
+        input.notes !== undefined,
+      ],
     );
 
     return ensureFound(result.rows[0], "Cliente");
@@ -221,7 +250,7 @@ export class CustomersService {
     const result = await this.database.tenantQuery(
       context.tenantId,
       "UPDATE customers SET deleted_at = now(), updated_at = now() WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL RETURNING id",
-      [context.tenantId, id]
+      [context.tenantId, id],
     );
     ensureFound(result.rows[0], "Cliente");
     return { ok: true };
@@ -270,7 +299,12 @@ export class CustomersService {
           ],
         );
       }
-      return { ok: true, updatedCount: updated.rows.length, ids: input.ids, isActive: input.isActive };
+      return {
+        ok: true,
+        updatedCount: updated.rows.length,
+        ids: input.ids,
+        isActive: input.isActive,
+      };
     });
   }
 

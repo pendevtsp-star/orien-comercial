@@ -29,6 +29,7 @@ import { FormEvent, Fragment, useEffect, useMemo, useRef, useState } from "react
 import { useSearchParams } from "next/navigation";
 import { apiFetch } from "../lib/api";
 import { groupFields } from "./resource-page-model";
+import { prepareResourcePayload } from "./resource-page-form";
 
 interface ApiList<T> {
   data: T[];
@@ -51,7 +52,7 @@ interface ResourcePageProps<T extends { id: string; isActive?: boolean | null }>
   endpoint: string;
   columns: Array<{ key: string; header: string; render: (row: T) => React.ReactNode }>;
   fields: ResourceField[];
-  transform?: (form: FormData) => Record<string, unknown>;
+  transform?: (form: FormData, editingRow: T | null) => Record<string, unknown>;
   searchPlaceholder?: string;
   heroTitle?: string;
   heroDescription?: string;
@@ -154,19 +155,12 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
-    const form = new FormData(event.currentTarget);
-    const payload = transform ? transform(form) : Object.fromEntries(form.entries());
-    const imageFile = form.get("imageFile");
-    if (imageFile instanceof File && imageFile.size) {
-      if (!imageFile.type.match(/^image\/(png|jpeg|webp)$/) || imageFile.size > 5 * 1024 * 1024) {
-        setError("Selecione uma imagem PNG, JPEG ou WebP de até 5 MB.");
-        setSubmitting(false);
-        return;
-      }
-      payload.imageData = await fileAsDataUrl(imageFile);
-    }
 
     try {
+      const payload = await prepareResourcePayload(
+        new FormData(event.currentTarget),
+        transform ? (form) => transform(form, editingRow) : undefined,
+      );
       if (editingRow) {
         await apiFetch(`${endpoint}/${editingRow.id}`, {
           method: "PATCH",
@@ -588,18 +582,6 @@ export function ResourcePage<T extends { id: string; isActive?: boolean | null }
       </section>
     </div>
   );
-}
-
-function fileAsDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () =>
-      typeof reader.result === "string"
-        ? resolve(reader.result)
-        : reject(new Error("Não foi possível ler a imagem selecionada."));
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
 }
 
 function fieldValue<T extends { id: string }>(row: T, key: string) {

@@ -1,9 +1,14 @@
 import "reflect-metadata";
+import { config as loadDotEnv } from "dotenv";
+import { resolve } from "node:path";
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./modules/app.module";
 import { OperationsFoundationWorker } from "./modules/operations-foundation/operations-foundation.worker";
 import { loadConfig } from "@sgc/config";
 import { captureWorkerException, initializeSentry } from "./shared/sentry";
+
+loadDotEnv({ path: resolve(process.cwd(), ".env") });
+loadDotEnv({ path: resolve(process.cwd(), "../../.env"), override: false });
 
 async function bootstrap() {
   initializeSentry(loadConfig());

@@ -8,9 +8,10 @@ import {
   COMMERCIAL_SALE_CREATOR,
   CommercialDocumentsService,
 } from "./commercial-documents.service";
+import { CapabilitiesModule } from "../capabilities/capabilities.module";
 
 @Module({
-  imports: [DatabaseModule, SalesModule],
+  imports: [DatabaseModule, SalesModule, CapabilitiesModule],
   controllers: [OperationsController],
   providers: [
     OperationsService,

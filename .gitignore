@@ -2,6 +2,8 @@ node_modules/
 dist/
 .next/
 coverage/
+test-results/
+playwright-report/
 .env
 .env.*
 !.env.example
@@ -52,6 +54,7 @@ testsprite_tests\tmp\config.json
 ENTERPRISE_PLAN.md
 orien-architecture.*
 docs/superpowers/
+docs/plans/2026-08-01-simplificacao-operacional.md
 
 # Seed scripts (local use only)
 seed-reports-test.py

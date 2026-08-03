@@ -70,7 +70,7 @@ export class FiscalOperationsService implements OnModuleInit, OnModuleDestroy {
     const pending = await this.database.pool.query<PendingRow>(
       `SELECT we.id,we.tenant_id,fd.branch_id FROM fiscal_webhook_events we
        JOIN fiscal_documents fd ON fd.id=we.fiscal_document_id
-       WHERE we.status='failed' AND we.attempt_count<6
+       WHERE we.status IN ('received','processing','failed') AND we.attempt_count<6
          AND we.updated_at<=now()-((2^LEAST(we.attempt_count,5))||' minutes')::interval
        ORDER BY we.updated_at LIMIT 20`,
     );

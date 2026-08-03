@@ -34,6 +34,7 @@ import { PricingModule } from "../modules/pricing/pricing.module";
 import { SecurityModule } from "../modules/security/security.module";
 import { AnalyticsModule } from "../modules/analytics/analytics.module";
 import { AiAssistantModule } from "../modules/ai-assistant/ai-assistant.module";
+import { CapabilitiesModule } from "../modules/capabilities/capabilities.module";
 
 @Module({
   imports: [
@@ -77,6 +78,7 @@ import { AiAssistantModule } from "../modules/ai-assistant/ai-assistant.module";
     SecurityModule,
     AnalyticsModule,
     AiAssistantModule,
+    CapabilitiesModule,
   ],
 })
 export class AppModule {}

@@ -59,7 +59,25 @@ const permissionSlugs = [
   "fiscal.cancel",
   "fiscal.review",
   "fiscal.activate",
+  "cash.read",
+  "cash.open",
+  "cash.close",
+  "cash.manage",
+  "purchases.read",
+  "purchases.manage",
+  "returns.read",
+  "returns.create",
+  "services.read",
+  "services.manage",
+  "service_orders.read",
+  "service_orders.manage",
+  "integrations.read",
+  "integrations.manage",
+  "pipeline.read",
+  "pipeline.manage",
 ] as const;
+
+const tenantPermissionSlugs = permissionSlugs.filter((slug) => !slug.startsWith("platform."));
 
 const roleSlugs = {
   owner: "owner",
@@ -90,7 +108,7 @@ const roleNames: Record<RoleSlug, string> = {
 };
 
 const defaultRolePermissions: Record<RoleSlug, string[]> = {
-  owner: [...permissionSlugs],
+  owner: [...tenantPermissionSlugs],
   admin: [
     "tenants.read",
     "users.invite",
@@ -130,6 +148,10 @@ const defaultRolePermissions: Record<RoleSlug, string[]> = {
     "fiscal.cancel",
     "fiscal.review",
     "fiscal.activate",
+    "cash.read", "cash.open", "cash.close", "cash.manage",
+    "purchases.read", "purchases.manage", "returns.read", "returns.create",
+    "services.read", "services.manage", "service_orders.read", "service_orders.manage",
+    "integrations.read", "integrations.manage", "pipeline.read", "pipeline.manage",
   ],
   manager: [
     "branches.read",
@@ -160,6 +182,10 @@ const defaultRolePermissions: Record<RoleSlug, string[]> = {
     "fiscal.issue",
     "fiscal.cancel",
     "fiscal.review",
+    "cash.read", "cash.open", "cash.close",
+    "purchases.read", "purchases.manage", "returns.read", "returns.create",
+    "services.read", "services.manage", "service_orders.read", "service_orders.manage",
+    "integrations.read", "pipeline.read", "pipeline.manage",
   ],
   seller: [
     "products.read",
@@ -172,6 +198,8 @@ const defaultRolePermissions: Record<RoleSlug, string[]> = {
     "dashboard.read",
     "fiscal.read",
     "fiscal.issue",
+    "returns.read", "returns.create", "services.read",
+    "service_orders.read", "service_orders.manage", "pipeline.read", "pipeline.manage",
   ],
   cashier: [
     "products.read",
@@ -182,6 +210,7 @@ const defaultRolePermissions: Record<RoleSlug, string[]> = {
     "dashboard.read",
     "fiscal.read",
     "fiscal.issue",
+    "cash.read", "cash.open", "cash.close", "returns.read", "returns.create",
   ],
   stock: [
     "branches.read",
@@ -196,6 +225,7 @@ const defaultRolePermissions: Record<RoleSlug, string[]> = {
     "stock.reports",
     "dashboard.read",
     "fiscal.read",
+    "purchases.read", "purchases.manage",
   ],
   finance: [
     "customers.read",
@@ -209,6 +239,7 @@ const defaultRolePermissions: Record<RoleSlug, string[]> = {
     "subscriptions.read",
     "dashboard.read",
     "fiscal.read",
+    "cash.read", "purchases.read", "returns.read",
   ],
   accountant: [
     "products.read",

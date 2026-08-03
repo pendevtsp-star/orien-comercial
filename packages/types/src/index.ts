@@ -13,14 +13,20 @@ export const moneySchema = z.coerce
   .finite()
   .min(0)
   .max(9_999_999_999.99)
-  .refine((value) => hasMaximumDecimalPlaces(value, 2), "Valor monetário aceita no máximo 2 casas decimais.");
+  .refine(
+    (value) => hasMaximumDecimalPlaces(value, 2),
+    "Valor monetário aceita no máximo 2 casas decimais.",
+  );
 
 export const quantitySchema = z.coerce
   .number()
   .finite()
   .positive()
   .max(999_999_999.999)
-  .refine((value) => hasMaximumDecimalPlaces(value, 3), "Quantidade aceita no máximo 3 casas decimais.");
+  .refine(
+    (value) => hasMaximumDecimalPlaces(value, 3),
+    "Quantidade aceita no máximo 3 casas decimais.",
+  );
 
 export function normalizeQuantity(value: number) {
   return Number(value.toFixed(3));
@@ -46,17 +52,21 @@ const bulkIdsSchema = z
   .max(100, "Cada lote aceita no máximo 100 registros.")
   .transform((ids) => Array.from(new Set(ids)));
 
-export const bulkStatusUpdateSchema = z.object({
-  ids: bulkIdsSchema,
-  isActive: z.boolean(),
-  reason: z.string().trim().min(3).max(240).optional(),
-}).strict();
+export const bulkStatusUpdateSchema = z
+  .object({
+    ids: bulkIdsSchema,
+    isActive: z.boolean(),
+    reason: z.string().trim().min(3).max(240).optional(),
+  })
+  .strict();
 
-export const membershipBulkStatusUpdateSchema = z.object({
-  membershipIds: bulkIdsSchema,
-  status: z.enum(["active", "disabled"]),
-  reason: z.string().trim().min(3).max(240).optional(),
-}).strict();
+export const membershipBulkStatusUpdateSchema = z
+  .object({
+    membershipIds: bulkIdsSchema,
+    status: z.enum(["active", "disabled"]),
+    reason: z.string().trim().min(3).max(240).optional(),
+  })
+  .strict();
 
 export const salesListQuerySchema = paginationQuerySchema.extend({
   status: z.enum(["sold", "cancelled"]).optional(),
@@ -128,6 +138,36 @@ export const commercialDocumentListQuerySchema = paginationQuerySchema
     path: ["endDate"],
     message: "A data final deve ser igual ou posterior à inicial.",
   });
+
+export const serviceOrderCreateSchema = z
+  .object({
+    branchId: uuidSchema,
+    customerId: uuidSchema.optional(),
+    serviceId: uuidSchema.optional(),
+    description: z.string().trim().min(3).max(2000),
+    responsibleUserId: uuidSchema.optional(),
+    dueAt: z.string().datetime().optional(),
+  })
+  .strict();
+
+export const serviceOrderStatusSchema = z
+  .object({
+    status: z.enum(["open", "in_progress", "waiting", "completed", "cancelled"]),
+  })
+  .strict();
+
+export const leadCreateSchema = z
+  .object({
+    branchId: uuidSchema,
+    name: z.string().trim().min(2).max(180),
+    whatsapp: z.string().trim().max(30).optional(),
+    notes: z.string().trim().max(2000).optional(),
+    nextAction: z.string().trim().max(240).optional(),
+    followUpAt: z.string().datetime().optional(),
+  })
+  .strict();
+
+export const leadUpdateSchema = leadCreateSchema.partial();
 
 export const stockListQuerySchema = paginationQuerySchema.extend({
   stockStatus: z.enum(["critical", "healthy"]).optional(),
@@ -206,18 +246,32 @@ export const reportFiltersSchema = z
     documentType: z.enum(["quote", "order", "dav"]).optional(),
     status: reportStatusSchema.optional(),
     acquirerId: uuidSchema.optional(),
-    cardBrand: z.string().trim().min(1).max(60).transform((value) => value.toLowerCase()).optional(),
+    cardBrand: z
+      .string()
+      .trim()
+      .min(1)
+      .max(60)
+      .transform((value) => value.toLowerCase())
+      .optional(),
   })
   .superRefine((value, context) => {
     if (!value.startDate || !value.endDate) return;
     if (value.endDate < value.startDate) {
-      context.addIssue({ code: "custom", path: ["endDate"], message: "A data final deve ser igual ou posterior à inicial." });
+      context.addIssue({
+        code: "custom",
+        path: ["endDate"],
+        message: "A data final deve ser igual ou posterior à inicial.",
+      });
       return;
     }
     const start = Date.parse(`${value.startDate}T00:00:00.000Z`);
     const end = Date.parse(`${value.endDate}T00:00:00.000Z`);
     if ((end - start) / 86_400_000 > 366) {
-      context.addIssue({ code: "custom", path: ["endDate"], message: "O período máximo para exportação é de 366 dias." });
+      context.addIssue({
+        code: "custom",
+        path: ["endDate"],
+        message: "O período máximo para exportação é de 366 dias.",
+      });
     }
   });
 
@@ -336,6 +390,19 @@ export const productCreateSchema = z.object({
 
 export const productUpdateSchema = productCreateSchema.partial();
 
+export const serviceCreateSchema = z
+  .object({
+    branchId: uuidSchema.optional().nullable(),
+    name: z.string().trim().min(2).max(180),
+    description: z.string().trim().max(2000).optional(),
+    basePrice: moneySchema.default(0),
+    estimatedMinutes: z.coerce.number().int().min(1).max(10080).optional(),
+    isActive: z.boolean().default(true),
+  })
+  .strict();
+
+export const serviceUpdateSchema = serviceCreateSchema.partial();
+
 export const productBarcodeLookupSchema = z.object({
   barcode: z.string().trim().min(8).max(64),
 });
@@ -369,7 +436,18 @@ export const customerCreateSchema = z.object({
   isActive: z.boolean().default(true),
 });
 
-export const customerUpdateSchema = customerCreateSchema.partial();
+export const customerUpdateSchema = customerCreateSchema.partial().extend({
+  document: z.string().trim().max(20).nullable().optional(),
+  phone: z.string().trim().max(30).nullable().optional(),
+  whatsapp: z.string().trim().max(30).nullable().optional(),
+  email: z.string().email().nullable().optional(),
+  birthDate: z.string().date().nullable().optional(),
+  addressLine1: z.string().trim().max(180).nullable().optional(),
+  city: z.string().trim().max(90).nullable().optional(),
+  state: z.string().trim().max(2).nullable().optional(),
+  zipCode: z.string().trim().max(16).nullable().optional(),
+  notes: z.string().trim().max(2000).nullable().optional(),
+});
 
 export const stockAdjustmentSchema = z.object({
   branchId: uuidSchema,
@@ -388,7 +466,11 @@ export const saleItemSchema = z.object({
 
 export const customerSegmentCreateSchema = z.object({
   name: z.string().trim().min(2).max(120),
-  code: z.string().trim().toUpperCase().regex(/^[A-Z0-9_-]{2,80}$/),
+  code: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z0-9_-]{2,80}$/),
   isActive: z.boolean().default(true),
 });
 
@@ -449,40 +531,55 @@ export const pricingApprovalRequestSchema = z.object({
   reason: z.string().trim().min(10).max(500),
 });
 
-export const pricingApprovalDecisionSchema = z.object({
-  approved: z.boolean(),
-  reason: z.string().trim().min(10).max(500).optional(),
-}).refine((value) => value.approved || Boolean(value.reason), {
-  message: "Informe o motivo da recusa.",
-  path: ["reason"],
-});
+export const pricingApprovalDecisionSchema = z
+  .object({
+    approved: z.boolean(),
+    reason: z.string().trim().min(10).max(500).optional(),
+  })
+  .refine((value) => value.approved || Boolean(value.reason), {
+    message: "Informe o motivo da recusa.",
+    path: ["reason"],
+  });
 
 export const salePaymentSchema = z.object({
   method: z.string().trim().min(2).max(60),
   amount: moneySchema.refine((value) => value > 0, "O valor deve ser maior que zero."),
   status: z.enum(["pending", "paid"]).default("paid"),
   acquirerId: uuidSchema.optional(),
-  brand: z.string().trim().min(2).max(60).transform((value) => value.toLowerCase()).optional(),
+  brand: z
+    .string()
+    .trim()
+    .min(2)
+    .max(60)
+    .transform((value) => value.toLowerCase())
+    .optional(),
   installments: z.coerce.number().int().min(1).max(120).default(1),
 });
 
-export const saleCreateSchema = z.object({
-  branchId: uuidSchema,
-  compositionFingerprint: sha256FingerprintSchema.optional(),
-  cashRegisterSessionId: uuidSchema.optional(),
-  customerId: uuidSchema.optional(),
-  customerDocument: z.string().trim().max(20).optional(),
-  loyaltyPointsToRedeem: z.coerce.number().int().min(0).default(0),
-  loyaltyRewardId: uuidSchema.optional(),
-  loyaltyCouponCode: z.string().trim().min(3).max(64).optional(),
-  fiscalRequested: z.boolean().default(false),
-  items: z.array(saleItemSchema).min(1).max(100),
-  payments: z.array(salePaymentSchema).max(10).default([]),
-  notes: z.string().trim().max(500).optional(),
-}).strict().refine(
-  (value) => !value.items.some((item) => item.pricingApprovalId) || Boolean(value.compositionFingerprint),
-  { message: "A composição da venda é obrigatória ao usar uma aprovação.", path: ["compositionFingerprint"] },
-);
+export const saleCreateSchema = z
+  .object({
+    branchId: uuidSchema,
+    compositionFingerprint: sha256FingerprintSchema.optional(),
+    cashRegisterSessionId: uuidSchema.optional(),
+    customerId: uuidSchema.optional(),
+    customerDocument: z.string().trim().max(20).optional(),
+    loyaltyPointsToRedeem: z.coerce.number().int().min(0).default(0),
+    loyaltyRewardId: uuidSchema.optional(),
+    loyaltyCouponCode: z.string().trim().min(3).max(64).optional(),
+    fiscalRequested: z.boolean().default(false),
+    items: z.array(saleItemSchema).min(1).max(100),
+    payments: z.array(salePaymentSchema).max(10).default([]),
+    notes: z.string().trim().max(500).optional(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      !value.items.some((item) => item.pricingApprovalId) || Boolean(value.compositionFingerprint),
+    {
+      message: "A composição da venda é obrigatória ao usar uma aprovação.",
+      path: ["compositionFingerprint"],
+    },
+  );
 
 export const salePreviewSchema = saleCreateSchema;
 
@@ -491,6 +588,7 @@ export const financialEntryCreateSchema = z.object({
   customerId: uuidSchema.optional(),
   supplierId: uuidSchema.optional(),
   amount: moneySchema.refine((value) => value > 0, "O valor deve ser maior que zero."),
+  amountMode: z.enum(["total", "installment"]).default("installment"),
   dueDate: z.string().date(),
   status: z.enum(["open", "paid", "cancelled"]).default("open"),
   description: z.string().trim().max(220).optional(),
@@ -564,7 +662,14 @@ export const importCommitSchema = z.object({
 });
 
 export const alertRuleSchema = z.object({
-  type: z.enum(["low_stock", "overdue_receivables", "cancelled_sales", "open_cash", "pending_purchase", "integration_error"]),
+  type: z.enum([
+    "low_stock",
+    "overdue_receivables",
+    "cancelled_sales",
+    "open_cash",
+    "pending_purchase",
+    "integration_error",
+  ]),
   channel: z.enum(["email", "in_app"]).default("email"),
   recipient: z.string().email(),
   isActive: z.boolean().default(true),
@@ -657,7 +762,10 @@ export const purchaseXmlPreviewSchema = z.object({
 });
 
 export const purchaseKeyPreviewSchema = z.object({
-  accessKey: z.string().trim().regex(/^\d{44}$/, "Informe os 44 dígitos da chave da NF-e."),
+  accessKey: z
+    .string()
+    .trim()
+    .regex(/^\d{44}$/, "Informe os 44 dígitos da chave da NF-e."),
   branchId: uuidSchema,
 });
 
@@ -706,7 +814,10 @@ export const inboundFiscalListQuerySchema = paginationQuerySchema.extend({
   manifestationStatus: z
     .enum(["pending", "ciencia", "confirmacao", "desconhecimento", "nao_realizada"])
     .optional(),
-  period: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+  period: z
+    .string()
+    .regex(/^\d{4}-\d{2}$/)
+    .optional(),
 });
 
 export const inboundFiscalManifestSchema = z
@@ -750,27 +861,46 @@ export const accountingClosureSchema = z.object({
   branchId: uuidSchema.optional(),
 });
 
-export const accountantPortalAccessCreateSchema = z.object({
-  name: z.string().trim().min(2).max(160),
-  email: z
-    .string()
-    .email()
-    .transform((value) => value.toLowerCase()),
-  branchId: uuidSchema.optional(),
-  expiresInDays: z.coerce.number().int().min(1).max(180).default(30),
-  allowedPeriodStart: z.string().regex(/^\d{4}-\d{2}$/).optional(),
-  allowedPeriodEnd: z.string().regex(/^\d{4}-\d{2}$/).optional(),
-}).refine((value) => !value.allowedPeriodStart || !value.allowedPeriodEnd || value.allowedPeriodEnd >= value.allowedPeriodStart, {
-  message: "A competência final deve ser maior ou igual à inicial.",
-});
+export const accountantPortalAccessCreateSchema = z
+  .object({
+    name: z.string().trim().min(2).max(160),
+    email: z
+      .string()
+      .email()
+      .transform((value) => value.toLowerCase()),
+    branchId: uuidSchema.optional(),
+    expiresInDays: z.coerce.number().int().min(1).max(180).default(30),
+    allowedPeriodStart: z
+      .string()
+      .regex(/^\d{4}-\d{2}$/)
+      .optional(),
+    allowedPeriodEnd: z
+      .string()
+      .regex(/^\d{4}-\d{2}$/)
+      .optional(),
+  })
+  .refine(
+    (value) =>
+      !value.allowedPeriodStart ||
+      !value.allowedPeriodEnd ||
+      value.allowedPeriodEnd >= value.allowedPeriodStart,
+    {
+      message: "A competência final deve ser maior ou igual à inicial.",
+    },
+  );
 
-export const accountantPortalTokenSchema = z.object({
-  token: z.string().trim().min(32).max(160).optional(),
-  sessionToken: z.string().trim().min(32).max(180).optional(),
-  period: z.string().regex(/^\d{4}-\d{2}$/).optional(),
-}).refine((value) => Boolean(value.token || value.sessionToken), {
-  message: "Informe o token ou a sessão do portal.",
-});
+export const accountantPortalTokenSchema = z
+  .object({
+    token: z.string().trim().min(32).max(160).optional(),
+    sessionToken: z.string().trim().min(32).max(180).optional(),
+    period: z
+      .string()
+      .regex(/^\d{4}-\d{2}$/)
+      .optional(),
+  })
+  .refine((value) => Boolean(value.token || value.sessionToken), {
+    message: "Informe o token ou a sessão do portal.",
+  });
 
 export const accountantPortalLoginRequestSchema = z.object({
   token: z.string().trim().min(32).max(160),
@@ -781,7 +911,10 @@ export const accountantPortalLoginRequestSchema = z.object({
 });
 
 export const accountantPortalLoginVerifySchema = accountantPortalLoginRequestSchema.extend({
-  code: z.string().trim().regex(/^\d{6}$/, "Informe o código de 6 dígitos."),
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, "Informe o código de 6 dígitos."),
 });
 
 export const accountantPortalExportQuerySchema = accountantPortalTokenSchema.extend({
@@ -814,42 +947,61 @@ export const financialReconcileSchema = z.object({
   reconciliationStatus: z.enum(["pending", "reconciled", "diverged"]),
 });
 
-const financialCodeSchema = z.string().trim().min(2).max(60).transform((value) => value.toUpperCase());
+const financialCodeSchema = z
+  .string()
+  .trim()
+  .min(2)
+  .max(60)
+  .transform((value) => value.toUpperCase());
 const centsSchema = z.coerce.number().int().min(0).max(999_999_999_999);
 const basisPointsSchema = z.coerce.number().int().min(0).max(10_000);
 
-export const paymentAcquirerCreateSchema = z.object({
-  branchId: uuidSchema.optional(),
-  name: z.string().trim().min(2).max(120),
-  code: financialCodeSchema,
-  isActive: z.boolean().default(true),
-}).strict();
+export const paymentAcquirerCreateSchema = z
+  .object({
+    branchId: uuidSchema.optional(),
+    name: z.string().trim().min(2).max(120),
+    code: financialCodeSchema,
+    isActive: z.boolean().default(true),
+  })
+  .strict();
 
 export const paymentAcquirerUpdateSchema = paymentAcquirerCreateSchema.partial().strict();
 
-export const paymentFeeRuleCreateSchema = z.object({
-  acquirerId: uuidSchema,
-  paymentMethod: z.string().trim().min(2).max(60),
-  brand: z.string().trim().min(2).max(60).transform((value) => value.toLowerCase()).optional(),
-  installmentFrom: z.coerce.number().int().min(1).max(120).default(1),
-  installmentTo: z.coerce.number().int().min(1).max(120).default(1),
-  percentageBasisPoints: basisPointsSchema.default(0),
-  fixedFeeCents: centsSchema.default(0),
-  anticipationBasisPoints: basisPointsSchema.default(0),
-  settlementDays: z.coerce.number().int().min(0).max(3650).default(0),
-  validFrom: z.string().datetime(),
-  validUntil: z.string().datetime().optional(),
-}).strict().refine((value) => value.installmentTo >= value.installmentFrom, {
-  message: "A parcela final deve ser maior ou igual à inicial.",
-  path: ["installmentTo"],
-}).refine((value) => !value.validUntil || value.validUntil >= value.validFrom, {
-  message: "A vigência final deve ser posterior à inicial.",
-  path: ["validUntil"],
-});
+export const paymentFeeRuleCreateSchema = z
+  .object({
+    acquirerId: uuidSchema,
+    paymentMethod: z.string().trim().min(2).max(60),
+    brand: z
+      .string()
+      .trim()
+      .min(2)
+      .max(60)
+      .transform((value) => value.toLowerCase())
+      .optional(),
+    installmentFrom: z.coerce.number().int().min(1).max(120).default(1),
+    installmentTo: z.coerce.number().int().min(1).max(120).default(1),
+    percentageBasisPoints: basisPointsSchema.default(0),
+    fixedFeeCents: centsSchema.default(0),
+    anticipationBasisPoints: basisPointsSchema.default(0),
+    settlementDays: z.coerce.number().int().min(0).max(3650).default(0),
+    validFrom: z.string().datetime(),
+    validUntil: z.string().datetime().optional(),
+  })
+  .strict()
+  .refine((value) => value.installmentTo >= value.installmentFrom, {
+    message: "A parcela final deve ser maior ou igual à inicial.",
+    path: ["installmentTo"],
+  })
+  .refine((value) => !value.validUntil || value.validUntil >= value.validFrom, {
+    message: "A vigência final deve ser posterior à inicial.",
+    path: ["validUntil"],
+  });
 
-export const paymentFeeRuleDeactivateSchema = z.object({
-  reason: z.string().trim().min(3).max(240),
-}).strict();
+export const paymentFeeRuleDeactivateSchema = z
+  .object({
+    reason: z.string().trim().min(3).max(240),
+  })
+  .strict();
 
 export const financialForecastListQuerySchema = paginationQuerySchema.extend({
   branchId: uuidSchema.optional(),
@@ -858,78 +1010,107 @@ export const financialForecastListQuerySchema = paginationQuerySchema.extend({
   status: z.enum(["pending", "partially_settled", "settled", "diverged", "cancelled"]).optional(),
   expectedFrom: z.string().date().optional(),
   expectedTo: z.string().date().optional(),
-  sortBy: z.enum(["expectedSettlementDate", "grossAmount", "netAmount", "createdAt"]).default("expectedSettlementDate"),
+  sortBy: z
+    .enum(["expectedSettlementDate", "grossAmount", "netAmount", "createdAt"])
+    .default("expectedSettlementDate"),
   sortDirection: z.enum(["asc", "desc"]).default("asc"),
 });
 
-export const paymentSnapshotResolveSchema = z.object({
-  branchId: uuidSchema,
-  acquirerId: uuidSchema.optional(),
-  paymentMethod: z.string().trim().min(2).max(60),
-  brand: z.string().trim().min(2).max(60).transform((value) => value.toLowerCase()).optional(),
-  installments: z.coerce.number().int().min(1).max(120).default(1),
-  grossAmountCents: centsSchema.refine((value) => value > 0, "O valor bruto deve ser maior que zero."),
-  occurredAt: z.string().datetime(),
-}).strict();
+export const paymentSnapshotResolveSchema = z
+  .object({
+    branchId: uuidSchema,
+    acquirerId: uuidSchema.optional(),
+    paymentMethod: z.string().trim().min(2).max(60),
+    brand: z
+      .string()
+      .trim()
+      .min(2)
+      .max(60)
+      .transform((value) => value.toLowerCase())
+      .optional(),
+    installments: z.coerce.number().int().min(1).max(120).default(1),
+    grossAmountCents: centsSchema.refine(
+      (value) => value > 0,
+      "O valor bruto deve ser maior que zero.",
+    ),
+    occurredAt: z.string().datetime(),
+  })
+  .strict();
 
-export const paymentSettlementCreateSchema = z.object({
-  paymentId: uuidSchema,
-  receivableId: uuidSchema.optional(),
-  settledAmountCents: centsSchema.refine((value) => value > 0, "O valor liquidado deve ser maior que zero."),
-  effectiveAt: z.string().datetime(),
-  externalReference: z.string().trim().min(3).max(180),
-  status: z.literal("posted").default("posted"),
-  notes: z.string().trim().max(500).optional(),
-}).strict();
+export const paymentSettlementCreateSchema = z
+  .object({
+    paymentId: uuidSchema,
+    receivableId: uuidSchema.optional(),
+    settledAmountCents: centsSchema.refine(
+      (value) => value > 0,
+      "O valor liquidado deve ser maior que zero.",
+    ),
+    effectiveAt: z.string().datetime(),
+    externalReference: z.string().trim().min(3).max(180),
+    status: z.literal("posted").default("posted"),
+    notes: z.string().trim().max(500).optional(),
+  })
+  .strict();
 
-export const paymentSettlementReverseSchema = z.object({
-  reason: z.string().trim().min(3).max(240),
-  externalReference: z.string().trim().min(3).max(180),
-}).strict();
+export const paymentSettlementReverseSchema = z
+  .object({
+    reason: z.string().trim().min(3).max(240),
+    externalReference: z.string().trim().min(3).max(180),
+  })
+  .strict();
 
-export const paymentSnapshotsResolveSchema = z.object({
-  payments: z.array(paymentSnapshotResolveSchema).min(1).max(10),
-}).strict();
+export const paymentSnapshotsResolveSchema = z
+  .object({
+    payments: z.array(paymentSnapshotResolveSchema).min(1).max(10),
+  })
+  .strict();
 
-export const paymentSettlementBatchSchema = z.object({
-  settlements: z.array(paymentSettlementCreateSchema).min(1).max(500),
-}).strict();
+export const paymentSettlementBatchSchema = z
+  .object({
+    settlements: z.array(paymentSettlementCreateSchema).min(1).max(500),
+  })
+  .strict();
 
-const reconciliationItemSchema = z.object({
-  paymentId: uuidSchema,
-  actualAmountCents: centsSchema,
-  externalReference: z.string().trim().min(3).max(180),
-  effectiveAt: z.string().datetime().optional(),
-}).strict();
+const reconciliationItemSchema = z
+  .object({
+    paymentId: uuidSchema,
+    actualAmountCents: centsSchema,
+    externalReference: z.string().trim().min(3).max(180),
+    effectiveAt: z.string().datetime().optional(),
+  })
+  .strict();
 
-export const reconciliationBatchCreateSchema = z.object({
-  branchId: uuidSchema,
-  acquirerId: uuidSchema,
-  externalReference: z.string().trim().min(3).max(180),
-  statementDate: z.string().date().optional(),
-  items: z.array(reconciliationItemSchema).min(1).max(2000),
-}).strict().superRefine((value, context) => {
-  const paymentIds = new Set<string>();
-  const references = new Set<string>();
-  value.items.forEach((item, index) => {
-    if (paymentIds.has(item.paymentId)) {
-      context.addIssue({
-        code: "custom",
-        path: ["items", index, "paymentId"],
-        message: "Um pagamento não pode aparecer mais de uma vez no lote.",
-      });
-    }
-    if (references.has(item.externalReference)) {
-      context.addIssue({
-        code: "custom",
-        path: ["items", index, "externalReference"],
-        message: "A referência de um item não pode se repetir no lote.",
-      });
-    }
-    paymentIds.add(item.paymentId);
-    references.add(item.externalReference);
+export const reconciliationBatchCreateSchema = z
+  .object({
+    branchId: uuidSchema,
+    acquirerId: uuidSchema,
+    externalReference: z.string().trim().min(3).max(180),
+    statementDate: z.string().date().optional(),
+    items: z.array(reconciliationItemSchema).min(1).max(2000),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const paymentIds = new Set<string>();
+    const references = new Set<string>();
+    value.items.forEach((item, index) => {
+      if (paymentIds.has(item.paymentId)) {
+        context.addIssue({
+          code: "custom",
+          path: ["items", index, "paymentId"],
+          message: "Um pagamento não pode aparecer mais de uma vez no lote.",
+        });
+      }
+      if (references.has(item.externalReference)) {
+        context.addIssue({
+          code: "custom",
+          path: ["items", index, "externalReference"],
+          message: "A referência de um item não pode se repetir no lote.",
+        });
+      }
+      paymentIds.add(item.paymentId);
+      references.add(item.externalReference);
+    });
   });
-});
 
 export const userInviteSchema = z.object({
   email: z
@@ -1056,6 +1237,13 @@ export const branchIntegrationOverrideSchema = z.object({
   settings: z.record(z.string(), z.string().max(500)).default({}),
 });
 
+export const whatsappConsentSchema = z.object({ consent: z.literal(true) });
+export const whatsappTextMessageSchema = z.object({
+  to: z.string().trim().min(8).max(30),
+  text: z.string().trim().min(1).max(4000),
+  idempotencyKey: z.string().trim().min(8).max(180),
+});
+
 export const branchFiscalSettingsSchema = z.object({
   provider: z.enum(["focus_nfe", "spedy"]).default("focus_nfe"),
   environment: z.enum(["homologation", "production"]).default("homologation"),
@@ -1116,15 +1304,17 @@ export const fiscalCancelSchema = z.object({
   justification: z.string().trim().min(15).max(255),
 });
 
-export const fiscalNumberVoidSchema = z.object({
-  series: z.coerce.number().int().min(1).max(999),
-  numberStart: z.coerce.number().int().min(1),
-  numberEnd: z.coerce.number().int().min(1),
-  justification: z.string().trim().min(15).max(255),
-}).refine(
-  (value) => value.numberEnd >= value.numberStart,
-  "O número final deve ser maior ou igual ao número inicial.",
-);
+export const fiscalNumberVoidSchema = z
+  .object({
+    series: z.coerce.number().int().min(1).max(999),
+    numberStart: z.coerce.number().int().min(1),
+    numberEnd: z.coerce.number().int().min(1),
+    justification: z.string().trim().min(15).max(255),
+  })
+  .refine(
+    (value) => value.numberEnd >= value.numberStart,
+    "O número final deve ser maior ou igual ao número inicial.",
+  );
 
 export const fiscalReviewSchema = z
   .object({
@@ -1179,6 +1369,11 @@ export type BranchUpdateInput = z.infer<typeof branchUpdateSchema>;
 export type ProductCreateInput = z.infer<typeof productCreateSchema>;
 export type ProductUpdateInput = z.infer<typeof productUpdateSchema>;
 export type ProductFiscalInput = z.infer<typeof productFiscalSchema>;
+export type ServiceCreateInput = z.infer<typeof serviceCreateSchema>;
+export type ServiceUpdateInput = z.infer<typeof serviceUpdateSchema>;
+export type ServiceOrderCreateInput = z.infer<typeof serviceOrderCreateSchema>;
+export type LeadCreateInput = z.infer<typeof leadCreateSchema>;
+export type LeadUpdateInput = z.infer<typeof leadUpdateSchema>;
 export type CustomerCreateInput = z.infer<typeof customerCreateSchema>;
 export type CustomerUpdateInput = z.infer<typeof customerUpdateSchema>;
 export type CustomerSegmentCreateInput = z.infer<typeof customerSegmentCreateSchema>;

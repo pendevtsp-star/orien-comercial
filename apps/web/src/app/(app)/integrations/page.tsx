@@ -35,6 +35,16 @@ type BranchOverride = {
   settings: Record<string, string>;
   updatedAt: string;
 };
+type WhatsAppSession = {
+  id: string;
+  branchId: string;
+  status: string;
+  consented: boolean;
+  phoneNumber: string | null;
+  lastError: string | null;
+  connectedAt: string | null;
+  qr: string | null;
+};
 const otherCards: Array<{
   provider: Exclude<Provider, "smtp">;
   title: string;
@@ -102,16 +112,19 @@ export default function IntegrationsPage() {
   const [smtpPassword, setSmtpPassword] = useState("");
   const [smtpInitialized, setSmtpInitialized] = useState(false);
   const [pendingPresetId, setPendingPresetId] = useState<SmtpPreset["id"] | null>(null);
+  const [whatsapp, setWhatsapp] = useState<WhatsAppSession | null>(null);
   async function load() {
     try {
-      const [integrations, branchResult, overridesResult] = await Promise.all([
+      const [integrations, branchResult, overridesResult, whatsappResult] = await Promise.all([
         apiFetch<{ data: Integration[] }>("/integrations"),
         apiFetch<{ data: Branch[] }>("/branches?limit=100"),
         apiFetch<{ data: BranchOverride[] }>("/integrations/branches"),
+        apiFetch<{ data: WhatsAppSession[] }>("/integrations/whatsapp"),
       ]);
       setItems(integrations.data);
       setBranches(branchResult.data);
       setOverrides(overridesResult.data);
+      setWhatsapp(whatsappResult.data[0] ?? null);
       setOverrideBranchId((current) => current || branchResult.data[0]?.id || "");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Falha ao carregar integrações.");
@@ -138,6 +151,11 @@ export default function IntegrationsPage() {
   useEffect(() => {
     void load();
   }, []);
+  useEffect(() => {
+    if (!whatsapp || !["connecting", "qr_ready"].includes(whatsapp.status)) return;
+    const timer = window.setInterval(() => void load(), 2_000);
+    return () => window.clearInterval(timer);
+  }, [whatsapp?.status]);
   const smtp = items.find((item) => item.provider === "smtp");
   useEffect(() => {
     if (!smtp || smtpInitialized) return;
@@ -199,6 +217,23 @@ export default function IntegrationsPage() {
       setNotice(error instanceof Error ? error.message : "Teste não concluído.");
     }
   }
+  async function whatsappAction(action: "connect" | "reconnect" | "disconnect" | "delete") {
+    try {
+      const path = action === "delete" ? "/integrations/whatsapp/session" : `/integrations/whatsapp/${action}`;
+      await apiFetch(path, {
+        method: action === "delete" ? "DELETE" : "POST",
+        body: action === "connect" ? JSON.stringify({ consent: true }) : "{}",
+      });
+      setNotice(
+        action === "connect"
+          ? "Consentimento registrado. Aguarde o QR Code para vincular o telefone."
+          : "Sessão do WhatsApp atualizada.",
+      );
+      await load();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Não foi possível atualizar o WhatsApp.");
+    }
+  }
   function updateSmtpDraft(field: string, value: string) {
     setSmtpDraft((current) => ({ ...current, [field]: value }));
   }
@@ -251,7 +286,7 @@ export default function IntegrationsPage() {
     <div className="grid gap-6">
       <PageHeader
         title="Integrações"
-        description="Conecte serviços da empresa com dados protegidos e testes claros."
+        description="Conecte serviços da empresa com dados protegidos e orientações claras."
       />
       {notice ? (
         <p className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
@@ -432,10 +467,69 @@ export default function IntegrationsPage() {
         </CardContent>
       </Card>
       <div className="grid gap-4 xl:grid-cols-2">
-        {otherCards.map((card) => {
-          const item = items.find((entry) => entry.provider === card.provider),
-            Icon = card.icon;
-          return (
+         {otherCards.map((card) => {
+           const item = items.find((entry) => entry.provider === card.provider),
+             Icon = card.icon;
+          if (card.provider === "whatsapp_meta") {
+            return (
+              <Card key={card.provider}>
+                <CardContent className="grid gap-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex gap-3">
+                      <span className="grid h-10 w-10 place-items-center rounded-md bg-[var(--brand-surface)] text-[var(--brand-primary)]">
+                        <MessageCircle size={20} />
+                      </span>
+                      <div>
+                        <h2 className="font-semibold">WhatsApp experimental</h2>
+                        <p className="mt-1 text-sm text-slate-500">
+                          Vincule um telefone por QR Code para receber conversas e criar leads de texto.
+                        </p>
+                      </div>
+                    </div>
+                    <Status item={item} />
+                  </div>
+                  <div className="grid gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                    <strong>Integração não oficial da Meta</strong>
+                    <span>Use apenas com consentimento da empresa. Não há campanhas, disparos em massa ou mídia nesta versão.</span>
+                  </div>
+                  <div className="grid gap-2 text-sm text-slate-600">
+                    <span>Status: {whatsapp?.status ?? "não configurado"}</span>
+                    <span>Telefone: {whatsapp?.phoneNumber ?? "aguardando vinculação"}</span>
+                    {whatsapp?.lastError ? <span className="text-rose-700">{whatsapp.lastError}</span> : null}
+                  </div>
+                  {whatsapp?.qr ? (
+                    <div className="grid justify-items-start gap-2">
+                      <span className="text-sm font-medium">Leia este QR Code pelo WhatsApp do telefone.</span>
+                      <img src={whatsapp.qr} alt="QR Code para vincular o WhatsApp" className="h-56 w-56 rounded-md border border-[var(--brand-border)] p-2" />
+                    </div>
+                  ) : null}
+                  <div className="flex flex-wrap gap-2">
+                    {!whatsapp?.consented ? (
+                      <Button type="button" onClick={() => void whatsappAction("connect")}>
+                        Autorizar e conectar
+                      </Button>
+                    ) : null}
+                    {whatsapp?.consented && whatsapp.status !== "connected" ? (
+                      <Button type="button" onClick={() => void whatsappAction("reconnect")}>
+                        Mostrar QR Code
+                      </Button>
+                    ) : null}
+                    {whatsapp?.status === "connected" ? (
+                      <Button type="button" variant="secondary" onClick={() => void whatsappAction("disconnect")}>
+                        Desconectar
+                      </Button>
+                    ) : null}
+                    {whatsapp ? (
+                      <Button type="button" variant="secondary" onClick={() => void whatsappAction("delete")}>
+                        Apagar sessão
+                      </Button>
+                    ) : null}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          }
+           return (
             <Card key={card.provider}>
               <CardContent>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -526,7 +620,7 @@ export default function IntegrationsPage() {
               <select value={overrideProvider} onChange={(event) => setOverrideProvider(event.target.value as Provider)} className="h-10 rounded-md border border-[var(--brand-border)] px-3">
                 <option value="smtp">E-mail da empresa</option>
                 <option value="asaas_business">Recebimentos Asaas</option>
-                <option value="whatsapp_meta">WhatsApp oficial</option>
+                      <option value="whatsapp_meta">WhatsApp experimental</option>
                 <option value="fiscal">Fiscal</option>
               </select>
             </label>

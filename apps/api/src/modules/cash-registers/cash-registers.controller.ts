@@ -13,15 +13,18 @@ import { PermissionsGuard } from "../../shared/permissions.guard";
 import { RequirePermissions } from "../../shared/require-permissions.decorator";
 import type { TenantContext } from "../../shared/request-context";
 import { TenantContextGuard } from "../../shared/tenant-context.guard";
+import { CapabilitiesGuard } from "../../shared/capabilities.guard";
+import { RequireCapability } from "../../shared/require-capability.decorator";
 import { ZodValidationPipe } from "../../shared/zod-validation.pipe";
 import { CashRegistersService } from "./cash-registers.service";
 
 @ApiTags("cash-registers")
-@UseGuards(JwtAuthGuard, TenantContextGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, TenantContextGuard, PermissionsGuard, CapabilitiesGuard)
 @Controller("cash-registers")
+@RequireCapability("cash")
 export class CashRegistersController {
   constructor(@Inject(CashRegistersService) private readonly service: CashRegistersService) {}
-  @RequirePermissions(permissions.sales.read)
+  @RequirePermissions(permissions.cash.read)
   @Get()
   history(
     @CurrentTenant() tenant: TenantContext,
@@ -29,7 +32,7 @@ export class CashRegistersController {
   ) {
     return this.service.history(tenant, query);
   }
-  @RequirePermissions(permissions.sales.read)
+  @RequirePermissions(permissions.cash.read)
   @Get("current")
   current(
     @CurrentTenant() tenant: TenantContext,
@@ -37,7 +40,7 @@ export class CashRegistersController {
   ) {
     return this.service.current(tenant, query);
   }
-  @RequirePermissions(permissions.sales.create)
+  @RequirePermissions(permissions.cash.open)
   @Post("open")
   open(
     @CurrentTenant() tenant: TenantContext,
@@ -45,7 +48,7 @@ export class CashRegistersController {
   ) {
     return this.service.open(tenant, body);
   }
-  @RequirePermissions(permissions.sales.create)
+  @RequirePermissions(permissions.cash.close)
   @Post(":id/close")
   close(
     @CurrentTenant() tenant: TenantContext,
@@ -54,7 +57,7 @@ export class CashRegistersController {
   ) {
     return this.service.close(tenant, id, body);
   }
-  @RequirePermissions(permissions.sales.create)
+  @RequirePermissions(permissions.cash.manage)
   @Post(":id/movements")
   movement(
     @CurrentTenant() tenant: TenantContext,
@@ -63,12 +66,12 @@ export class CashRegistersController {
   ) {
     return this.service.movement(tenant, id, body);
   }
-  @RequirePermissions(permissions.sales.read)
+  @RequirePermissions(permissions.cash.read)
   @Get(":id/summary")
   summary(@CurrentTenant() tenant: TenantContext, @Param("id") id: string) {
     return this.service.summary(tenant, id);
   }
-  @RequirePermissions(permissions.sales.cancel)
+  @RequirePermissions(permissions.cash.manage)
   @Post(":id/approve")
   approve(@CurrentTenant() tenant: TenantContext, @Param("id") id: string) {
     return this.service.approve(tenant, id);

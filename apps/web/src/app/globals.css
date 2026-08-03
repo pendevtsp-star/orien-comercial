@@ -198,6 +198,28 @@ body {
   min-height: 100%;
 }
 
+.orien-glass {
+  background: var(--glass-surface, #ffffff);
+  border-color: var(--brand-border);
+}
+
+@supports (backdrop-filter: blur(1px)) {
+  .orien-glass {
+    --glass-surface: color-mix(in srgb, #ffffff 86%, transparent);
+    -webkit-backdrop-filter: blur(16px) saturate(1.08);
+    backdrop-filter: blur(16px) saturate(1.08);
+  }
+
+  :root[data-color-mode="dark"] .orien-glass {
+    --glass-surface: color-mix(in srgb, var(--dark-card) 88%, transparent);
+  }
+}
+
+:root[data-reduce-motion="true"] .orien-glass {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
 .auth-page {
   background: radial-gradient(circle at top, #f7f8fc 0%, #eef2f8 44%, #f8fafc 100%);
 }

@@ -2,6 +2,7 @@ export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3334
 const TENANT_KEY = "sgc.currentTenantId";
 const BRANCH_SCOPE_KEY = "sgc.currentBranchScopeId";
 let refreshPromise: Promise<boolean> | null = null;
+const API_REQUEST_TIMEOUT_MS = 15_000;
 
 type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
@@ -54,7 +55,9 @@ export function clearBranchScope() {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(BRANCH_SCOPE_KEY);
   window.sessionStorage.removeItem(BRANCH_SCOPE_KEY);
-  window.dispatchEvent(new CustomEvent("sgc:branch-scope-changed", { detail: { branchId: undefined } }));
+  window.dispatchEvent(
+    new CustomEvent("sgc:branch-scope-changed", { detail: { branchId: undefined } }),
+  );
 }
 
 export function clearTenantContext() {
@@ -88,13 +91,19 @@ async function request<T>(path: string, init: RequestInit, allowRefresh: boolean
   if (branchScopeId && !ignoreBranchScope) headers.set("x-branch-id", branchScopeId);
 
   let response: Response;
+  const requestControl = createRequestControl(init.signal, API_REQUEST_TIMEOUT_MS);
   try {
     response = await fetch(`${API_URL}${path}`, {
       ...init,
       credentials: "include",
       headers,
+      signal: requestControl.signal,
     });
-  } catch {
+  } catch (error) {
+    if (init.signal?.aborted) throw error;
+    if (requestControl.signal.aborted) {
+      throw new ApiError("A requisição demorou demais. Tente novamente.", 408, requestId);
+    }
     throw new ApiError(
       "Não foi possível conectar à API. Verifique sua internet e tente novamente.",
       0,
@@ -102,59 +111,91 @@ async function request<T>(path: string, init: RequestInit, allowRefresh: boolean
     );
   }
 
-  if (response.status === 401 && allowRefresh && !path.startsWith("/auth/")) {
-    const refreshed = await refreshSession();
-    if (refreshed) return request<T>(path, init, false);
-  }
-
-  if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as {
-      message?: string;
-      requestId?: string;
-      statusCode?: number;
-    } | null;
-    const error = new ApiError(
-      payload?.message ?? "Falha ao comunicar com a API.",
-      payload?.statusCode ?? response.status,
-      payload?.requestId ?? response.headers.get("x-request-id") ?? requestId,
-    );
-    if (response.status === 401 && typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("sgc:session-expired"));
-    }
-    throw error;
-  }
-
-  if (response.status === 204) return undefined as T;
-
-  const text = await response.text();
-  if (!text.trim()) return undefined as T;
-
   try {
-    return JSON.parse(text) as T;
-  } catch {
+    if (response.status === 401 && allowRefresh && !path.startsWith("/auth/")) {
+      const refreshed = await refreshSession();
+      if (refreshed) return request<T>(path, init, false);
+    }
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as {
+        message?: string;
+        requestId?: string;
+        statusCode?: number;
+      } | null;
+      const error = new ApiError(
+        payload?.message ?? "Falha ao comunicar com a API.",
+        payload?.statusCode ?? response.status,
+        payload?.requestId ?? response.headers.get("x-request-id") ?? requestId,
+      );
+      if (response.status === 401 && typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("sgc:session-expired"));
+      }
+      throw error;
+    }
+
+    if (response.status === 204) return undefined as T;
+
+    const text = await response.text();
+    if (!text.trim()) return undefined as T;
+
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      throw new ApiError(
+        "A API retornou uma resposta invalida.",
+        response.status,
+        response.headers.get("x-request-id") ?? requestId,
+      );
+    }
+  } catch (error) {
+    if (error instanceof ApiError || init.signal?.aborted) throw error;
+    if (requestControl.signal.aborted) {
+      throw new ApiError("A requisição demorou demais. Tente novamente.", 408, requestId);
+    }
     throw new ApiError(
-      "A API retornou uma resposta invalida.",
-      response.status,
-      response.headers.get("x-request-id") ?? requestId,
+      "Não foi possível conectar à API. Verifique sua internet e tente novamente.",
+      0,
+      requestId,
     );
+  } finally {
+    requestControl.cleanup();
   }
 }
 
 async function refreshSession() {
   if (!refreshPromise) {
+    const requestControl = createRequestControl(undefined, API_REQUEST_TIMEOUT_MS);
     refreshPromise = fetch(`${API_URL}/auth/refresh`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json", "x-request-id": createRequestId() },
       body: "{}",
+      signal: requestControl.signal,
     })
       .then((response) => response.ok)
       .catch(() => false)
       .finally(() => {
+        requestControl.cleanup();
         refreshPromise = null;
       });
   }
   return refreshPromise;
+}
+
+function createRequestControl(signal: AbortSignal | null | undefined, timeoutMs: number) {
+  const controller = new AbortController();
+  const abortFromCaller = () => controller.abort(signal?.reason);
+  if (signal?.aborted) abortFromCaller();
+  else signal?.addEventListener("abort", abortFromCaller, { once: true });
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      clearTimeout(timeout);
+      signal?.removeEventListener("abort", abortFromCaller);
+    },
+  };
 }
 
 export async function openApiDocument(
